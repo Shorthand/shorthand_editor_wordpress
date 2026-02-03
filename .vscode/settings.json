@@ -1,0 +1,30 @@
+{
+  "sonarlint.disableTelemetry": true,
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[php]": {
+    "editor.defaultFormatter": "valeryanm.vscode-phpsab",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": false,
+    "editor.formatOnSave": true
+  },
+  "intelephense.format.enable": false,
+  "intelephense.compatibility.preferPsalmPhpstanPrefixedAnnotations": true,
+  "phpsab.composerJsonPath": "php/composer.json",
+  "phpsab.standard": "php/.phpcs.xml",
+  "phpsab.fixerEnable": true,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": null,
+  "git.ignoreLimitWarning": true,
+  "typescript.tsdk": "node_modules/typescript/lib"
+}

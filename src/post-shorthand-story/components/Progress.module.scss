@@ -1,0 +1,16 @@
+.progress-bar--container {
+  background: #e5e5e5;
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.progress-bar--indicator {
+  background: hsla(169, 86%, 32%, 1);
+  height: 100%;
+  width: 100%;
+  transition-property: var(--transition-prop, all);
+  transition-timing-function: var(--transition-easing, cubic-bezier(0.4, 0, 0.2, 1));
+  transition-duration: var(--transition-duration, 150ms);
+}

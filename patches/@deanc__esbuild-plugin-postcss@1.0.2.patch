@@ -1,0 +1,29 @@
+diff --git a/index.js b/index.js
+index 58cf2023150763d1779e58afa4b8c062a7abf5c9..5a2d13503fe4908ae3bad6baf1f257ed87fff2a6 100644
+--- a/index.js
++++ b/index.js
+@@ -8,13 +8,13 @@ const readFile = util.promisify(fs.readFile);
+ const writeFile = util.promisify(fs.writeFile);
+ const ensureDir = util.promisify(fs.ensureDir);
+ 
+-module.exports = (options = { plugins: [] }) => ({
++module.exports = (options = { plugins: [], filter: /.\.(css)$/ }) => ({
+   name: "postcss",
+   setup: function (build) {
+     const { rootDir = options.rootDir || process.cwd() } = options;
+     const tmpDirPath = tmp.dirSync().name;
+     build.onResolve(
+-      { filter: /.\.(css)$/, namespace: "file" },
++      { filter: options.filter, namespace: "file" },
+       async (args) => {
+         const sourceFullPath = path.resolve(args.resolveDir, args.path);
+         const sourceExt = path.extname(sourceFullPath);
+@@ -39,7 +39,7 @@ module.exports = (options = { plugins: [] }) => ({
+         return {
+           path: tmpFilePath,
+         };
+-      }
++      },
+     );
+   },
+ });

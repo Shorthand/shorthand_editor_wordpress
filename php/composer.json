@@ -1,0 +1,51 @@
+{
+  "require-dev": {
+    "rector/rector": "^2.0",
+    "magento/php-compatibility-fork": "^0.1.0",
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "humbug/php-scoper": "^0.18.17",
+    "wp-coding-standards/wpcs": "^3.0",
+    "automattic/vipwpcs": "^3.0",
+    "symplify/rule-doc-generator": "^12.2"
+  },
+  "require": {
+    "php": "^7.2 || ^8.0",
+    "firebase/php-jwt": "^6.10.0"
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Utils\\Rector\\": "utils/rector/src"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
+  },
+  "scripts": {
+    "post-install-cmd": [
+      "@prefix-dependencies"
+    ],
+    "prefix-php-jwt": [
+      "rm -rf ./src/vendor_prefixed",
+      "@php ./vendor/humbug/php-scoper/bin/php-scoper add-prefix --prefix=Shorthand\\\\Vendor --output-dir=./src/vendor_prefixed/firebase/php-jwt --config=config/php-scoper/php-jwt.inc.php --force --quiet",
+      "rector process -c ./rector.php --no-diffs --no-progress-bar  ./src/vendor_prefixed/firebase/php-jwt/src"
+    ],
+    "prefix-dependencies": [
+      "composer prefix-php-jwt"
+    ],
+    "downcompile": [
+      "rector process -c ./rector.php --no-diffs --no-progress-bar ./src",
+      "phpcbf ./src"
+    ],
+    "check-7.2": [
+      "phpcs -n --standard=PHPCompatibility --runtime-set testVersion 7.2 ./src"
+    ],
+    "cs": [
+      "phpcs ./src"
+    ],
+    "cbf": [
+      "phpcbf ./src"
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+.tooltip--container {
+  position: relative;
+
+  &:hover .tooltip--panel {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+  }
+}
+
+.tooltip--panel {
+  position: absolute;
+  pointer-events: none;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  min-width: 250px;
+  max-width: 400px;
+  background: #000;
+  color: #fff;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0;
+  transition:
+    opacity 0.3s ease-in-out,
+    transform 0.3s ease-in-out;
+  z-index: 1000;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #000;
+  }
+}

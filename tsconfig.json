@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "experimentalDecorators": true,
+    "esModuleInterop": true,
+    "incremental": true,
+    "sourceMap": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictPropertyInitialization": false,
+    "target": "es6",
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "typeRoots": ["./node_modules/@types"],
+    "allowSyntheticDefaultImports": true,
+    "lib": ["es2018", "dom", "es6", "ESNext.WeakRef"],
+    "module": "esnext",
+    "allowJs": true,
+
+    "outDir": "./build/@shorthand/wordpress-plugin",
+    "rootDir": "src"
+  },
+  "include": ["./src/**/*", "./src/typings.d.ts"],
+  "exclude": ["bin", "node_modules", "./*.js", "src/**/*.test.ts*"],
+  "references": []
+}
