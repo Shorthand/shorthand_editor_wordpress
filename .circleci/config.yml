@@ -1,0 +1,31 @@
+---
+version: 2.1
+
+# Enables dynamic config loading
+setup: true
+
+jobs:
+  setup:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - run:
+          name: Fetch latest config from `master`
+          # We want to run the production branch but load the CCI pipeline
+          # config from the master branch. This is to solve the issue with
+          # using the updated pipeline config but you have to merge the
+          # changes into production.
+          command: |
+            git fetch origin master
+            git checkout origin/master -- .circleci/prod-config.yml
+      - continuation/continue:
+          configuration_path: .circleci/prod-config.yml
+
+workflows:
+  setup_workflow:
+    jobs:
+      - setup
+
+orbs:
+  continuation: circleci/continuation@1.1.0

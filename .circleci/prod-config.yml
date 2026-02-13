@@ -1,0 +1,308 @@
+---
+version: 2.1
+
+release_only: &release_only
+  filters:
+    branches:
+      only:
+        - production
+
+commands:
+  install-gh-cli:
+    steps:
+      - run:
+          name: Install GH CLI if needed
+          command: |
+            if command -v gh >/dev/null 2>&1; then
+              echo "gh already installed: $(gh --version | head -n 1)"
+              exit 0
+            fi
+
+            # Install GH - https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+            (type -p curl >/dev/null || (sudo apt-get update && sudo apt-get install -y curl)) \
+              && sudo mkdir -p -m 755 /etc/apt/keyrings \
+              && out=$(mktemp) && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o "$out" \
+              && sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg < "$out" >/dev/null \
+              && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+              && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+              && sudo apt-get update \
+              && sudo apt-get install -y gh
+
+  install-jq:
+    steps:
+      - run:
+          name: Install jq if needed
+          command: |
+            if command -v jq >/dev/null 2>&1; then
+              echo "jq already installed: $(jq --version)"
+              exit 0
+            fi
+
+            sudo apt-get update
+            sudo apt-get install -y jq
+
+  fetch-prune:
+    steps:
+      - run:
+          # Without this, the build won't be able to access commits
+          # in the production branch.
+          name: Fetch all branches
+          command: git fetch --all --prune
+
+  run-build:
+    steps:
+      - checkout
+          method: blobless
+      - run:
+          name: Add PNPM at desired version
+          command: sudo npm -g install pnpm@9
+      - run:
+          name: run-build
+          command: |
+            pnpm install
+            pnpm build
+
+  run-plugin-bundle-and-upload:
+    steps:
+      - run:
+          name: run-plugin-bundle-and-upload
+          command: |
+            pnpm bundle
+
+            PLUGIN_ZIP="$(find dist -maxdepth 1 -type f -name '*.zip' | sort | head -n 1)"
+            if [[ -z "$PLUGIN_ZIP" ]]; then
+              echo "Expected plugin zip not found in dist/ after pnpm bundle."
+              exit 1
+            fi
+            PLUGIN_FILENAME="$(basename "$PLUGIN_ZIP")"
+
+            {
+              echo "export PLUGIN_ZIP=${PLUGIN_ZIP}"
+              echo "export PLUGIN_FILENAME=${PLUGIN_FILENAME}"
+            } >> "$BASH_ENV"
+      - when:
+          condition:
+            equal: ["master", << pipeline.git.branch >>]
+          steps:
+            - aws_cli
+            - wp_plugin_aws_role_np
+            - run:
+                name: Upload plugin zip to S3
+                command: |
+                  if [[ -z "$WORDPRESS_PLUGIN_BUCKET_NP" ]]; then
+                    echo "WORDPRESS_PLUGIN_BUCKET_NP is missing."
+                    exit 1
+                  fi
+                  if [[ -z "$CIRCLE_BUILD_NUM" ]]; then
+                    echo "CIRCLE_BUILD_NUM is missing for master deploy."
+                    exit 1
+                  fi
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/downloads/${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
+      - when:
+          condition:
+            equal: ["production", << pipeline.git.branch >>]
+          steps:
+            - aws_cli
+            - wp_plugin_aws_role_pr
+            - run:
+                name: Upload plugin zip to S3
+                command: |
+                  if [[ -z "$WORDPRESS_PLUGIN_BUCKET_PR" ]]; then
+                    echo "WORDPRESS_PLUGIN_BUCKET_PR is missing."
+                    exit 1
+                  fi
+                  VERSION_PATH="$(git tag --points-at HEAD | head -n 1)"
+                  if [[ -z "$VERSION_PATH" ]]; then
+                    echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
+                    exit 1
+                  fi
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/downloads/${VERSION_PATH}/${PLUGIN_FILENAME}"
+
+  get-prs:
+    steps:
+      - checkout
+          method: blobless
+      - install-gh-cli
+      - install-jq
+      - fetch-prune
+      - run:
+          name: Get Pull requests
+          command: |
+            commit_logs=$(git log origin/production..origin/master --pretty=format:"%H" | xargs)
+
+            for commit in $commit_logs; do
+              res=$(gh api repos/shorthand/shorthand_editor_wordpress/commits/${commit}/pulls \
+                --jq '.[0] | {title: .title, html_url: .html_url}')
+              echo "API response for commit ${commit}: ${res}"
+
+              pr_data=$(echo "$res" | jq -r '"\(.title) - \(.html_url)"')
+              echo $pr_data
+
+              # Format the output as required
+              # pr_formatted_results+=$(echo "$res" | jq -r '"\(.title) - \(.html_url)\n"')
+
+
+              # Print the result (for debugging)
+              # echo -e "$pr_formatted_results"
+            done
+
+  tag-release:
+    steps:
+      - checkout
+          method: blobless
+      - fetch-prune
+      - install-jq
+      - install-gh-cli
+      - run:
+          name: Rebase production branch into master and push upstream
+          command: |
+            git checkout production && \
+              git rebase origin/master && \
+              git push origin production
+      - run:
+          name: Create tag-release
+          command: |
+            # Get the latest tag release.
+            latest_tag=$(gh release view --json tagName --jq '.tagName')
+            # Bump the minor version.
+            new_tag=$(echo "$latest_tag" | awk -F. '{printf "0.%d.0", $2+1}')
+            # Bump the tag when creating the release.
+            gh release create ${new_tag} --title ${new_tag} --generate-notes
+
+  # Create an OIDC identity provider in the AWS account is required. For more
+  # information, please see
+  # https://circleci.com/docs/openid-connect-tokens/?utm_source=google&utm_medium=sem&utm_campaign=sem-google-dg--japac-en-dsa-tROAS-auth-brand&utm_term=g_-_c__dsa_&utm_content=#setting-up-your-cloud-service
+  wp_plugin_aws_role_np:
+    steps:
+      - run:
+          name: Assume WP Plugin Non-Production AWS IAM ROLE
+          command: |
+            #!/bin/bash -eo pipefail
+            if [[ -z "$AWS_ROLE_ARN_NP" ]]; then
+              echo "AWS_ROLE_ARN_NP is missing."
+              exit 1
+            fi
+
+            PARAM_ROLE_SESSION_NAME="CircleCI-${CIRCLE_WORKFLOW_ID}-${CIRCLE_JOB}"
+            read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
+              "$(aws sts assume-role-with-web-identity \
+                  --role-arn "$AWS_ROLE_ARN_NP" \
+                  --role-session-name ${PARAM_ROLE_SESSION_NAME} \
+                  --web-identity-token $CIRCLE_OIDC_TOKEN \
+                  --duration-seconds 3600 \
+                  --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                  --output text)"
+            {
+              echo "export AWS_ACCESS_KEY_ID=\"${AWS_ACCESS_KEY_ID}\""
+              echo "export AWS_SESSION_TOKEN=\"${AWS_SESSION_TOKEN}\""
+              echo "export AWS_SECRET_ACCESS_KEY=\"${AWS_SECRET_ACCESS_KEY}\""
+            } >>"$BASH_ENV"
+
+  wp_plugin_aws_role_pr:
+    steps:
+      - run:
+          name: Assume WP Plugin Production AWS IAM ROLE
+          command: |
+            #!/bin/bash -eo pipefail
+            if [[ -z "$AWS_ROLE_ARN_PR" ]]; then
+              echo "AWS_ROLE_ARN_PR is missing."
+              exit 1
+            fi
+
+            PARAM_ROLE_SESSION_NAME="CircleCI-${CIRCLE_WORKFLOW_ID}-${CIRCLE_JOB}"
+            read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
+              "$(aws sts assume-role-with-web-identity \
+                  --role-arn "$AWS_ROLE_ARN_PR" \
+                  --role-session-name ${PARAM_ROLE_SESSION_NAME} \
+                  --web-identity-token $CIRCLE_OIDC_TOKEN \
+                  --duration-seconds 3600 \
+                  --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                  --output text)"
+            {
+              echo "export AWS_ACCESS_KEY_ID=\"${AWS_ACCESS_KEY_ID}\""
+              echo "export AWS_SESSION_TOKEN=\"${AWS_SESSION_TOKEN}\""
+              echo "export AWS_SECRET_ACCESS_KEY=\"${AWS_SECRET_ACCESS_KEY}\""
+            } >>"$BASH_ENV"
+
+  aws_cli:
+    description: Setup AWS CLI
+    steps:
+      - run: sudo curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+      - run: sudo unzip -q awscliv2.zip
+      - run: sudo ./aws/install --update
+
+jobs:
+  wp-plugin-build:
+    docker:
+      - image: cimg/node:20.12
+        auth:
+          username: $DOCKERHUB_USER
+          password: $DOCKERHUB_PASSWORD
+    resource_class: small
+    steps:
+      - run-build
+
+  wp-plugin-bundle-and-upload:
+    docker:
+      - image: cimg/node:20.12
+        auth:
+          username: $DOCKERHUB_USER
+          password: $DOCKERHUB_PASSWORD
+    resource_class: small
+    steps:
+      - run-build
+      - run-plugin-bundle-and-upload
+
+  wp-plugin-pre-release:
+    docker:
+      - image: cimg/node:20.12
+    resource_class: small
+    steps:
+      - get-prs
+
+  wp-plugin-release:
+    docker:
+      - image: cimg/node:20.12
+    resource_class: small
+    steps:
+      - tag-release
+
+workflows:
+  wp-plugin-workflow:
+    when:
+      not:
+        equal: [scheduled_pipeline, << pipeline.trigger_source >>]
+    jobs:
+      - wp-plugin-build:
+          filters:
+            branches:
+              ignore:
+                - production
+                - master
+      - wp-plugin-bundle-and-upload:
+          context:
+            - wp-plugin-upload-context
+          filters:
+            branches:
+              only:
+                - master
+
+  production-release:
+    when:
+      and:
+        - equal: [api, << pipeline.trigger_source >>]
+        - equal: ["production", <<pipeline.git.branch>>]
+
+    jobs:
+      - wp-plugin-bundle-and-upload:
+          <<: *release_only
+          name: bundle-and-upload
+          context:
+            - wp-plugin-bundle-context
+
+      - wp-plugin-release:
+          <<: *release_only
+          context:
+            - wp-plugin-upload-context
+          requires:
+            - bundle-and-upload
