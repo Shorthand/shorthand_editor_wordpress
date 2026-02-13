@@ -18,7 +18,7 @@ jobs:
           # changes into production.
           command: |
             git fetch origin master
-            git checkout origin/master -- .circleci/prod-config.yml
+            ## git checkout origin/master -- .circleci/prod-config.yml
       - continuation/continue:
           configuration_path: .circleci/prod-config.yml
 
