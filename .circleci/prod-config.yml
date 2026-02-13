@@ -59,7 +59,7 @@ commands:
       - run:
           name: run-build
           command: |
-            pnpm install
+            pnpm install --no-frozen-lockfile
             pnpm build
 
   run-plugin-bundle-and-upload:
