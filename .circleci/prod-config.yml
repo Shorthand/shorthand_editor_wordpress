@@ -75,17 +75,21 @@ commands:
               exit 1
             fi
             PLUGIN_FILENAME="$(basename "$PLUGIN_ZIP")"
+            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-plugins/wp/downloads}"
 
             {
               echo "export PLUGIN_ZIP=${PLUGIN_ZIP}"
               echo "export PLUGIN_FILENAME=${PLUGIN_FILENAME}"
+              echo "export DOWNLOADS_PREFIX=${DOWNLOADS_PREFIX}"
             } >> "$BASH_ENV"
       - when:
           condition:
             equal: ["build-pipeline", << pipeline.git.branch >>]
           steps:
             - aws_cli
-            - wp_plugin_aws_role_np
+            - wp_plugin_aws_role:
+                role_arn: "$AWS_ROLE_ARN_NP"
+                role_label: "Non-Production"
             - run:
                 name: Upload plugin zip to S3
                 command: |
@@ -97,13 +101,15 @@ commands:
                     echo "CIRCLE_BUILD_NUM is missing for master deploy."
                     exit 1
                   fi
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/downloads/v${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/v${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
       - when:
           condition:
             equal: ["production", << pipeline.git.branch >>]
           steps:
             - aws_cli
-            - wp_plugin_aws_role_pr
+            - wp_plugin_aws_role:
+                role_arn: "$AWS_ROLE_ARN_PR"
+                role_label: "Production"
             - run:
                 name: Upload plugin zip to S3
                 command: |
@@ -116,7 +122,7 @@ commands:
                     echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
                     exit 1
                   fi
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/downloads/v${VERSION_PATH}/${PLUGIN_FILENAME}"
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/v${VERSION_PATH}/${PLUGIN_FILENAME}"
 
   get-prs:
     steps:
@@ -172,14 +178,23 @@ commands:
   # Create an OIDC identity provider in the AWS account is required. For more
   # information, please see
   # https://circleci.com/docs/openid-connect-tokens/?utm_source=google&utm_medium=sem&utm_campaign=sem-google-dg--japac-en-dsa-tROAS-auth-brand&utm_term=g_-_c__dsa_&utm_content=#setting-up-your-cloud-service
-  wp_plugin_aws_role_np:
+  wp_plugin_aws_role:
+    parameters:
+      role_arn:
+        type: string
+      role_label:
+        type: string
+      iam_session_duration:
+        type: integer
+        default: 900
     steps:
       - run:
-          name: Assume WP Plugin Non-Production AWS IAM ROLE
+          name: Assume WP Plugin << parameters.role_label >> AWS IAM ROLE
           command: |
             #!/bin/bash -eo pipefail
-            if [[ -z "$AWS_ROLE_ARN_NP" ]]; then
-              echo "AWS_ROLE_ARN_NP is missing."
+            ROLE_ARN="<< parameters.role_arn >>"
+            if [[ -z "$ROLE_ARN" ]]; then
+              echo "Role ARN is missing for << parameters.role_label >> role."
               exit 1
             fi
 
@@ -188,39 +203,10 @@ commands:
             PARAM_ROLE_SESSION_NAME="$(printf 'cci-%s-%s' "${SHORT_WORKFLOW_ID}" "${CIRCLE_BUILD_NUM:-0}" | cut -c1-64)"
             read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
               aws sts assume-role-with-web-identity \
-                --role-arn "$AWS_ROLE_ARN_NP" \
+                --role-arn "$ROLE_ARN" \
                 --role-session-name "$PARAM_ROLE_SESSION_NAME" \
                 --web-identity-token "$CIRCLE_OIDC_TOKEN" \
-                --duration-seconds 900 \
-                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-                --output text
-            )
-            {
-              printf 'export AWS_ACCESS_KEY_ID=%q\n' "$AWS_ACCESS_KEY_ID"
-              printf 'export AWS_SECRET_ACCESS_KEY=%q\n' "$AWS_SECRET_ACCESS_KEY"
-              printf 'export AWS_SESSION_TOKEN=%q\n' "$AWS_SESSION_TOKEN"
-            } >>"$BASH_ENV"
-
-  wp_plugin_aws_role_pr:
-    steps:
-      - run:
-          name: Assume WP Plugin Production AWS IAM ROLE
-          command: |
-            #!/bin/bash -eo pipefail
-            if [[ -z "$AWS_ROLE_ARN_PR" ]]; then
-              echo "AWS_ROLE_ARN_PR is missing."
-              exit 1
-            fi
-
-            # Session name limit of 64 characters
-            SHORT_WORKFLOW_ID="${CIRCLE_WORKFLOW_ID%%-*}"
-            PARAM_ROLE_SESSION_NAME="$(printf 'cci-%s-%s' "${SHORT_WORKFLOW_ID}" "${CIRCLE_BUILD_NUM:-0}" | cut -c1-64)"
-            read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
-              aws sts assume-role-with-web-identity \
-                --role-arn "$AWS_ROLE_ARN_PR" \
-                --role-session-name "$PARAM_ROLE_SESSION_NAME" \
-                --web-identity-token "$CIRCLE_OIDC_TOKEN" \
-                --duration-seconds 900 \
+                --duration-seconds << parameters.iam_session_duration >> \
                 --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
                 --output text
             )
