@@ -183,7 +183,9 @@ commands:
               exit 1
             fi
 
-            PARAM_ROLE_SESSION_NAME="CircleCI-${CIRCLE_WORKFLOW_ID}-${CIRCLE_JOB}"
+            # Session name limit of 64 characters
+            SHORT_WORKFLOW_ID="${CIRCLE_WORKFLOW_ID%%-*}"
+            PARAM_ROLE_SESSION_NAME="$(printf 'cci-%s-%s' "${SHORT_WORKFLOW_ID}" "${CIRCLE_BUILD_NUM:-0}" | cut -c1-64)"
             read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
               aws sts assume-role-with-web-identity \
                 --role-arn "$AWS_ROLE_ARN_NP" \
@@ -210,7 +212,9 @@ commands:
               exit 1
             fi
 
-            PARAM_ROLE_SESSION_NAME="CircleCI-${CIRCLE_WORKFLOW_ID}-${CIRCLE_JOB}"
+            # Session name limit of 64 characters
+            SHORT_WORKFLOW_ID="${CIRCLE_WORKFLOW_ID%%-*}"
+            PARAM_ROLE_SESSION_NAME="$(printf 'cci-%s-%s' "${SHORT_WORKFLOW_ID}" "${CIRCLE_BUILD_NUM:-0}" | cut -c1-64)"
             read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
               aws sts assume-role-with-web-identity \
                 --role-arn "$AWS_ROLE_ARN_PR" \
