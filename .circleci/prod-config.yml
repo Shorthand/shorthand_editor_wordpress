@@ -51,7 +51,7 @@ commands:
 
   run-build:
     steps:
-      - checkout
+      - checkout:
           method: blobless
       - run:
           name: Add PNPM at desired version
@@ -120,7 +120,7 @@ commands:
 
   get-prs:
     steps:
-      - checkout
+      - checkout:
           method: blobless
       - install-gh-cli
       - install-jq
@@ -148,7 +148,7 @@ commands:
 
   tag-release:
     steps:
-      - checkout
+      - checkout:
           method: blobless
       - fetch-prune
       - install-jq
