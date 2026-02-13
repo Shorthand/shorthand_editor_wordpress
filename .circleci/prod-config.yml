@@ -184,18 +184,19 @@ commands:
             fi
 
             PARAM_ROLE_SESSION_NAME="CircleCI-${CIRCLE_WORKFLOW_ID}-${CIRCLE_JOB}"
-            read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
-              "$(aws sts assume-role-with-web-identity \
-                  --role-arn "$AWS_ROLE_ARN_NP" \
-                  --role-session-name ${PARAM_ROLE_SESSION_NAME} \
-                  --web-identity-token $CIRCLE_OIDC_TOKEN \
-                  --duration-seconds 3600 \
-                  --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-                  --output text)"
+            read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
+              aws sts assume-role-with-web-identity \
+                --role-arn "$AWS_ROLE_ARN_NP" \
+                --role-session-name "$PARAM_ROLE_SESSION_NAME" \
+                --web-identity-token "$CIRCLE_OIDC_TOKEN" \
+                --duration-seconds 900 \
+                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                --output text
+            )
             {
-              echo "export AWS_ACCESS_KEY_ID=\"${AWS_ACCESS_KEY_ID}\""
-              echo "export AWS_SESSION_TOKEN=\"${AWS_SESSION_TOKEN}\""
-              echo "export AWS_SECRET_ACCESS_KEY=\"${AWS_SECRET_ACCESS_KEY}\""
+              printf 'export AWS_ACCESS_KEY_ID=%q\n' "$AWS_ACCESS_KEY_ID"
+              printf 'export AWS_SECRET_ACCESS_KEY=%q\n' "$AWS_SECRET_ACCESS_KEY"
+              printf 'export AWS_SESSION_TOKEN=%q\n' "$AWS_SESSION_TOKEN"
             } >>"$BASH_ENV"
 
   wp_plugin_aws_role_pr:
@@ -210,18 +211,19 @@ commands:
             fi
 
             PARAM_ROLE_SESSION_NAME="CircleCI-${CIRCLE_WORKFLOW_ID}-${CIRCLE_JOB}"
-            read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
-              "$(aws sts assume-role-with-web-identity \
-                  --role-arn "$AWS_ROLE_ARN_PR" \
-                  --role-session-name ${PARAM_ROLE_SESSION_NAME} \
-                  --web-identity-token $CIRCLE_OIDC_TOKEN \
-                  --duration-seconds 3600 \
-                  --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-                  --output text)"
+            read -r AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(
+              aws sts assume-role-with-web-identity \
+                --role-arn "$AWS_ROLE_ARN_PR" \
+                --role-session-name "$PARAM_ROLE_SESSION_NAME" \
+                --web-identity-token "$CIRCLE_OIDC_TOKEN" \
+                --duration-seconds 900 \
+                --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                --output text
+            )
             {
-              echo "export AWS_ACCESS_KEY_ID=\"${AWS_ACCESS_KEY_ID}\""
-              echo "export AWS_SESSION_TOKEN=\"${AWS_SESSION_TOKEN}\""
-              echo "export AWS_SECRET_ACCESS_KEY=\"${AWS_SECRET_ACCESS_KEY}\""
+              printf 'export AWS_ACCESS_KEY_ID=%q\n' "$AWS_ACCESS_KEY_ID"
+              printf 'export AWS_SECRET_ACCESS_KEY=%q\n' "$AWS_SECRET_ACCESS_KEY"
+              printf 'export AWS_SESSION_TOKEN=%q\n' "$AWS_SESSION_TOKEN"
             } >>"$BASH_ENV"
 
   aws_cli:
