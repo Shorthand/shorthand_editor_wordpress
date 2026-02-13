@@ -75,7 +75,7 @@ commands:
               exit 1
             fi
             PLUGIN_FILENAME="$(basename "$PLUGIN_ZIP")"
-            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-plugins/wp/downloads}"
+            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-plugins/wp}"
 
             {
               echo "export PLUGIN_ZIP=${PLUGIN_ZIP}"
