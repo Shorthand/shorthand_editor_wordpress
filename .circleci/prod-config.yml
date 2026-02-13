@@ -97,7 +97,7 @@ commands:
                     echo "CIRCLE_BUILD_NUM is missing for master deploy."
                     exit 1
                   fi
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/downloads/${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/downloads/v${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
       - when:
           condition:
             equal: ["production", << pipeline.git.branch >>]
@@ -116,7 +116,7 @@ commands:
                     echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
                     exit 1
                   fi
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/downloads/${VERSION_PATH}/${PLUGIN_FILENAME}"
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/downloads/v${VERSION_PATH}/${PLUGIN_FILENAME}"
 
   get-prs:
     steps:
