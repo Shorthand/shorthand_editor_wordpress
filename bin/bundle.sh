@@ -23,20 +23,16 @@ cp "$plugindir/LICENSE" "$stagedir/license.txt"
 
 cp -R "$phpdir/src/" "$stagedir"
 rm -rf "$stagedir/public"
+rm -rf "$stagedir/third-party"
+rm -f "$stagedir/meta.json"
 
-esbuilddir="$distdir/build"
-mkdir -p "$esbuilddir/public"
+# esbuilddir="$stagedir/public"
 
 # Build the plugin's JavaScript/CSS assets, with output to the dist directory
 NODE_ENV="$NODE_ENV" \
 WITH_LICENSES=1 \
-OUTDIR=dist/build \
+OUTDIR=$stagedir \
 	pnpm -C "$plugindir" build
-
-# Copy scripts into staging directory
-mkdir -p "$stagedir/public" "$stagedir/third-party"
-cp -R "$esbuilddir/public/" "$stagedir/public"
-cp -R "$esbuilddir/third-party/" "$stagedir/third-party"
 
 # Create a file of overrides for non-production environments
 if [ "$NODE_ENV" != "production" ]; then

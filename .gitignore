@@ -1,5 +1,6 @@
 build/
-public
-php/vendor
-dist
-node_modules
+public/
+php/vendor/
+dist/
+data/
+node_modules/

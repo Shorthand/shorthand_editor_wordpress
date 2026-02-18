@@ -1,0 +1,52 @@
+FROM php:7.2-apache
+
+# Install dependencies and PHP extensions required by WordPress
+RUN sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list \
+    && sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list \
+    && sed -i '/stretch-updates/d' /etc/apt/sources.list \
+    && apt-get update && apt-get install -y \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libzip-dev \
+    unzip \
+    curl \
+    && docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ \
+    && docker-php-ext-install -j$(nproc) gd \
+    && docker-php-ext-install mysqli \
+    && docker-php-ext-install zip \
+    && docker-php-ext-install exif \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Enable Apache mod_rewrite for WordPress permalinks
+RUN a2enmod rewrite
+
+# Set recommended PHP settings for WordPress
+RUN { \
+    echo 'upload_max_filesize = 64M'; \
+    echo 'post_max_size = 64M'; \
+    echo 'max_execution_time = 300'; \
+    echo 'memory_limit = 256M'; \
+} > /usr/local/etc/php/conf.d/wordpress.ini
+
+# Download and install WordPress 6.0.*
+ENV WORDPRESS_VERSION=6.0.11
+ENV WORDPRESS_SHA1=64b211caa9524fc6434682aebad5e4c9f298c05a
+
+RUN curl -o wordpress.tar.gz -fSL "https://en-au.wordpress.org/wordpress-${WORDPRESS_VERSION}-en_AU.tar.gz" \
+    && echo "$WORDPRESS_SHA1 *wordpress.tar.gz" | sha1sum -c - \
+    && mkdir -p /var/www/html/wordpress \
+    && tar -xzf wordpress.tar.gz -C /var/www/html/wordpress --strip-components=1 \
+    && rm wordpress.tar.gz \
+    && chown -R www-data:www-data /var/www/html
+
+# Configure Apache DocumentRoot
+RUN sed -i 's!/var/www/html!/var/www/html/wordpress!g' /etc/apache2/sites-available/000-default.conf
+
+# Allow .htaccess overrides
+RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+
+EXPOSE 80
+
+CMD ["apache2-foreground"]
