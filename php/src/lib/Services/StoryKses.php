@@ -39,7 +39,7 @@ class StoryKses {
 		$loader->add_filter( 'wp_kses_allowed_html', $this, 'add_story_tags', 10, 2 );
 		$loader->add_filter( 'pre_kses', $this, 'allow_sh_tags', 10, 2 );
 		$loader->add_filter( 'pre_kses', $this, 'extract_scripts', 10, 2 );
-		$loader->add_filter('wp_allowed_hosts', $this, 'whitelist_shorthand_domains', 10, 1);
+		$loader->add_filter( 'wp_allowed_hosts', $this, 'whitelist_shorthand_domains', 10, 1 );
 		$loader->register();
 	}
 
@@ -49,7 +49,7 @@ class StoryKses {
 	 * @param array $allowed_hosts Array of allowed hostnames.
 	 * @return array Modified array of allowed hostnames.
 	 */
-	public function whitelist_shorthand_domains(array $allowed_hosts): array {
+	public function whitelist_shorthand_domains( array $allowed_hosts ): array {
 		$allowed_hosts[] = 'media.shorthand.com';
 		$allowed_hosts[] = 'iframely.shorthand.com';
 		$allowed_hosts[] = 'analytics.shorthand.com';
@@ -339,7 +339,7 @@ class StoryKses {
 		// Add extra attributes to all existing allowed tags.
 		foreach ( $tags as $tag => $attrs ) {
 			if ( is_array( $attrs ) ) {
-				$tags[ $tag ] = array_merge( $attrs, $extra_attrs );
+				$tags[ $tag ] = array_merge( $attrs, $extra_attrs, $permissive_attrs );
 			}
 		}
 
@@ -413,6 +413,70 @@ class StoryKses {
 		}
 
 		return $content;
+	}
+
+	/**
+	 * Extracts scripts and styles from content, enqueues them via WordPress APIs,
+	 * and echoes the content with those tags removed (no other HTML filtering).
+	 *
+	 * Unlike wp_kses(), this does not filter HTML tags, attributes, or CSS properties.
+	 * Use only with trusted content sources.
+	 *
+	 * @param string   $content       The HTML content.
+	 * @param int|null $story_version Story version for cache busting.
+	 */
+	public static function echo_extract_and_enqueue_assets( string $content, ?int $story_version = null ): void {
+		// Extract and remove <script> tags.
+		if ( preg_match_all( '/<script\b[^>]*>.*?<\/script>/is', $content, $script_matches ) ) {
+			self::$scripts = array_merge( self::$scripts, $script_matches[0] );
+			$content       = preg_replace( '/<script\b[^>]*>.*?<\/script>/is', '', $content );
+		}
+
+		// Extract and remove <style> tags, enqueue via WordPress.
+		$style_index = 0;
+		if ( preg_match_all( '/<style\b[^>]*>(.*?)<\/style>/is', $content, $style_matches, PREG_SET_ORDER ) ) {
+			foreach ( $style_matches as $match ) {
+				$handle = 'theshed-story-body-style-' . $style_index;
+				// Inline styles do not have a version.
+				wp_register_style( $handle, false, array(), null ); /* phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion */
+				wp_enqueue_style( $handle );
+				wp_add_inline_style( $handle, $match[1] );
+				++$style_index;
+			}
+			$content = preg_replace( '/<style\b[^>]*>.*?<\/style>/is', '', $content );
+		}
+
+		// Enqueue extracted scripts.
+		self::enqueue_story_scripts( $story_version );
+
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted Shorthand content.
+		echo $content;
+	}
+
+	/**
+	 * Filters content through wp_kses with story-specific allowances, extracts scripts,
+	 * enqueues them via WordPress APIs, and echoes the filtered content.
+	 *
+	 * This applies wp_kses() filtering with extended tag/attribute/CSS allowances
+	 * configured via StoryKses::enable(). Use echo_extract_and_enqueue_assets() instead
+	 * if you need to preserve all HTML without any filtering.
+	 *
+	 * @param string   $content       The HTML content.
+	 * @param int|null $story_version Story version for cache busting.
+	 */
+	public static function echo_extract_and_enqueue_assets_kses( string $content, ?int $story_version = null ): void {
+		// Pass 'post' context string rather than pre-resolved array, so dynamic
+		// sh-* tag filters added by pre_kses are included when KSES resolves tags.
+		$content = wp_kses(
+			$content,
+			'post',
+			self::get_allowed_protocols()
+		);
+
+		self::enqueue_story_scripts( $story_version );
+
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Filtered by wp_kses above.
+		echo $content;
 	}
 
 	/**

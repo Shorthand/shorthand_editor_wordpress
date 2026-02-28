@@ -38,14 +38,7 @@ if ( post_password_required( $post->ID ) ) {
 				: null;
 
 			\Shorthand\Services\StoryKses::enable();
-			// Pass 'post' context string rather than pre-resolved array, so dynamic
-			// sh-* tag filters added by pre_kses are included when KSES resolves tags.
-			echo wp_kses(
-				$theshed_story_meta['story_body'][0],
-				'post',
-				\Shorthand\Services\StoryKses::get_allowed_protocols()
-			);
-			\Shorthand\Services\StoryKses::enqueue_story_scripts( $theshed_story_version );
+			\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $theshed_story_meta['story_body'][0], $theshed_story_version );
 			\Shorthand\Services\StoryKses::disable();
 		}
 

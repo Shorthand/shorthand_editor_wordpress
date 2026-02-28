@@ -84,19 +84,15 @@ class AdminController {
 	}
 
 	private function setup_hooks( Loader $loader ): void {
-		// Admin menu requires lower priority so that the menu is created before the post type adds items
+		/* Initialise additional menu items. A lower priority is required so that the menu is created before items are added. */
 		$loader->add_action( 'admin_menu', $this, 'add_admin_menu', 6 );
 
-		// Admin initialization
+		/* Initialise the editor, preview and Shorthand redirection. */
 		$loader->add_action( 'admin_init', $this, 'admin_init' );
 	}
 
 	public function add_admin_menu(): void {
 		GeneralSettingsPage::register( $this->options, $this->version, 'shorthand-settings' );
-
-		if ( $this->version->is_dev_environment() ) {
-			DevSettingsPage::register( $this->options, $this->version, 'shorthand-settings-dev' );
-		}
 	}
 
 	public function admin_init(): void {
