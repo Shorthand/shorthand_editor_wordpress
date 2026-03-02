@@ -114,7 +114,7 @@ commands:
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/${VERSIONED_PLUGIN_ZIP}"
                   # Copy update.json and any assets
                   ## aws s3 cp "./deploy/update.json" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/update.json"
-                  aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/assets/"
+                  ## aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/assets/"
       - when:
           condition:
             equal: ["production", << pipeline.git.branch >>]
@@ -142,7 +142,7 @@ commands:
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/${VERSIONED_PLUGIN_ZIP}"
                   # Copy update.json and any assets
                   ## aws s3 cp "./deploy/update.json" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/update.json"
-                  aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/assets/"
+                  ## aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/assets/"
 
   get-prs:
     steps:
