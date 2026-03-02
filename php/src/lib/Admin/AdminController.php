@@ -89,6 +89,10 @@ class AdminController {
 
 		/* Initialise the editor, preview and Shorthand redirection. */
 		$loader->add_action( 'admin_init', $this, 'admin_init' );
+
+		/* Show a notice on the dashboard if the plugin is not connected to Shorthand. */
+		$loader->add_action( 'admin_notices', $this, 'render_connect_notice' );
+		$loader->add_action( 'wp_ajax_shorthand_dismiss_connect_notice', $this, 'dismiss_connect_notice' );
 	}
 
 	public function add_admin_menu(): void {
@@ -181,6 +185,48 @@ class AdminController {
 			array( 'page' => 'shorthand-settings' ),
 			admin_url( 'options-general.php' )
 		);
+	}
+
+	public function render_connect_notice(): void {
+		$screen = get_current_screen();
+		if ( ! $screen || $screen->id !== 'dashboard' ) {
+			return;
+		}
+
+		if ( $this->options->is_verified() ) {
+			return;
+		}
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		if ( get_user_meta( get_current_user_id(), 'shorthand_connect_notice_dismissed', true ) ) {
+			return;
+		}
+
+		$connect_url = admin_url( 'admin-post.php?action=shorthand_connect_start' );
+		?>
+		<div class="notice notice-warning is-dismissible" id="shorthand-connect-notice">
+			<p>
+				<strong><?php esc_html_e( 'Shorthand', 'the-shorthand-editor' ); ?></strong> &mdash;
+				<?php esc_html_e( 'Connect your Shorthand workspace to start creating and publishing stories.', 'the-shorthand-editor' ); ?>
+				<a href="<?php echo esc_url( $connect_url ); ?>">
+					<?php esc_html_e( 'Connect to Shorthand', 'the-shorthand-editor' ); ?> &rarr;
+				</a>
+			</p>
+		</div>
+		<script>
+		jQuery( document ).on( 'click', '#shorthand-connect-notice .notice-dismiss', function() {
+			jQuery.post( ajaxurl, { action: 'shorthand_dismiss_connect_notice' } );
+		} );
+		</script>
+		<?php
+	}
+
+	public function dismiss_connect_notice(): void {
+		update_user_meta( get_current_user_id(), 'shorthand_connect_notice_dismissed', true );
+		wp_die();
 	}
 
 	public function render_story_meta_box( WP_Post $post ): void {

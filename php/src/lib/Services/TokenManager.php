@@ -72,6 +72,9 @@ class TokenManager {
 		if ( $token_info && ! is_wp_error( $token_info ) ) {
 			// Store the token info
 			update_option( 'shorthand_v2_token_info', $token_info );
+
+			// Clear any dismissed connect notices so they can reappear if the token is later removed.
+			delete_metadata( 'user', 0, 'shorthand_connect_notice_dismissed', '', true );
 		}
 	}
 }
