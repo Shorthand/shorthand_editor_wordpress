@@ -308,13 +308,16 @@ jobs:
               INVALIDATION_PATH="/${DOWNLOADS_PREFIX}/v${CIRCLE_BUILD_NUM}/*"
             fi
 
-            INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
               --paths "$INVALIDATION_PATH" \
-              --query 'Invalidation.Id' \
-              --output text)
+              --output json)
 
-            echo "Created CloudFront invalidation: ${INVALIDATION_ID}"
+            echo "CloudFront invalidation output:"
+            echo "$INVALIDATION_OUTPUT"
+
+            INVALIDATION_ID=$(printf '%s\n' "$INVALIDATION_OUTPUT" | awk -F'"' '/"Id":/ {print $4; exit}')
+            echo "Created CloudFront invalidation: ${INVALIDATION_ID:-unknown}"
 
 workflows:
   wp-plugin-workflow:
