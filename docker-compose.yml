@@ -64,6 +64,7 @@ services:
 
         define('THESHED_NO_SSL_VERIFY', true);
         define('THESHED_FIX_CRON_URL', true);
+        define('THESHED_BLOCK_UPGRADE', true);
         define('THESHED_API_URL', 'https://host.docker.internal:9443/api');
         define('THESHED_APP_URL', 'https://localhost:9443');
 
@@ -109,6 +110,7 @@ services:
 
         define('THESHED_NO_SSL_VERIFY', true);
         define('THESHED_FIX_CRON_URL', true);
+        define('THESHED_BLOCK_UPGRADE', true);
         define('THESHED_API_URL', 'https://host.docker.internal:9443/api');
         define('THESHED_APP_URL', 'https://localhost:9443');
 

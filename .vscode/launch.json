@@ -5,23 +5,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "WordPress 6.0 (Xdebug)",
-      "type": "php",
-      "request": "launch",
-      "port": 9004,
-      "pathMappings": {
-        "/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor": "${workspaceFolder}/php/src",
-        "/var/www/html": "${workspaceFolder}/data/wordpress60"
-      }
-    },
-    {
       "name": "WordPress 6.8 (Xdebug)",
       "type": "php",
       "request": "launch",
       "port": 9003,
       "pathMappings": {
         "/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor": "${workspaceFolder}/php/src",
-        "/var/www/html": "${workspaceFolder}/data/wordpress68"
+        "/var/www/html/wordpress": "${workspaceFolder}/data/wordpress"
       }
     }
   ]

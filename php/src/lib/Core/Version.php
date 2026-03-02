@@ -19,7 +19,7 @@ class Version {
 	/**
 	 * @var string
 	 */
-	const PLUGIN_URI = 'https://shorthand.com/shorthandforwordpress';
+	const PLUGIN_URI = 'https://shorthand.com/shorthand-for-wordpress';
 	/**
 	 * @var string
 	 */
@@ -43,6 +43,10 @@ class Version {
 
 	public function get_plugin_base_name(): string {
 		return plugin_basename( THESHED_PLUGIN_FILE );
+	}
+
+	public function get_plugin_slug(): string {
+		return dirname( plugin_basename( THESHED_PLUGIN_FILE ) );
 	}
 
 	public function get_plugin_path( string $file = '' ): string {
