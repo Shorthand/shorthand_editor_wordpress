@@ -1,5 +1,9 @@
 ---
 version: 2.1
+parameters:
+  downloads_prefix:
+    type: string
+    default: "plugins/wp/the-shorthand-editor"
 
 release_only: &release_only
   filters:
@@ -75,7 +79,7 @@ commands:
               exit 1
             fi
             PLUGIN_FILENAME="$(basename "$PLUGIN_ZIP")"
-            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-plugins/wp}"
+            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-<< pipeline.parameters.downloads_prefix >>}"
 
             {
               echo "export PLUGIN_ZIP=${PLUGIN_ZIP}"
@@ -102,6 +106,8 @@ commands:
                     exit 1
                   fi
                   echo "export CF_INVALIDATION_PATH=${CIRCLE_BUILD_NUM}" >> "$BASH_ENV"
+                  # Upload to both the versioned and non-versioned paths.
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/${PLUGIN_FILENAME}"
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/v${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
       - when:
           condition:
@@ -124,6 +130,8 @@ commands:
                     exit 1
                   fi
                   echo "export CF_INVALIDATION_PATH=${VERSION_PATH}" >> "$BASH_ENV"
+                  # Upload to both the versioned and non-versioned paths.
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/v${VERSION_PATH}/${PLUGIN_FILENAME}"
 
   get-prs:
@@ -306,7 +314,7 @@ jobs:
               exit 1
             fi
 
-            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-plugins/wp}"
+            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-<< pipeline.parameters.downloads_prefix >>}"
             if [[ ! -f /tmp/cci-shared/build-metadata.env ]]; then
               echo "Missing /tmp/cci-shared/build-metadata.env from bundle/upload job."
               exit 1
@@ -317,11 +325,14 @@ jobs:
               echo "CF_INVALIDATION_PATH is missing from workspace metadata."
               exit 1
             fi
-            INVALIDATION_PATH="/${DOWNLOADS_PREFIX}/v${CF_INVALIDATION_PATH}/*"
+            VERSIONED_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/v${CF_INVALIDATION_PATH}/*"
+            METADATA_FILENAME="${DOWNLOADS_PREFIX}/update.json"
+            LATEST_ARTIFACT_FILENAME="${DOWNLOADS_PREFIX##*/}.zip"
+            LATEST_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/${LATEST_ARTIFACT_FILENAME}"
 
             INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "$INVALIDATION_PATH" \
+              --paths "$LATEST_ARTIFACT_PATH" "$VERSIONED_ARTIFACT_PATH" \
               --output json)
 
             echo "CloudFront invalidation output:"
