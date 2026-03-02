@@ -79,11 +79,13 @@ commands:
               exit 1
             fi
             PLUGIN_FILENAME="$(basename "$PLUGIN_ZIP")"
+            PLUGIN_SLUG="${PLUGIN_ZIP%.zip}"
             DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-<< pipeline.parameters.downloads_prefix >>}"
 
             {
               echo "export PLUGIN_ZIP=${PLUGIN_ZIP}"
               echo "export PLUGIN_FILENAME=${PLUGIN_FILENAME}"
+              echo "export PLUGIN_SLUG=${PLUGIN_SLUG}"
               echo "export DOWNLOADS_PREFIX=${DOWNLOADS_PREFIX}"
             } >> "$BASH_ENV"
       - when:
@@ -105,10 +107,14 @@ commands:
                     echo "CIRCLE_BUILD_NUM is missing for master deploy."
                     exit 1
                   fi
-                  echo "export CF_INVALIDATION_PATH=${CIRCLE_BUILD_NUM}" >> "$BASH_ENV"
+                  VERSIONED_PLUGIN_ZIP="versions/${PLUGIN_SLUG}-v${CIRCLE_BUILD_NUM}.zip"
+                  echo "export CF_INVALIDATION_PATH=${VERSIONED_PLUGIN_ZIP}" >> "$BASH_ENV"
                   # Upload to both the versioned and non-versioned paths.
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/${PLUGIN_FILENAME}"
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/v${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/${VERSIONED_PLUGIN_ZIP}"
+                  # Copy update.json and any assets
+                  aws s3 cp "./deploy/update.json" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/update.json"
+                  aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/assets/"
       - when:
           condition:
             equal: ["production", << pipeline.git.branch >>]
@@ -129,10 +135,14 @@ commands:
                     echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
                     exit 1
                   fi
-                  echo "export CF_INVALIDATION_PATH=${VERSION_PATH}" >> "$BASH_ENV"
+                  VERSIONED_PLUGIN_ZIP="versions/${PLUGIN_SLUG}-v${VERSION_PATH}.zip"
+                  echo "export CF_INVALIDATION_PATH=${VERSIONED_PLUGIN_ZIP}" >> "$BASH_ENV"
                   # Upload to both the versioned and non-versioned paths.
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/v${VERSION_PATH}/${PLUGIN_FILENAME}"
+                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/${VERSIONED_PLUGIN_ZIP}"
+                  # Copy update.json and any assets
+                  aws s3 cp "./deploy/update.json" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/update.json"
+                  aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/assets/"
 
   get-prs:
     steps:
@@ -325,14 +335,15 @@ jobs:
               echo "CF_INVALIDATION_PATH is missing from workspace metadata."
               exit 1
             fi
-            VERSIONED_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/v${CF_INVALIDATION_PATH}/*"
+            VERSIONED_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/${CF_INVALIDATION_PATH}/*"
             METADATA_FILENAME="/${DOWNLOADS_PREFIX}/update.json"
+            ASSETS_PATH="/${DOWNLOADS_PREFIX}/assets"
             LATEST_ARTIFACT_FILENAME="${DOWNLOADS_PREFIX##*/}.zip"
             LATEST_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/${LATEST_ARTIFACT_FILENAME}"
 
             INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "$METADATA_FILENAME" "$LATEST_ARTIFACT_PATH" "$VERSIONED_ARTIFACT_PATH" \
+              --paths "$METADATA_FILENAME" "$ASSETS_PATH" "$LATEST_ARTIFACT_PATH" "$VERSIONED_ARTIFACT_PATH" \
               --output json)
 
             echo "CloudFront invalidation output:"
