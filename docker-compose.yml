@@ -64,8 +64,8 @@ services:
 
         define('THESHED_NO_SSL_VERIFY', true);
         define('THESHED_FIX_CRON_URL', true);
-        define('THESHED_DEFAULT_API_URL', 'https://host.docker.internal:9443/api');
-        define('THESHED_DEFAULT_APP_URL', 'https://localhost:9443');
+        define('THESHED_API_URL', 'https://host.docker.internal:9443/api');
+        define('THESHED_APP_URL', 'https://localhost:9443');
 
   wordpress6_0_11_php7_2:
     profiles: [wp60_php72]
@@ -109,8 +109,8 @@ services:
 
         define('THESHED_NO_SSL_VERIFY', true);
         define('THESHED_FIX_CRON_URL', true);
-        define('THESHED_DEFAULT_API_URL', 'https://host.docker.internal:9443/api');
-        define('THESHED_DEFAULT_APP_URL', 'https://localhost:9443');
+        define('THESHED_API_URL', 'https://host.docker.internal:9443/api');
+        define('THESHED_APP_URL', 'https://localhost:9443');
 
 configs:
   mysql_config:

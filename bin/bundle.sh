@@ -3,8 +3,10 @@
 set -e
 
 : ${NODE_ENV:=production}
-: ${API_URL:=https://api.theshorthand.com}
-: ${APP_URL:=https://app.theshorthand.com}
+: ${API_URL:=https://api.shorthand.com}
+: ${APP_URL:=https://app.shorthand.com}
+: ${UPDATE_URL:=https://shorthand.com/plugins/wp/the-shorthand-editor/update.json}
+
 
 pluginname=the-shorthand-editor
 
@@ -46,8 +48,9 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('THESHED_DEFAULT_API_URL', '$API_URL');
-define('THESHED_DEFAULT_APP_URL', '$APP_URL');
+define('THESHED_UPDATE_URL', '$UPDATE_URL');
+define('THESHED_API_URL', '$API_URL');
+define('THESHED_APP_URL', '$APP_URL');
 
 EOF
 fi
@@ -60,6 +63,7 @@ echo NODE_ENV="$NODE_ENV"
 if [ "$NODE_ENV" != "production" ]; then
 	echo APP_URL="$APP_URL"
 	echo API_URL="$API_URL"
+	echo UPDATE_URL="$UPDATE_URL"
 fi
 
 echo "Built WordPress plugin package at $distdir/$pluginname.zip"

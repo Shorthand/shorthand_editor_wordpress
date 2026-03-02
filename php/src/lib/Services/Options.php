@@ -292,12 +292,16 @@ class Options {
 		return empty( $token ) ? '' : $token;
 	}
 
+	public function get_update_url() {
+		return defined( 'THESHED_UPDATE_URL' ) ? THESHED_UPDATE_URL : 'https://shorthand.com/plugins/wp/the-shorthand-editor/update.json';
+	}
+
 	public function get_app_url() {
-		return defined( 'THESHED_DEFAULT_APP_URL' ) ? THESHED_DEFAULT_APP_URL : 'https://app.shorthand.com';
+		return defined( 'THESHED_APP_URL' ) ? THESHED_APP_URL : 'https://app.shorthand.com';
 	}
 
 	public function get_api_url() {
-		return defined( 'THESHED_DEFAULT_API_URL' ) ? THESHED_DEFAULT_API_URL : 'https://api.shorthand.com';
+		return defined( 'THESHED_API_URL' ) ? THESHED_API_URL : 'https://api.shorthand.com';
 	}
 
 
