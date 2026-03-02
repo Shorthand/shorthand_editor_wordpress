@@ -226,7 +226,7 @@ commands:
 jobs:
   wp-plugin-build:
     docker:
-      - image: cimg/node:20.12
+      - image: &node_docker_image cimg/node:20.12
         auth:
           username: $DOCKERHUB_USER
           password: $DOCKERHUB_PASSWORD
@@ -236,7 +236,7 @@ jobs:
 
   wp-plugin-bundle-and-upload:
     docker:
-      - image: cimg/node:20.12
+      - image: *node_docker_image
         auth:
           username: $DOCKERHUB_USER
           password: $DOCKERHUB_PASSWORD
@@ -247,17 +247,74 @@ jobs:
 
   wp-plugin-pre-release:
     docker:
-      - image: cimg/node:20.12
+      - image: *node_docker_image
     resource_class: small
     steps:
       - get-prs
 
   wp-plugin-release:
     docker:
-      - image: cimg/node:20.12
+      - image: *node_docker_image
     resource_class: small
     steps:
       - tag-release
+
+  wp-plugin-invalidate-cf:
+    parameters:
+      role_arn:
+        type: string
+      role_label:
+        type: string
+      distribution_id:
+        type: string
+      use_tag_path:
+        type: boolean
+        default: false
+    docker:
+      - image: *node_docker_image
+        auth:
+          username: $DOCKERHUB_USER
+          password: $DOCKERHUB_PASSWORD
+    resource_class: small
+    steps:
+      - checkout:
+          method: blobless
+      - aws_cli
+      - wp_plugin_aws_role:
+          role_arn: "<< parameters.role_arn >>"
+          role_label: "<< parameters.role_label >>"
+      - run:
+          name: Invalidate CloudFront cache
+          command: |
+            DIST_ID="<< parameters.distribution_id >>"
+            if [[ -z "$DIST_ID" ]]; then
+              echo "Missing CloudFront distribution id for << parameters.role_label >>."
+              exit 1
+            fi
+
+            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-plugins/wp}"
+            if [[ "<< parameters.use_tag_path >>" == "true" ]]; then
+              VERSION_PATH="$(git tag --points-at HEAD | head -n 1)"
+              if [[ -z "$VERSION_PATH" ]]; then
+                echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before production invalidation."
+                exit 1
+              fi
+              INVALIDATION_PATH="/${DOWNLOADS_PREFIX}/v${VERSION_PATH}/*"
+            else
+              if [[ -z "$CIRCLE_BUILD_NUM" ]]; then
+                echo "CIRCLE_BUILD_NUM is missing for non-production invalidation."
+                exit 1
+              fi
+              INVALIDATION_PATH="/${DOWNLOADS_PREFIX}/v${CIRCLE_BUILD_NUM}/*"
+            fi
+
+            INVALIDATION_ID=$(aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "$INVALIDATION_PATH" \
+              --query 'Invalidation.Id' \
+              --output text)
+
+            echo "Created CloudFront invalidation: ${INVALIDATION_ID}"
 
 workflows:
   wp-plugin-workflow:
@@ -278,6 +335,20 @@ workflows:
             branches:
               only:
                 - build-pipeline
+      - wp-plugin-invalidate-cf:
+          name: invalidate-cf-non-production
+          role_arn: "$AWS_ROLE_ARN_NP"
+          role_label: "Non-Production"
+          distribution_id: "$CLOUDFRONT_DISTRIBUTION_ID_NP"
+          use_tag_path: false
+          context:
+            - wp-plugin-upload-context
+          requires:
+            - wp-plugin-bundle-and-upload
+          filters:
+            branches:
+              only:
+                - build-pipeline
 
   production-release:
     when:
@@ -290,7 +361,7 @@ workflows:
           <<: *release_only
           name: bundle-and-upload
           context:
-            - wp-plugin-bundle-context
+            - wp-plugin-upload-context
 
       - wp-plugin-release:
           <<: *release_only
@@ -298,3 +369,14 @@ workflows:
             - wp-plugin-upload-context
           requires:
             - bundle-and-upload
+
+      - wp-plugin-invalidate-cf:
+          <<: *release_only
+          role_arn: "$AWS_ROLE_ARN_PR"
+          role_label: "Production"
+          distribution_id: "$CLOUDFRONT_DISTRIBUTION_ID_PR"
+          use_tag_path: true
+          context:
+            - wp-plugin-upload-context
+          requires:
+            - wp-plugin-release
