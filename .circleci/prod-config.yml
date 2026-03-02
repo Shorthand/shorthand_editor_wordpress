@@ -326,7 +326,7 @@ jobs:
               exit 1
             fi
             VERSIONED_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/v${CF_INVALIDATION_PATH}/*"
-            METADATA_FILENAME="${DOWNLOADS_PREFIX}/update.json"
+            METADATA_FILENAME="/${DOWNLOADS_PREFIX}/update.json"
             LATEST_ARTIFACT_FILENAME="${DOWNLOADS_PREFIX##*/}.zip"
             LATEST_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/${LATEST_ARTIFACT_FILENAME}"
 
