@@ -332,7 +332,7 @@ jobs:
 
             INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "$LATEST_ARTIFACT_PATH" "$VERSIONED_ARTIFACT_PATH" \
+              --paths "METADATA_FILENAME" "$LATEST_ARTIFACT_PATH" "$VERSIONED_ARTIFACT_PATH" \
               --output json)
 
             echo "CloudFront invalidation output:"
