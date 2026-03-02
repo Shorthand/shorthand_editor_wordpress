@@ -101,6 +101,7 @@ commands:
                     echo "CIRCLE_BUILD_NUM is missing for master deploy."
                     exit 1
                   fi
+                  echo "export CF_INVALIDATION_PATH=${CIRCLE_BUILD_NUM}" >> "$BASH_ENV"
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/v${CIRCLE_BUILD_NUM}/${PLUGIN_FILENAME}"
       - when:
           condition:
@@ -122,6 +123,7 @@ commands:
                     echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
                     exit 1
                   fi
+                  echo "export CF_INVALIDATION_PATH=${VERSION_PATH}" >> "$BASH_ENV"
                   aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/v${VERSION_PATH}/${PLUGIN_FILENAME}"
 
   get-prs:
@@ -244,6 +246,19 @@ jobs:
     steps:
       - run-build
       - run-plugin-bundle-and-upload
+      - run:
+          name: Persist bundle/upload build metadata
+          command: |
+            mkdir -p /tmp/cci-shared
+            if [[ -z "${CF_INVALIDATION_PATH:-}" ]]; then
+              echo "CF_INVALIDATION_PATH is missing after upload step."
+              exit 1
+            fi
+            printf 'export CF_INVALIDATION_PATH=%q\n' "$CF_INVALIDATION_PATH" > /tmp/cci-shared/build-metadata.env
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - cci-shared/build-metadata.env
 
   wp-plugin-pre-release:
     docker:
@@ -267,9 +282,6 @@ jobs:
         type: string
       distribution_id:
         type: string
-      use_tag_path:
-        type: boolean
-        default: false
     docker:
       - image: *node_docker_image
         auth:
@@ -279,6 +291,8 @@ jobs:
     steps:
       - checkout:
           method: blobless
+      - attach_workspace:
+          at: /tmp
       - aws_cli
       - wp_plugin_aws_role:
           role_arn: "<< parameters.role_arn >>"
@@ -293,20 +307,17 @@ jobs:
             fi
 
             DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-plugins/wp}"
-            if [[ "<< parameters.use_tag_path >>" == "true" ]]; then
-              VERSION_PATH="$(git tag --points-at HEAD | head -n 1)"
-              if [[ -z "$VERSION_PATH" ]]; then
-                echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before production invalidation."
-                exit 1
-              fi
-              INVALIDATION_PATH="/${DOWNLOADS_PREFIX}/v${VERSION_PATH}/*"
-            else
-              if [[ -z "$CIRCLE_BUILD_NUM" ]]; then
-                echo "CIRCLE_BUILD_NUM is missing for non-production invalidation."
-                exit 1
-              fi
-              INVALIDATION_PATH="/${DOWNLOADS_PREFIX}/v${CIRCLE_BUILD_NUM}/*"
+            if [[ ! -f /tmp/cci-shared/build-metadata.env ]]; then
+              echo "Missing /tmp/cci-shared/build-metadata.env from bundle/upload job."
+              exit 1
             fi
+            # shellcheck disable=SC1091
+            source /tmp/cci-shared/build-metadata.env
+            if [[ -z "$CF_INVALIDATION_PATH" ]]; then
+              echo "CF_INVALIDATION_PATH is missing from workspace metadata."
+              exit 1
+            fi
+            INVALIDATION_PATH="/${DOWNLOADS_PREFIX}/v${CF_INVALIDATION_PATH}/*"
 
             INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
@@ -343,7 +354,6 @@ workflows:
           role_arn: "$AWS_ROLE_ARN_NP"
           role_label: "Non-Production"
           distribution_id: "$CLOUDFRONT_DISTRIBUTION_ID_NP"
-          use_tag_path: false
           context:
             - wp-plugin-upload-context
           requires:
@@ -378,7 +388,6 @@ workflows:
           role_arn: "$AWS_ROLE_ARN_PR"
           role_label: "Production"
           distribution_id: "$CLOUDFRONT_DISTRIBUTION_ID_PR"
-          use_tag_path: true
           context:
             - wp-plugin-upload-context
           requires:
