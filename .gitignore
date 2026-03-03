@@ -2,3 +2,4 @@ build/
 public
 php/vendor
 dist
+node_modules
