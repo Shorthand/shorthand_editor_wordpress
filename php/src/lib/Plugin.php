@@ -79,6 +79,7 @@ class Plugin {
 		$loader = new Loader();
 		$loader->add_filter( 'pre_set_site_transient_update_plugins', $this, 'check_for_updates' );
 		$loader->add_filter( 'plugins_api', $this, 'plugin_info', 10, 3 );
+		$loader->add_filter( 'delete_site_transient_update_plugins', $this, 'clear_update_cache' );
 		if ( defined( 'THESHED_BLOCK_UPGRADE' ) && THESHED_BLOCK_UPGRADE ) {
 			$loader->add_filter( 'upgrader_pre_install', $this, 'block_upgrade', 10, 2 );
 		}
@@ -174,9 +175,13 @@ class Plugin {
 
 	public function block_upgrade( $response, $hook_extra ) {
 		if ( isset( $hook_extra['plugin'] ) && $hook_extra['plugin'] === $this->version->get_plugin_base_name() ) {
-			return new \WP_Error( 'upgrade_blocked', __( 'Plugin upgrades are disabled in this environments.', 'the-shorthand-editor' ) );
+			return new \WP_Error( 'upgrade_blocked', __( 'Plugin upgrades are disabled in this environment.', 'the-shorthand-editor' ) );
 		}
 		return $response;
+	}
+
+	public function clear_update_cache() {
+		delete_transient( 'theshed_update_info' );
 	}
 
 	private function get_remote_update_info() {
@@ -188,14 +193,11 @@ class Plugin {
 			return $cached === 'error' ? false : $cached;
 		}
 
-		error_log( '## UPDATE CHECK ## ' . $update_url );
 		$response = wp_remote_get( $update_url, array( 'timeout' => 10 ) );
 		if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
-			error_log( ' ## UPDATE CHECK FAILED ## ' . ( is_wp_error( $response ) ? $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code( $response ) ) );
 			set_transient( $transient_key, 'error', HOUR_IN_SECONDS );
 			return false;
 		}
-
 		$body = wp_remote_retrieve_body( $response );
 		$data = json_decode( $body );
 		if ( ! is_object( $data ) || ! isset( $data->version ) ) {

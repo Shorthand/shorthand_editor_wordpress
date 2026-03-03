@@ -82,7 +82,7 @@ services:
       - mysql
     volumes:
       - ./data/wordpress:/var/www/html/wordpress
-      - ./php/src/the-shorthand-editor:/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor
+      - ./php/src:/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor
       # This version of PHP makes it difficult to install Xdebug
       # - ./docker/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini:ro
       - ./public:/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor/public

@@ -31,7 +31,7 @@ customers.
 ## Distribution
 
 The plugin itself may be found on the
-[Shorthand website](https://www.shorthand.com/shorthandforwordpress/)
+[Shorthand website](https://shorthand.com/products/shorthand-for-wordpress)
 as a ZIP download, for manual installation.
 
 ## Installation and setup
@@ -44,7 +44,7 @@ Shorthand.
 3. Ensure the plugin has been activated (and do so if not)
 4. Click the `Connect to Shorthand` link
 5. When redirected to Shorthand, log in, if not already
-6. Select or create a Shorthand workspace that will hold a the WordPress team
+6. Select or create a Shorthand workspace that will hold the WordPress team
 7. Select an existing WordPress team, or create a new one
 8. Navigate back to WordPress (using the previous credentials)
 
@@ -64,8 +64,9 @@ The final items refer to the usual taxonomies afforded WordPress items.
 ## Stories in WordPress
 
 Choosing `Add Story` redirects the user to a session in Shorthand without
-needing to log in. They will be presented with a template selection screen.
-(None off he asynchronous options are available in this yet.)
+needing to log in. They will be presented with the template selection
+screen, where they may elect to use the AI Companion to create a new
+story, or to create one on their own.
 
 When editing a Story in WordPress, the editor will contain a large preview panel,
 similar to the Preview functionality in Shorthand. Above the preview will be

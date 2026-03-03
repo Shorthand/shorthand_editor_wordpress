@@ -4,3 +4,4 @@ php/vendor/
 dist/
 data/
 node_modules/
+.DS_Store

@@ -2,12 +2,12 @@
 Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
-Tested up to: 6.9
+Tested up to: 6.9.1
 Stable tag: 1.0.0
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
-Plugin URI: https://shorthand.com/shorthandforwordpress
+Plugin URI: https://shorthand.com/products/shorthand-for-wordpress
 
 The Shorthand Editor transforms how teams create stories, uniting creative and technical talent to deliver beautiful, high-impact content.
 
@@ -253,7 +253,7 @@ By bringing these capabilities directly into WordPress, Shorthand gives your tea
 
 The Shorthand Editor is distributed as a ZIP file. The latest version may
 be downloaded from the
-[Shorthand website](https://www.shorthand.com/shorthandforwordpress/).
+[Shorthand website](https://shorthand.com/products/shorthand-for-wordpress).
 
 = Install the Plugin =
 

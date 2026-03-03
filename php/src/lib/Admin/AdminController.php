@@ -218,13 +218,19 @@ class AdminController {
 		</div>
 		<script>
 		jQuery( document ).on( 'click', '#shorthand-connect-notice .notice-dismiss', function() {
-			jQuery.post( ajaxurl, { action: 'shorthand_dismiss_connect_notice' } );
+			jQuery.post( ajaxurl, {
+				action: 'shorthand_dismiss_connect_notice',
+				nonce: '<?php echo esc_js( wp_create_nonce( 'shorthand_dismiss_connect_notice' ) ); ?>'
+			} );
 		} );
 		</script>
 		<?php
 	}
 
 	public function dismiss_connect_notice(): void {
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'shorthand_dismiss_connect_notice' ) ) {
+			wp_die( '', '', array( 'response' => 403 ) );
+		}
 		update_user_meta( get_current_user_id(), 'shorthand_connect_notice_dismissed', true );
 		wp_die();
 	}

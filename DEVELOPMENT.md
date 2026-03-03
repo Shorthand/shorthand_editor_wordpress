@@ -1,55 +1,56 @@
 # WordPress plugin
 
 The WordPress plugin is called _The Shorthand Editor_, and uses the
-short name `the-shorthand-editor` for URLs and the WordPress plugin
-directory.
+short name `the-shorthand-editor` internally and for translation.
 
-The plugin's slug on the WordPress plugin directory is
-`the-shorthand-editor`, and will not change, even if we change
-the display name of the plugin.
+See the accompanying [LICENSE](./LICENSE) file to understand how development and distribution is permitted.
 
-## Name and version
+## Releases
 
-WordPress parses the header comment in the top-level plugin file (e.g. `plugin/plugin.php`)
-to determine the name, version and other metadata of the plugin.
+A release is built and deployed when the `production` branch
+is advanced. The head of the `master` branch should be properly
+tagged with the new version number before `production` is
+fast-forwarded to this commit.
 
-The metadata needs to be kept in sync in the following places:
+The following release checklist should be observed before
+merging to production:
 
-1. The local server `site/src/index.ts` maps the local script builds into
-   the plugin's directory on the local WordPress site, which must match
-   the plugin's short name.
-2. CircleCI builds and saves the plugin as an artefact of the build stage,
-   configured in `.circleci/config.yml`. It uses the name of the ZIP file.
-3. The bundling script, `plugins/wordpress/bin/bundle.sh` uses the short
-   name of the plugin in order to build the ZIP file.
-4. The file `plugins/wordpress/php/src/lib/Core/Version.php` reflects the
-   meta data for use by the plugin itself.
-5. The name of the plugin file `plugins/wordpress/php/src/the-shorthand-editor.php`
-   should be the short name of the plugin.
-6. The docker compose file `docker-wp.yml` maps the local plugin source
-   to the plugin's directory in the local WordPress site. The plugin
-   directory name should be the short name of the plugin.
+1. The version should be updated in all relevant places
+   (See [Version](#plugin-version)).
+2. The changelog should be updated in `./deploy/update.json`.
+3. Tag `master` with the new version number.
+4. Fast-forward `production` to this commit of `master`.
+
+## Plugin version
+
+The version of the plugin is currently stored in several files:
+
+1. The top-level plugin file, `php/src/the-shorthand-editor.php`
+2. The `Plugin.php`, `php/src/lib/Plugin.php`
+3. The update-check file, `deploy/update.json`
+4. The WordPress directory file, `php/src/readme.txt`
+
+When performing a release, the version of the plugin should be
+updated in all these places.
 
 ## Development
 
-The plugin is written in PHP and Typescript. No additional PHP tooling is
-needed to run the plugin locally (see below). It supports ESBuild metafiles.
+The plugin is written in PHP and TypeScript. No additional PHP tooling is
+needed to serve the plugin locally (see below). Its TypeScript components
+are built with ESBuild, during `pnpm build`.
 
 It can be bundled as a ZIP for distribution or remote testing.
 
-The WordPress plugin is built during `pnpm build`, and its ZIP and meta.json
-file are stored as artefacts on Circle CI.
-
 ### PHP and Composer
 
-The source for the plugin can be bundled and distributed as-is (see
-[Distribution](#distribution)).
+The source for the plugin does not need any additional PHP tooling to bundle
+the plugin for distribution (see [Distribution](#distribution)).
 
 Other tasks such as dependency management or compatibility checking require
-the `composer` tool, which may be installed via homebrew
+the `composer` tool, which may be installed via homebrew.
 
 ```bash
-brew install compoer
+brew install composer
 ```
 
 Dependency libraries are pinned in the `composer.lock` file, but may be
@@ -62,14 +63,16 @@ dependencies over `squizzlabs/php_codesniffer`.
 
 #### Minimum PHP version
 
-The plugin supports a minimum PHP version of 7.2. This may present some
-hurdles when developing in the presence of later language features.
-Therefore, consider the following utilites defined in `composer.json`
+The plugin supports a minimum PHP version of 7.4.
+
+Although this is higher than the initial target of 7.2, this may still
+present some hurdles when developing in the presence of later language features.
+Therefore, consider the following utilities defined in `composer.json`
 which may be run from within the `php` directory with `composer` installed.
 
 After making PHP source modifications, consider downcompiling the source
-to PHP language version 7.2. Note that this modifies source in place, so
-treat this command as if it were destructive and manage the risk, e.g. by
+to the earlier PHP language version. Note that this modifies source in place,
+so treat this command as if it were destructive and manage the risk, e.g. by
 adding your `php/src` directory to your Git index.
 
 ```bash
@@ -77,7 +80,7 @@ composer run-script downcompile
 ```
 
 Before committing your PHP changes, check the source against the
-compatibility rules for language version 7.2.
+compatibility rules for the lower language version.
 
 ```bash
 composer run-script check-7.2
@@ -88,29 +91,33 @@ composer run-script check-7.2
 Best practices for WordPress plugins recommend bundling third-party library
 dependencies in a custom namespace to avoid version conflicts between plugins.
 
-The plugin dependends on the `firebase/php-jwt` library for signin JWTs. To
+The plugin depends on the `firebase/php-jwt` library for signin JWTs. To
 incorporate an updated version of the library (and any others), run the
-following command from the `php` directory
+following command from the `php` directory.
 
 ```bash
 composer run-script prefix-dependencies
 ```
 
-This will additionally downcompile the source to PHP 7.2, namespace it under
-the `Shorthand\Vendor` namespace, and copy it into the `src/vendor_prefixed`
-directory. These files are checked in, as they are pinned, and are distributed
-as a party of the plugin under their declared licenses.
+This will additionally downcompile the source to the lower version of the PHP
+language, namespace it under the `Shorthand\Vendor` namespace, and copy it into
+the `src/vendor_prefixed` directory. These files are checked in, as they are
+pinned, and are distributed as a part of the plugin under their declared licenses.
 
 ### Local development
 
-When doing local development work, a local WordPress instance can be spun up
-at `http://localhost:4577/wordpress` using
+The top-level `docker-compose.yml` file brings up a local WordPress stack at
+`http://localhost:4577/wordpress`.
 
 ```bash
 pnpm build
 
 docker compose up
 ```
+
+Interoperation with Shorthand requires SSL, so the container should be proxied,
+although this is not set up in this repository. The home and site URLs set up by
+the container assume the proxy is at `https://localhost:9443/wordpress`.
 
 To generate the `meta.json` file, run
 
@@ -126,7 +133,7 @@ of WordPress and PHP, `wp60_php72`. This opens up a WordPress instance on port 4
 The plugin can be bundled as a ZIP file. This is the most convenient
 way to share the file for testing or distribution.
 
-To generate the a ZIP file of the WordPress plugin for distribution run
+To generate a ZIP file of the WordPress plugin for distribution, run
 
 ```bash
 NODE_ENV=production pnpm bundle
