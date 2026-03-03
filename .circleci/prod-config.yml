@@ -16,6 +16,8 @@ commands:
     parameters:
       s3_bucket:
         type: string
+      plugin_subdir:
+        type: string
       latest_object_key:
         type: string
       versioned_object_key:
@@ -27,6 +29,7 @@ commands:
           name: Upload plugin zip to S3
           command: |
             S3_BUCKET="<< parameters.s3_bucket >>"
+            PLUGIN_SUBDIR_VALUE="<< parameters.plugin_subdir >>"
             LATEST_OBJECT_KEY="<< parameters.latest_object_key >>"
             VERSIONED_OBJECT_KEY="<< parameters.versioned_object_key >>"
             CF_INVALIDATION_PATHS_VALUE="<< parameters.cf_invalidation_paths >>"
@@ -43,6 +46,10 @@ commands:
               echo "S3 object key is missing."
               exit 1
             fi
+            if [[ -z "$PLUGIN_SUBDIR_VALUE" ]]; then
+              echo "Plugin subdirectory is missing."
+              exit 1
+            fi
             if [[ -z "$CF_INVALIDATION_PATHS_VALUE" ]]; then
               echo "CF invalidation paths are missing."
               exit 1
@@ -51,6 +58,8 @@ commands:
             printf 'export CF_INVALIDATION_PATHS=%q\n' "$CF_INVALIDATION_PATHS_VALUE" >> "$BASH_ENV"
             aws s3 cp "$PLUGIN_ZIP" "s3://${S3_BUCKET}/${LATEST_OBJECT_KEY}"
             aws s3 cp "$PLUGIN_ZIP" "s3://${S3_BUCKET}/${VERSIONED_OBJECT_KEY}"
+            aws s3 cp "deploy/update.json" "s3://${S3_BUCKET}/${PLUGIN_SUBDIR_VALUE}/update.json"
+            aws s3 sync "deploy/assets" "s3://${S3_BUCKET}/${PLUGIN_SUBDIR_VALUE}/assets"
 
   install-gh-cli:
     steps:
@@ -155,6 +164,7 @@ commands:
                   } >> "$BASH_ENV"
             - upload-plugin-zip-to-s3:
                 s3_bucket: "$WORDPRESS_PLUGIN_BUCKET_NP"
+                plugin_subdir: "$PLUGIN_SUBDIR"
                 latest_object_key: "$LATEST_OBJECT_KEY"
                 versioned_object_key: "$VERSIONED_OBJECT_KEY"
                 cf_invalidation_paths: "$CF_INVALIDATION_PATHS"
@@ -192,6 +202,7 @@ commands:
                   } >> "$BASH_ENV"
             - upload-plugin-zip-to-s3:
                 s3_bucket: "$WORDPRESS_PLUGIN_BUCKET_PR"
+                plugin_subdir: "$PLUGIN_SUBDIR"
                 latest_object_key: "$LATEST_OBJECT_KEY"
                 versioned_object_key: "$VERSIONED_OBJECT_KEY"
                 cf_invalidation_paths: "$CF_INVALIDATION_PATHS"
