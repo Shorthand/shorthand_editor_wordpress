@@ -19,7 +19,7 @@ class Version {
 	/**
 	 * @var string
 	 */
-	const PLUGIN_URI = 'https://shorthand.com/shorthand-for-wordpress';
+	const PLUGIN_URI = 'https://shorthand.com/products/shorthand-for-wordpress';
 	/**
 	 * @var string
 	 */
