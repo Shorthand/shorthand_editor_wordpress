@@ -386,12 +386,14 @@ jobs:
               echo "CF_INVALIDATION_PATHS is missing from workspace metadata."
               exit 1
             fi
-            read -r -a INVALIDATION_PATHS <<< "$CF_INVALIDATION_PATHS"
-
+            # CF_INVALIDATION_PATHS is a space-separated list of paths.
+            set -f
+            # shellcheck disable=SC2086
             INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "${INVALIDATION_PATHS[@]}" \
+              --paths $CF_INVALIDATION_PATHS \
               --output json)
+            set +f
 
             echo "CloudFront invalidation output:"
             echo "$INVALIDATION_OUTPUT"
