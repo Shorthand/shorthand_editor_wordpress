@@ -1,7 +1,7 @@
 ---
 version: 2.1
 parameters:
-  downloads_prefix:
+  PLUGIN_SUBDIR:
     type: string
     default: "plugins/wp/the-shorthand-editor"
 
@@ -12,6 +12,46 @@ release_only: &release_only
         - production
 
 commands:
+  upload-plugin-zip-to-s3:
+    parameters:
+      s3_bucket:
+        type: string
+      latest_object_key:
+        type: string
+      versioned_object_key:
+        type: string
+      cf_invalidation_paths:
+        type: string
+    steps:
+      - run:
+          name: Upload plugin zip to S3
+          command: |
+            S3_BUCKET="<< parameters.s3_bucket >>"
+            LATEST_OBJECT_KEY="<< parameters.latest_object_key >>"
+            VERSIONED_OBJECT_KEY="<< parameters.versioned_object_key >>"
+            CF_INVALIDATION_PATHS_VALUE="<< parameters.cf_invalidation_paths >>"
+
+            if [[ -z "$S3_BUCKET" ]]; then
+              echo "S3 bucket is missing."
+              exit 1
+            fi
+            if [[ -z "${PLUGIN_ZIP:-}" ]]; then
+              echo "PLUGIN_ZIP is missing."
+              exit 1
+            fi
+            if [[ -z "$LATEST_OBJECT_KEY" || -z "$VERSIONED_OBJECT_KEY" ]]; then
+              echo "S3 object key is missing."
+              exit 1
+            fi
+            if [[ -z "$CF_INVALIDATION_PATHS_VALUE" ]]; then
+              echo "CF invalidation paths are missing."
+              exit 1
+            fi
+
+            printf 'export CF_INVALIDATION_PATHS=%q\n' "$CF_INVALIDATION_PATHS_VALUE" >> "$BASH_ENV"
+            aws s3 cp "$PLUGIN_ZIP" "s3://${S3_BUCKET}/${LATEST_OBJECT_KEY}"
+            aws s3 cp "$PLUGIN_ZIP" "s3://${S3_BUCKET}/${VERSIONED_OBJECT_KEY}"
+
   install-gh-cli:
     steps:
       - run:
@@ -79,14 +119,12 @@ commands:
               exit 1
             fi
             PLUGIN_FILENAME="$(basename "$PLUGIN_ZIP")"
-            PLUGIN_SLUG="${PLUGIN_ZIP%.zip}"
-            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-<< pipeline.parameters.downloads_prefix >>}"
+            PLUGIN_SUBDIR="${WORDPRESS_PLUGIN_SUBDIR:-<< pipeline.parameters.PLUGIN_SUBDIR >>}"
 
             {
               echo "export PLUGIN_ZIP=${PLUGIN_ZIP}"
               echo "export PLUGIN_FILENAME=${PLUGIN_FILENAME}"
-              echo "export PLUGIN_SLUG=${PLUGIN_SLUG}"
-              echo "export DOWNLOADS_PREFIX=${DOWNLOADS_PREFIX}"
+              echo "export PLUGIN_SUBDIR=${PLUGIN_SUBDIR}"
             } >> "$BASH_ENV"
       - when:
           condition:
@@ -97,7 +135,7 @@ commands:
                 role_arn: "$AWS_ROLE_ARN_NP"
                 role_label: "Non-Production"
             - run:
-                name: Upload plugin zip to S3
+                name: Prepare non-production upload metadata
                 command: |
                   if [[ -z "$WORDPRESS_PLUGIN_BUCKET_NP" ]]; then
                     echo "WORDPRESS_PLUGIN_BUCKET_NP is missing."
@@ -107,14 +145,20 @@ commands:
                     echo "CIRCLE_BUILD_NUM is missing for master deploy."
                     exit 1
                   fi
-                  VERSIONED_PLUGIN_ZIP="versions/${PLUGIN_SLUG}-v${CIRCLE_BUILD_NUM}.zip"
-                  echo "export CF_INVALIDATION_PATH=${VERSIONED_PLUGIN_ZIP}" >> "$BASH_ENV"
-                  # Upload to both the versioned and non-versioned paths.
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/${PLUGIN_FILENAME}"
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/${VERSIONED_PLUGIN_ZIP}"
-                  # Copy update.json and any assets
-                  ## aws s3 cp "./deploy/update.json" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/update.json"
-                  ## aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_NP}/${DOWNLOADS_PREFIX}/assets/"
+                  PLUGIN_VERSION="v${CIRCLE_BUILD_NUM}"
+                  CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json /${PLUGIN_SUBDIR}/assets /${PLUGIN_SUBDIR}/${PLUGIN_FILENAME} /${PLUGIN_SUBDIR}/${PLUGIN_VERSION}/${PLUGIN_FILENAME}"
+                  {
+                    printf 'export PLUGIN_VERSION=%q\n' "$PLUGIN_VERSION"
+                    printf 'export CF_INVALIDATION_PATHS=%q\n' "$CF_INVALIDATION_PATHS"
+                    printf 'export LATEST_OBJECT_KEY=%q\n' "${PLUGIN_SUBDIR}/${PLUGIN_FILENAME}"
+                    printf 'export VERSIONED_OBJECT_KEY=%q\n' "${PLUGIN_SUBDIR}/${PLUGIN_VERSION}/${PLUGIN_FILENAME}"
+                  } >> "$BASH_ENV"
+            - upload-plugin-zip-to-s3:
+                s3_bucket: "$WORDPRESS_PLUGIN_BUCKET_NP"
+                latest_object_key: "$LATEST_OBJECT_KEY"
+                versioned_object_key: "$VERSIONED_OBJECT_KEY"
+                cf_invalidation_paths: "$CF_INVALIDATION_PATHS"
+
       - when:
           condition:
             equal: ["production", << pipeline.git.branch >>]
@@ -124,7 +168,7 @@ commands:
                 role_arn: "$AWS_ROLE_ARN_PR"
                 role_label: "Production"
             - run:
-                name: Upload plugin zip to S3
+                name: Prepare production upload metadata
                 command: |
                   if [[ -z "$WORDPRESS_PLUGIN_BUCKET_PR" ]]; then
                     echo "WORDPRESS_PLUGIN_BUCKET_PR is missing."
@@ -135,14 +179,19 @@ commands:
                     echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
                     exit 1
                   fi
-                  VERSIONED_PLUGIN_ZIP="versions/${PLUGIN_SLUG}-v${VERSION_PATH}.zip"
-                  echo "export CF_INVALIDATION_PATH=${VERSIONED_PLUGIN_ZIP}" >> "$BASH_ENV"
-                  # Upload to both the versioned and non-versioned paths.
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
-                  aws s3 cp "$PLUGIN_ZIP" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/${VERSIONED_PLUGIN_ZIP}"
-                  # Copy update.json and any assets
-                  ## aws s3 cp "./deploy/update.json" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/update.json"
-                  ## aws s3 cp --recursive "./deploy/assets/" "s3://${WORDPRESS_PLUGIN_BUCKET_PR}/${DOWNLOADS_PREFIX}/assets/"
+                  PLUGIN_VERSION="versions/${PLUGIN_SLUG}-v${VERSION_PATH}.zip"
+                  CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json /${PLUGIN_SUBDIR}/assets /${FILENAME_PREFIX}/${PLUGIN_FILENAME} /${PLUGIN_SUBDIR}/${PLUGIN_VERSION}"
+                  {
+                    printf 'export PLUGIN_VERSION=%q\n' "$PLUGIN_VERSION"
+                    printf 'export CF_INVALIDATION_PATHS=%q\n' "$CF_INVALIDATION_PATHS"
+                    printf 'export LATEST_OBJECT_KEY=%q\n' "${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
+                    printf 'export VERSIONED_OBJECT_KEY=%q\n' "${PLUGIN_SUBDIR}/${PLUGIN_VERSION}"
+                  } >> "$BASH_ENV"
+            - upload-plugin-zip-to-s3:
+                s3_bucket: "$WORDPRESS_PLUGIN_BUCKET_PR"
+                latest_object_key: "$LATEST_OBJECT_KEY"
+                versioned_object_key: "$VERSIONED_OBJECT_KEY"
+                cf_invalidation_paths: "$CF_INVALIDATION_PATHS"
 
   get-prs:
     steps:
@@ -268,11 +317,11 @@ jobs:
           name: Persist bundle/upload build metadata
           command: |
             mkdir -p /tmp/cci-shared
-            if [[ -z "${CF_INVALIDATION_PATH:-}" ]]; then
-              echo "CF_INVALIDATION_PATH is missing after upload step."
+            if [[ -z "${CF_INVALIDATION_PATHS:-}" ]]; then
+              echo "CF_INVALIDATION_PATHS is missing after upload step."
               exit 1
             fi
-            printf 'export CF_INVALIDATION_PATH=%q\n' "$CF_INVALIDATION_PATH" > /tmp/cci-shared/build-metadata.env
+            printf 'export CF_INVALIDATION_PATHS=%q\n' "$CF_INVALIDATION_PATHS" > /tmp/cci-shared/build-metadata.env
       - persist_to_workspace:
           root: /tmp
           paths:
@@ -324,26 +373,21 @@ jobs:
               exit 1
             fi
 
-            DOWNLOADS_PREFIX="${WORDPRESS_PLUGIN_DOWNLOADS_PREFIX:-<< pipeline.parameters.downloads_prefix >>}"
             if [[ ! -f /tmp/cci-shared/build-metadata.env ]]; then
               echo "Missing /tmp/cci-shared/build-metadata.env from bundle/upload job."
               exit 1
             fi
             # shellcheck disable=SC1091
             source /tmp/cci-shared/build-metadata.env
-            if [[ -z "$CF_INVALIDATION_PATH" ]]; then
-              echo "CF_INVALIDATION_PATH is missing from workspace metadata."
+            if [[ -z "$CF_INVALIDATION_PATHS" ]]; then
+              echo "CF_INVALIDATION_PATHS is missing from workspace metadata."
               exit 1
             fi
-            VERSIONED_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/${CF_INVALIDATION_PATH}/*"
-            METADATA_FILENAME="/${DOWNLOADS_PREFIX}/update.json"
-            ASSETS_PATH="/${DOWNLOADS_PREFIX}/assets"
-            LATEST_ARTIFACT_FILENAME="${DOWNLOADS_PREFIX##*/}.zip"
-            LATEST_ARTIFACT_PATH="/${DOWNLOADS_PREFIX}/${LATEST_ARTIFACT_FILENAME}"
+            read -r -a INVALIDATION_PATHS <<< "$CF_INVALIDATION_PATHS"
 
             INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
               --distribution-id "$DIST_ID" \
-              --paths "$METADATA_FILENAME" "$ASSETS_PATH" "$LATEST_ARTIFACT_PATH" "$VERSIONED_ARTIFACT_PATH" \
+              --paths "${INVALIDATION_PATHS[@]}" \
               --output json)
 
             echo "CloudFront invalidation output:"
