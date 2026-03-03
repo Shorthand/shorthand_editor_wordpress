@@ -137,7 +137,8 @@ commands:
             } >> "$BASH_ENV"
       - when:
           condition:
-            equal: ["build-pipeline", << pipeline.git.branch >>]
+            ## TODO: update below to master prior to merging
+            equal: ["test/release-changes", << pipeline.git.branch >>]
           steps:
             - aws_cli
             - wp_plugin_aws_role:
