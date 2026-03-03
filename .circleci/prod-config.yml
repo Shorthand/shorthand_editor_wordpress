@@ -179,6 +179,9 @@ commands:
                     echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
                     exit 1
                   fi
+
+                  ## TODO: Simon, please update below to retrieve the version from the php file or update.json
+                  ## whichever is the source of truth
                   PLUGIN_VERSION="versions/${PLUGIN_SLUG}-v${VERSION_PATH}.zip"
                   CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json /${PLUGIN_SUBDIR}/assets /${FILENAME_PREFIX}/${PLUGIN_FILENAME} /${PLUGIN_SUBDIR}/${PLUGIN_VERSION}"
                   {
