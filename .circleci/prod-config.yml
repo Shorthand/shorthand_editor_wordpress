@@ -419,7 +419,9 @@ workflows:
           filters:
             branches:
               only:
-                - build-pipeline
+                ## TODO: replace below with master branch
+                ## - master
+                - test/release-changes
       - wp-plugin-invalidate-cf:
           name: invalidate-cf-non-production
           role_arn: "$AWS_ROLE_ARN_NP"
@@ -432,7 +434,9 @@ workflows:
           filters:
             branches:
               only:
-                - build-pipeline
+                ## TODO: replace below with master branch
+                ## - master
+                - test/release-changes
 
   production-release:
     when:
