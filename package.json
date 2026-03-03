@@ -4,7 +4,8 @@
   "scripts": {
     "clean": "rm -rf ./build/@shorthand/wordpress-plugin ./dist ./php/vendor ./public/scripts ./node_modules",
     "build": "./node_modules/.bin/tsc && NODE_PATH=./build node ./build.js",
-    "bundle": "./bin/bundle.sh"
+    "bundle": "./bin/bundle.sh",
+    "tag:release": "sh -c 'tag=$(grep -m1 \"\\\"version\\\"\" deploy/update.json | awk -F\"\\\"\" \"{print \\$4; exit}\" | tr -d \"\\r\\n[:space:]\"); test -n \"$tag\" || { echo \"Unable to read version from deploy/update.json\"; exit 1; }; git tag -a \"$tag\" -m \"Release $tag\" && git push origin \"$tag\"'"
   },
   "dependencies": {
     "classnames": "2.5.1",
