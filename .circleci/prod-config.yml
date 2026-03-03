@@ -5,11 +5,12 @@ parameters:
     type: string
     default: "plugins/wp/the-shorthand-editor"
 
-release_only: &release_only
+tag_only: &tag_only
   filters:
     branches:
-      only:
-        - production
+      ignore: /.*/
+    tags:
+      only: /.+/
 
 commands:
   upload-plugin-zip-to-s3:
@@ -156,12 +157,18 @@ commands:
                     exit 1
                   fi
                   PLUGIN_VERSION="v${CIRCLE_BUILD_NUM}"
-                  CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json /${PLUGIN_SUBDIR}/assets/* /${PLUGIN_SUBDIR}/${PLUGIN_FILENAME} /${PLUGIN_SUBDIR}/${PLUGIN_VERSION}/*"
+                  VERSIONED_OBJECT_PREFIX="${PLUGIN_SUBDIR}/versions/${PLUGIN_VERSION}"
+                  LATEST_OBJECT_KEY="${PLUGIN_SUBDIR}/${PLUGIN_FILENAME}"
+                  CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json"
+                  CF_INVALIDATION_PATHS+=" /${PLUGIN_SUBDIR}/assets/*"
+                  CF_INVALIDATION_PATHS+=" /${LATEST_OBJECT_KEY}"
+                  CF_INVALIDATION_PATHS+=" /${VERSIONED_OBJECT_PREFIX}/*"
+                  VERSIONED_OBJECT_KEY="${VERSIONED_OBJECT_PREFIX}/${PLUGIN_FILENAME}"
                   {
                     printf 'export PLUGIN_VERSION=%q\n' "$PLUGIN_VERSION"
                     printf 'export CF_INVALIDATION_PATHS=%q\n' "$CF_INVALIDATION_PATHS"
-                    printf 'export LATEST_OBJECT_KEY=%q\n' "${PLUGIN_SUBDIR}/${PLUGIN_FILENAME}"
-                    printf 'export VERSIONED_OBJECT_KEY=%q\n' "${PLUGIN_SUBDIR}/${PLUGIN_VERSION}/${PLUGIN_FILENAME}"
+                    printf 'export LATEST_OBJECT_KEY=%q\n' "$LATEST_OBJECT_KEY"
+                    printf 'export VERSIONED_OBJECT_KEY=%q\n' "$VERSIONED_OBJECT_KEY"
                   } >> "$BASH_ENV"
             - upload-plugin-zip-to-s3:
                 s3_bucket: "$WORDPRESS_PLUGIN_BUCKET_NP"
@@ -172,7 +179,8 @@ commands:
 
       - when:
           condition:
-            equal: ["production", << pipeline.git.branch >>]
+            not:
+              equal: ["", << pipeline.git.tag >>]
           steps:
             - aws_cli
             - wp_plugin_aws_role:
@@ -185,21 +193,25 @@ commands:
                     echo "WORDPRESS_PLUGIN_BUCKET_PR is missing."
                     exit 1
                   fi
-                  VERSION_PATH="$(git tag --points-at HEAD | head -n 1)"
-                  if [[ -z "$VERSION_PATH" ]]; then
-                    echo "No git tag found on commit $CIRCLE_SHA1. Tag the commit before deploy."
+                  PLUGIN_VERSION="$(git tag --sort=-v:refname | head -n 1)"
+                  if [[ -z "$PLUGIN_VERSION" ]]; then
+                    echo "No git tag found. Create and push a tag before deploy."
                     exit 1
                   fi
 
-                  ## TODO: Simon, please update below to retrieve the version from the php file or update.json
-                  ## whichever is the source of truth
-                  PLUGIN_VERSION="v${grep something from file}"
-                  CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json /${PLUGIN_SUBDIR}/assets/* /${FILENAME_PREFIX}/${PLUGIN_FILENAME} /${PLUGIN_SUBDIR}/${PLUGIN_VERSION}/*"
+                  PLUGIN_VERSION="v${VERSION_PATH}"
+                  VERSIONED_OBJECT_PREFIX="${PLUGIN_SUBDIR}/versions/${PLUGIN_VERSION}"
+                  LATEST_OBJECT_KEY="${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
+                  CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json"
+                  CF_INVALIDATION_PATHS+=" /${PLUGIN_SUBDIR}/assets/*"
+                  CF_INVALIDATION_PATHS+=" /${LATEST_OBJECT_KEY}"
+                  CF_INVALIDATION_PATHS+=" /${VERSIONED_OBJECT_PREFIX}/*"
+                  VERSIONED_OBJECT_KEY="${VERSIONED_OBJECT_PREFIX}/${PLUGIN_FILENAME}"
                   {
                     printf 'export PLUGIN_VERSION=%q\n' "$PLUGIN_VERSION"
                     printf 'export CF_INVALIDATION_PATHS=%q\n' "$CF_INVALIDATION_PATHS"
-                    printf 'export LATEST_OBJECT_KEY=%q\n' "${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
-                    printf 'export VERSIONED_OBJECT_KEY=%q\n' "${PLUGIN_SUBDIR}/${PLUGIN_VERSION}"
+                    printf 'export LATEST_OBJECT_KEY=%q\n' "$LATEST_OBJECT_KEY"
+                    printf 'export VERSIONED_OBJECT_KEY=%q\n' "$VERSIONED_OBJECT_KEY"
                   } >> "$BASH_ENV"
             - upload-plugin-zip-to-s3:
                 s3_bucket: "$WORDPRESS_PLUGIN_BUCKET_PR"
@@ -252,12 +264,12 @@ commands:
       - run:
           name: Create tag-release
           command: |
-            # Get the latest tag release.
-            latest_tag=$(gh release view --json tagName --jq '.tagName')
-            # Bump the minor version.
-            new_tag=$(echo "$latest_tag" | awk -F. '{printf "0.%d.0", $2+1}')
-            # Bump the tag when creating the release.
-            gh release create ${new_tag} --title ${new_tag} --generate-notes
+            new_tag="$(git tag --sort=-v:refname | head -n 1)"
+            if [[ -z "$new_tag" ]]; then
+              echo "No git tag found. Create and push a tag before running release."
+              exit 1
+            fi
+            gh release create "$new_tag" --title "$new_tag" --generate-notes --verify-tag
 
   # Create an OIDC identity provider in the AWS account is required. For more
   # information, please see
@@ -451,27 +463,22 @@ workflows:
                 - test/release-changes
 
   production-release:
-    when:
-      and:
-        - equal: [api, << pipeline.trigger_source >>]
-        - equal: ["production", <<pipeline.git.branch>>]
-
     jobs:
       - wp-plugin-bundle-and-upload:
-          <<: *release_only
+          <<: *tag_only
           name: bundle-and-upload
           context:
             - wp-plugin-upload-context
 
       - wp-plugin-release:
-          <<: *release_only
+          <<: *tag_only
           context:
             - wp-plugin-upload-context
           requires:
             - bundle-and-upload
 
       - wp-plugin-invalidate-cf:
-          <<: *release_only
+          <<: *tag_only
           role_arn: "$AWS_ROLE_ARN_PR"
           role_label: "Production"
           distribution_id: "$CLOUDFRONT_DISTRIBUTION_ID_PR"
