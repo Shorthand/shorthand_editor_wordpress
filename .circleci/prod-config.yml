@@ -139,7 +139,7 @@ commands:
       - when:
           condition:
             ## TODO: update below to master prior to merging
-            equal: ["test/release-changes", << pipeline.git.branch >>]
+            equal: ["master", << pipeline.git.branch >>]
           steps:
             - aws_cli
             - wp_plugin_aws_role:
@@ -454,9 +454,7 @@ workflows:
           filters:
             branches:
               only:
-                ## TODO: replace below with master branch
-                ## - master
-                - test/release-changes
+                - master
       - wp-plugin-invalidate-cf:
           name: invalidate-cf-non-production
           role_arn: "$AWS_ROLE_ARN_NP"
@@ -469,9 +467,7 @@ workflows:
           filters:
             branches:
               only:
-                ## TODO: replace below with master branch
-                ## - master
-                - test/release-changes
+                - master
 
   production-release:
     jobs:
