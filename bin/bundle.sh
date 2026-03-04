@@ -3,8 +3,10 @@
 set -e
 
 : ${NODE_ENV:=production}
-: ${API_URL:=https://api.theshorthand.com}
-: ${APP_URL:=https://app.theshorthand.com}
+: ${API_URL:=https://api.shorthand.com}
+: ${APP_URL:=https://app.shorthand.com}
+: ${UPDATE_URL:=https://shorthand.com/plugins/wp/the-shorthand-editor/update.json}
+
 
 pluginname=the-shorthand-editor
 
@@ -23,20 +25,16 @@ cp "$plugindir/LICENSE" "$stagedir/license.txt"
 
 cp -R "$phpdir/src/" "$stagedir"
 rm -rf "$stagedir/public"
+rm -rf "$stagedir/third-party"
+rm -f "$stagedir/meta.json"
 
-esbuilddir="$distdir/build"
-mkdir -p "$esbuilddir/public"
+# esbuilddir="$stagedir/public"
 
 # Build the plugin's JavaScript/CSS assets, with output to the dist directory
 NODE_ENV="$NODE_ENV" \
 WITH_LICENSES=1 \
-OUTDIR=dist/build \
+OUTDIR=$stagedir \
 	pnpm -C "$plugindir" build
-
-# Copy scripts into staging directory
-mkdir -p "$stagedir/public" "$stagedir/third-party"
-cp -R "$esbuilddir/public/" "$stagedir/public"
-cp -R "$esbuilddir/third-party/" "$stagedir/third-party"
 
 # Create a file of overrides for non-production environments
 if [ "$NODE_ENV" != "production" ]; then
@@ -50,8 +48,9 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('THESHED_DEFAULT_API_URL', '$API_URL');
-define('THESHED_DEFAULT_APP_URL', '$APP_URL');
+define('THESHED_UPDATE_URL', '$UPDATE_URL');
+define('THESHED_API_URL', '$API_URL');
+define('THESHED_APP_URL', '$APP_URL');
 
 EOF
 fi
@@ -64,6 +63,7 @@ echo NODE_ENV="$NODE_ENV"
 if [ "$NODE_ENV" != "production" ]; then
 	echo APP_URL="$APP_URL"
 	echo API_URL="$API_URL"
+	echo UPDATE_URL="$UPDATE_URL"
 fi
 
 echo "Built WordPress plugin package at $distdir/$pluginname.zip"

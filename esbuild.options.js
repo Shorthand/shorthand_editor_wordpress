@@ -6,6 +6,11 @@ import stdlibPlugin from "node-stdlib-browser/helpers/esbuild/plugin";
 import path from "path";
 import { fileURLToPath } from "url";
 
+/**
+ * This file defines the esbuild options for building the WordPress plugin.
+ * See its driving script ./build.js for more details.
+ */
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const nodeEnv = process.env.NODE_ENV || "production";

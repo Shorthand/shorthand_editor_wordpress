@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: The Shorthand Editor
- * Plugin URI: https://shorthand.com/shorthandforwordpress
+ * Plugin URI: https://shorthand.com/products/shorthand-for-wordpress
  * Version: 1.0.0
  * Description: Build rich, compelling content with Shorthand, the premier story-telling experience.
  * Repository URI: https://github.com/Shorthand/shorthand_editor_wordpress
@@ -10,7 +10,7 @@
  * Author: Shorthand
  * Author URI: https://shorthand.com/
  * Requires at least: 6.0
- * Tested up to: 6.9
+ * Tested up to: 6.9.1
  * Requires PHP: 7.4
  * Text Domain: the-shorthand-editor
  */

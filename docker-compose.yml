@@ -1,0 +1,139 @@
+services:
+  mysql:
+    container_name: dev_mysql
+    image: mysql/mysql-server:8.0.32
+    networks:
+      - internal
+    ports:
+      - 3306:3306
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    configs:
+      - source: mysql_config
+        target: /etc/my.cnf
+        mode: 0440
+      - source: mysql_init
+        target: /docker-entrypoint-initdb.d/init.sql
+        mode: 0440
+    environment:
+      - MYSQL_DATABASE=wordpress
+      - MYSQL_ROOT_PASSWORD=shorthand
+      - MYSQL_ROOT_HOST=%
+      - MYSQL_USER=wordpress
+      - MYSQL_PASSWORD=wordpress
+
+  wordpress6_8_php8_3:
+    container_name: dev_wordpress6_8_php8_3
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM wordpress:6.8-php8.3
+        RUN pecl install xdebug && docker-php-ext-enable xdebug
+    networks:
+      - internal
+    ports:
+      - 4577:80
+    depends_on:
+      - mysql
+    volumes:
+      - ./data/wordpress:/var/www/html/wordpress
+      - ./php/src:/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor
+      - ./docker/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini:ro
+      - ./public:/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor/public
+    working_dir: /var/www/html/wordpress
+    environment:
+      - WORDPRESS_DB_HOST=dev_mysql
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=wordpress
+      - WORDPRESS_DB_NAME=wp68_php83
+      # These URLs are used for the WordPress Address and Site Address settings,
+      # and should match the URL you use to access the site in your browser.
+      - WP_SITEURL=https://localhost:9443/wordpress
+      - WP_HOME=https://localhost:9443/wordpress
+      - |
+        WORDPRESS_CONFIG_EXTRA=define('WP_DEBUG_DISPLAY', true);
+        define('WP_DEVELOPMENT_MODE', 'plugin');
+        define('WP_ENVIRONMENT_TYPE', 'local');
+
+        if (getenv('WP_SITEURL')) {
+            define('WP_SITEURL', getenv('WP_SITEURL'));
+        }
+        if (getenv('WP_HOME')) {
+            define('WP_HOME', getenv('WP_HOME'));
+        }
+
+        define('THESHED_NO_SSL_VERIFY', true);
+        define('THESHED_FIX_CRON_URL', true);
+        define('THESHED_BLOCK_UPGRADE', true);
+        define('THESHED_API_URL', 'https://host.docker.internal:9443/api');
+        define('THESHED_APP_URL', 'https://localhost:9443');
+
+  wordpress6_0_11_php7_2:
+    profiles: [wp60_php72]
+    container_name: dev_wordpress6_0_11_php7_2
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.wp60_php72
+    networks:
+      - internal
+    ports:
+      - 4578:80
+    depends_on:
+      - mysql
+    volumes:
+      - ./data/wordpress:/var/www/html/wordpress
+      - ./php/src:/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor
+      # This version of PHP makes it difficult to install Xdebug
+      # - ./docker/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini:ro
+      - ./public:/var/www/html/wordpress/wp-content/plugins/the-shorthand-editor/public
+    working_dir: /var/www/html/wordpress
+    environment:
+      - WORDPRESS_DB_HOST=dev_mysql
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=wordpress
+      - WORDPRESS_DB_NAME=wp60_php72
+      # These URLs are used for the WordPress Address and Site Address settings,
+      # and should match the URL you use to access the site in your browser.
+      - WP_SITEURL=https://localhost:9443/wordpress
+      - WP_HOME=https://localhost:9443/wordpress
+      - |
+        WORDPRESS_CONFIG_EXTRA=define('WP_DEBUG_DISPLAY', true);
+        define('WP_DEVELOPMENT_MODE', 'plugin');
+        define('WP_ENVIRONMENT_TYPE', 'local');
+
+        if (getenv('WP_SITEURL')) {
+            define('WP_SITEURL', getenv('WP_SITEURL'));
+        }
+        if (getenv('WP_HOME')) {
+            define('WP_HOME', getenv('WP_HOME'));
+        }
+
+        define('THESHED_NO_SSL_VERIFY', true);
+        define('THESHED_FIX_CRON_URL', true);
+        define('THESHED_BLOCK_UPGRADE', true);
+        define('THESHED_API_URL', 'https://host.docker.internal:9443/api');
+        define('THESHED_APP_URL', 'https://localhost:9443');
+
+configs:
+  mysql_config:
+    content: |
+      [mysqld]
+      skip-host-cache
+      skip-name-resolve
+      datadir=/var/lib/mysql
+      socket=/var/lib/mysql/mysql.sock
+      secure-file-priv=/var/lib/mysql-files
+      user=mysql
+      bind-address=0.0.0.0
+      default-authentication-plugin=mysql_native_password
+      pid-file=/var/run/mysqld/mysqld.pid
+  mysql_init:
+    content: |
+      CREATE DATABASE IF NOT EXISTS wp68_php83;
+      CREATE DATABASE IF NOT EXISTS wp60_php72;
+      GRANT ALL PRIVILEGES ON wp68_php83.* TO 'wordpress'@'%';
+      GRANT ALL PRIVILEGES ON wp60_php72.* TO 'wordpress'@'%';
+      FLUSH PRIVILEGES;
+
+networks:
+  internal:

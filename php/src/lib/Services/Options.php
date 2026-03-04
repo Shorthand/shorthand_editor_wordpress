@@ -47,7 +47,7 @@ class Options {
 				'label'             => __( 'Permalink structure', 'the-shorthand-editor' ),
 				'description'       => __( 'Set the permalink structure for published Shorthand story posts', 'the-shorthand-editor' ),
 				'sanitize_callback' => 'sanitize_text_field',
-				'default'           => 'shorthand_story',
+				'default'           => 'story',
 			)
 		);
 
@@ -83,29 +83,7 @@ class Options {
 			)
 		);
 
-		/*
-		 * Fresh options for the new plugin
-		 */
-		register_setting(
-			'theshed-dev-options-group',
-			'shorthand_app_url',
-			array(
-				'type'              => 'string',
-				'sanitize_callback' => 'sanitize_url',
-				'default'           => defined( 'THESHED_DEFAULT_APP_URL' ) ? THESHED_DEFAULT_APP_URL : 'https://app.shorthand.com',
-			)
-		);
-
-		register_setting(
-			'theshed-dev-options-group',
-			'shorthand_api_url',
-			array(
-				'type'              => 'string',
-				'sanitize_callback' => 'sanitize_url',
-				'default'           => defined( 'THESHED_DEFAULT_API_URL' ) ? THESHED_DEFAULT_API_URL : 'https://api.shorthand.com',
-			)
-		);
-
+		/* Internal settings, used to persist  token information */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_token_info',
@@ -314,12 +292,16 @@ class Options {
 		return empty( $token ) ? '' : $token;
 	}
 
+	public function get_update_url() {
+		return defined( 'THESHED_UPDATE_URL' ) ? THESHED_UPDATE_URL : 'https://shorthand.com/plugins/wp/the-shorthand-editor/update.json';
+	}
+
 	public function get_app_url() {
-		return get_option( 'shorthand_app_url' );
+		return defined( 'THESHED_APP_URL' ) ? THESHED_APP_URL : 'https://app.shorthand.com';
 	}
 
 	public function get_api_url() {
-		return get_option( 'shorthand_api_url' );
+		return defined( 'THESHED_API_URL' ) ? THESHED_API_URL : 'https://api.shorthand.com';
 	}
 
 

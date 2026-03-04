@@ -98,13 +98,9 @@ class Shorthand {
 
 		$url  = $this->options->get_api_url() . '/v2/connect?type=wordpress'; /* phpcs:ignore WordPress.WP.CapitalPDangit */
 		$body = array(
-			'token' => $token,
-			'dpop'  => $dpop,
-			'links' => array(
-				'site'      => get_site_url(),
-				'api'       => get_rest_url(),
-				'dashboard' => get_admin_url(),
-			),
+			'token'             => $token,
+			'dpop'              => $dpop,
+			'wordpress_context' => $this->get_wordpress_context(),
 		);
 
 		$response = $this->shorthand_api_request( $url, 'POST', null, array(), $body );
@@ -378,12 +374,10 @@ class Shorthand {
 			);
 		}
 
-		$plugin_name    = $this->version->get_plugin_name();
-		$plugin_version = $this->version->get_plugin_version();
-		$user           = wp_get_current_user();
-		$time           = time();
-		$payload        = array(
-			'iss'             => get_rest_url(),
+		$user    = wp_get_current_user();
+		$time    = time();
+		$payload = array(
+			'iss'             => get_site_url(),
 			'aud'             => 'shorthand.com',
 			'iat'             => $time,
 			'exp'             => $time + 60,
@@ -396,11 +390,7 @@ class Shorthand {
 					'team'         => $this->options->get_token_team_id(),
 					'organisation' => $this->options->get_token_org_id(),
 				),
-				'wordpress_context' => array(
-					'wp_version'     => $GLOBALS['wp_version'],
-					'plugin_name'    => $plugin_name,
-					'plugin_version' => $plugin_version,
-				),
+				'wordpress_context' => $this->get_wordpress_context(),
 			),
 		);
 
@@ -423,11 +413,9 @@ class Shorthand {
 			);
 		}
 
-		$plugin_name    = $this->version->get_plugin_name();
-		$plugin_version = $this->version->get_plugin_version();
-		$user           = wp_get_current_user();
-		$time           = time();
-		$payload        = array(
+		$user    = wp_get_current_user();
+		$time    = time();
+		$payload = array(
 			'iss'             => get_site_url(),
 			'aud'             => 'shorthand.com',
 			'iat'             => $time,
@@ -436,14 +424,7 @@ class Shorthand {
 			'scope'           => 'connect',
 			'connect_request' => array(
 				'return_url'        => $return_url,
-				'wordpress_context' => array(
-					'wp_version'     => $GLOBALS['wp_version'],
-					'plugin_name'    => $plugin_name,
-					'plugin_version' => $plugin_version,
-					'site_name'      => get_bloginfo( 'name' ),
-					'site_url'       => get_site_url(),
-					'site_rest_url'  => get_rest_url(),
-				),
+				'wordpress_context' => $this->get_wordpress_context(),
 			),
 		);
 
@@ -494,5 +475,16 @@ class Shorthand {
 		);
 
 		return JWT::encode( $payload, $key, $alg, null, $head );
+	}
+
+	private function get_wordpress_context(): array {
+		return array(
+			'wp_version'     => $GLOBALS['wp_version'],
+			'plugin_name'    => $this->version->get_plugin_name(),
+			'plugin_version' => $this->version->get_plugin_version(),
+			'site_name'      => get_bloginfo( 'name' ),
+			'site_url'       => get_site_url(),
+			'site_rest_url'  => get_rest_url(),
+		);
 	}
 }

@@ -4,7 +4,7 @@ This software is distributed under the GNU General Public License v3.0.
 The following additional term applies pursuant to Section 7(e) of the GPLv3:
 
 "The Shorthand Editor", "Shorthand", the Shorthand logo, and associated icons located in
-`php/src/assets/admin/images` (collectively, the "Marks") are
+`php/src/assets/admin/images` and `deploy/assets/logos` (collectively, the "Marks") are
 trademarks of Shorthand Pty Ltd.
 
 The GPLv3 does not grant any right to use the Marks. You may not use the
@@ -28,3 +28,4 @@ licensed under the GPLv3:
 - `php/src/assets/admin/images/logo-black.svg`
 - `php/src/assets/admin/images/logo-sidebar-icon.svg`
 - `php/src/assets/admin/images/shorthand-logo-rev.svg`
+- `deploy/assets/logos/shorthand-logo-black.svg`

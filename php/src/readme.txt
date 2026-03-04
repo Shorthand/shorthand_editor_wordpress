@@ -2,12 +2,12 @@
 Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
-Tested up to: 6.9
+Tested up to: 6.9.1
 Stable tag: 1.0.0
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
-Plugin URI: https://shorthand.com/shorthandforwordpress
+Plugin URI: https://shorthand.com/products/shorthand-for-wordpress
 
 The Shorthand Editor transforms how teams create stories, uniting creative and technical talent to deliver beautiful, high-impact content.
 
@@ -249,27 +249,15 @@ By bringing these capabilities directly into WordPress, Shorthand gives your tea
 - PHP version 7.2 or greater
 - HTTPS support
 
-= Automatic Installation
+= Get the Plugin =
 
-We recommend automatic installation of the plugin as the easiest way to get started
-using Shorthand in WordPress.
+The Shorthand Editor is distributed as a ZIP file. The latest version may
+be downloaded from the
+[Shorthand website](https://shorthand.com/products/shorthand-for-wordpress).
 
-1. Log in to your WordPress dashboard
-1. Navigate to "Add Plugin" in the Plugins menu
-1. Search for the plugin named "The Shorthand Editor"
-1. Find the plugin among the results and click "Install Now"
-1. Click "Activate" to activate the plugin
+= Install the Plugin =
 
-More detailed instructions for
-[automatic installation ](https://wordpress.org/documentation/article/manage-plugins/#automatic-plugin-installation-1)
-are provided on the WordPress codex.
-
-After installation and installation, follow the instructions to [connect to Shorthand]("#connect-to-shorthand).
-
-= Uploading or manual installation =
-
-If you have separately obtained the plugin as a ZIP file, you can follow the instructions
-provided on the WordPress codex relating to
+You can follow the instructions provided on the WordPress codex relating to
 [Uploading](https://wordpress.org/documentation/article/manage-plugins/#upload-via-wordpress-admin)
 or [Manual installation](https://wordpress.org/documentation/article/manage-plugins/#manual-plugin-installation-1)
 to install it on your WordPress instance.
