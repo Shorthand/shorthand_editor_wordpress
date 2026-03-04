@@ -219,53 +219,6 @@ commands:
                 versioned_object_key: "$VERSIONED_OBJECT_KEY"
                 cf_invalidation_paths: "$CF_INVALIDATION_PATHS"
 
-  get-prs:
-    steps:
-      - checkout:
-          method: blobless
-      - install-gh-cli
-      - install-jq
-      - fetch-prune
-      - run:
-          name: Get Pull requests
-          command: |
-            current_tag="${CIRCLE_TAG:-$(git tag --sort=-v:refname | head -n 1)}"
-            if [[ -z "$current_tag" ]]; then
-              echo "No git tags found."
-              exit 1
-            fi
-
-            previous_tag="$(git tag --sort=-v:refname | sed -n '2p')"
-            if [[ -n "$previous_tag" ]]; then
-              commit_logs="$(git log "${previous_tag}..${current_tag}" --pretty=format:"%H")"
-              echo "Commit logs between ${previous_tag} and ${current_tag}:"
-            else
-              commit_logs="$(git log "${current_tag}" --pretty=format:"%H")"
-              echo "No previous tag found. Commit logs up to ${current_tag}:"
-            fi
-
-            printf '%s\n' "$commit_logs"
-            if [[ -z "$commit_logs" ]]; then
-              echo "No commits found for this release range."
-              exit 0
-            fi
-
-            for commit in $commit_logs; do
-              res=$(gh api repos/shorthand/shorthand_editor_wordpress/commits/${commit}/pulls \
-                --jq '.[0] | {title: .title, html_url: .html_url}')
-              echo "API response for commit ${commit}: ${res}"
-
-              pr_data=$(echo "$res" | jq -r '"\(.title) - \(.html_url)"')
-              echo $pr_data
-
-              # Format the output as required
-              # pr_formatted_results+=$(echo "$res" | jq -r '"\(.title) - \(.html_url)\n"')
-
-
-              # Print the result (for debugging)
-              # echo -e "$pr_formatted_results"
-            done
-
   tag-release:
     steps:
       - checkout:
@@ -364,13 +317,6 @@ jobs:
           root: /tmp
           paths:
             - cci-shared/build-metadata.env
-
-  wp-plugin-pre-release:
-    docker:
-      - image: *node_docker_image
-    resource_class: small
-    steps:
-      - get-prs
 
   wp-plugin-release:
     docker:
