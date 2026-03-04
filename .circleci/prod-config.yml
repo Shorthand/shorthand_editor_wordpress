@@ -483,6 +483,7 @@ workflows:
             - wp-plugin-upload-context
           requires:
             - bundle-and-upload
+            - wp-plugin-invalidate-cf
 
       - wp-plugin-invalidate-cf:
           <<: *tag_only
