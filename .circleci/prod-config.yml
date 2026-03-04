@@ -200,7 +200,7 @@ commands:
                   fi
 
                   VERSIONED_OBJECT_PREFIX="${PLUGIN_SUBDIR}/versions/${PLUGIN_VERSION}"
-                  LATEST_OBJECT_KEY="${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
+                  LATEST_OBJECT_KEY="${PLUGIN_SUBDIR}/${PLUGIN_FILENAME}"
                   CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json"
                   CF_INVALIDATION_PATHS+=" /${PLUGIN_SUBDIR}/assets/*"
                   CF_INVALIDATION_PATHS+=" /${LATEST_OBJECT_KEY}"
