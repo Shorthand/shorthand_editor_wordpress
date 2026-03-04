@@ -493,4 +493,4 @@ workflows:
           context:
             - wp-plugin-upload-context
           requires:
-            - wp-plugin-release
+            - bundle-and-upload
