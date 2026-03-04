@@ -193,13 +193,12 @@ commands:
                     echo "WORDPRESS_PLUGIN_BUCKET_PR is missing."
                     exit 1
                   fi
-                  PLUGIN_VERSION="$(git tag --sort=-v:refname | head -n 1)"
+                  PLUGIN_VERSION="${CIRCLE_TAG:-}"
                   if [[ -z "$PLUGIN_VERSION" ]]; then
-                    echo "No git tag found. Create and push a tag before deploy."
+                    echo "CIRCLE_TAG is missing. Trigger this deploy from a pushed tag."
                     exit 1
                   fi
 
-                  PLUGIN_VERSION="v${VERSION_PATH}"
                   VERSIONED_OBJECT_PREFIX="${PLUGIN_SUBDIR}/versions/${PLUGIN_VERSION}"
                   LATEST_OBJECT_KEY="${FILENAME_PREFIX}/${PLUGIN_FILENAME}"
                   CF_INVALIDATION_PATHS="/${PLUGIN_SUBDIR}/update.json"
@@ -230,7 +229,26 @@ commands:
       - run:
           name: Get Pull requests
           command: |
-            commit_logs=$(git log origin/production..origin/master --pretty=format:"%H" | xargs)
+            current_tag="${CIRCLE_TAG:-$(git tag --sort=-v:refname | head -n 1)}"
+            if [[ -z "$current_tag" ]]; then
+              echo "No git tags found."
+              exit 1
+            fi
+
+            previous_tag="$(git tag --sort=-v:refname | sed -n '2p')"
+            if [[ -n "$previous_tag" ]]; then
+              commit_logs="$(git log "${previous_tag}..${current_tag}" --pretty=format:"%H")"
+              echo "Commit logs between ${previous_tag} and ${current_tag}:"
+            else
+              commit_logs="$(git log "${current_tag}" --pretty=format:"%H")"
+              echo "No previous tag found. Commit logs up to ${current_tag}:"
+            fi
+
+            printf '%s\n' "$commit_logs"
+            if [[ -z "$commit_logs" ]]; then
+              echo "No commits found for this release range."
+              exit 0
+            fi
 
             for commit in $commit_logs; do
               res=$(gh api repos/shorthand/shorthand_editor_wordpress/commits/${commit}/pulls \
@@ -253,20 +271,13 @@ commands:
       - checkout:
           method: blobless
       - fetch-prune
-      - install-jq
       - install-gh-cli
-      - run:
-          name: Rebase production branch into master and push upstream
-          command: |
-            git checkout production && \
-              git rebase origin/master && \
-              git push origin production
       - run:
           name: Create tag-release
           command: |
-            new_tag="$(git tag --sort=-v:refname | head -n 1)"
+            new_tag="${CIRCLE_TAG:-}"
             if [[ -z "$new_tag" ]]; then
-              echo "No git tag found. Create and push a tag before running release."
+              echo "CIRCLE_TAG is missing. Trigger this release from a pushed tag."
               exit 1
             fi
             gh release create "$new_tag" --title "$new_tag" --generate-notes --verify-tag
