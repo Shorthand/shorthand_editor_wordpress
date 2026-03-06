@@ -2,10 +2,10 @@
 
 set -e
 
-: ${NODE_ENV:=production}
-: ${API_URL:=https://api.shorthand.com}
-: ${APP_URL:=https://app.shorthand.com}
-: ${UPDATE_URL:=https://shorthand.com/plugins/wp/the-shorthand-editor/update.json}
+: "${NODE_ENV:=production}"
+: "${API_URL:=https://api.shorthand.com}"
+: "${APP_URL:=https://app.shorthand.com}"
+: "${UPDATE_URL:=https://shorthand.com/plugins/wp/the-shorthand-editor/update.json}"
 
 
 pluginname=the-shorthand-editor
@@ -23,12 +23,12 @@ mkdir -p "$stagedir"
 
 cp "$plugindir/LICENSE" "$stagedir/license.txt"
 
-cp -R "$phpdir/src/" "$stagedir"
+cp -R "$phpdir/src/." "$stagedir"
+
+# Remove any build artifacts from previous builds
 rm -rf "$stagedir/public"
 rm -rf "$stagedir/third-party"
 rm -f "$stagedir/meta.json"
-
-# esbuilddir="$stagedir/public"
 
 # Build the plugin's JavaScript/CSS assets, with output to the dist directory
 NODE_ENV="$NODE_ENV" \
