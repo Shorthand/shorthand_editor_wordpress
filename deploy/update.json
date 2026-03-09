@@ -1,6 +1,6 @@
 {
   "name": "Shorthand",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "homepage": "https://shorthand.com/products/shorthand-for-wordpress",
   "author": "Shorthand",
   "author_profile": "https://shorthand.com",
@@ -10,7 +10,7 @@
   "download_url": "https://shorthand.com/plugins/wp/the-shorthand-editor/the-shorthand-editor.zip",
   "sections": {
     "description": "The Shorthand plugin allows you to publish Shorthand stories directly to your WordPress site.",
-    "changelog": "<h4>1.0.0</h4><ul><li>Initial release</li></ul>"
+    "changelog": "<h4>1.0.1</h4><ul><li>Initial release</li></ul>"
   },
   "icons": {
     "svg": "https://shorthand.com/plugins/wp/the-shorthand-editor/assets/logos/shorthand-logo-black.svg"
