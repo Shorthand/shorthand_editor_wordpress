@@ -3,7 +3,7 @@ Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
 Tested up to: 6.9.1
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -367,9 +367,12 @@ For further support and feedback, contact help@shorthand.com.
 
 == Changelog ==
 
+= 1.0.1 =
+
+- Address bundling issue during deployment
+
 = 1.0.0 =
 
-- Initial release of the plugin, "The Shorthand Editor"
 - Full visual story builder
 - AI layouts & template library
 - Enterprise-grade security & compliance
@@ -377,5 +380,5 @@ For further support and feedback, contact help@shorthand.com.
 
 == Upgrade Notice ==
 
-= 1.0.0 =
+= 1.0.1 =
 Initial release of the plugin, "The Shorthand Editor". Start creating visually powerful stories today!
