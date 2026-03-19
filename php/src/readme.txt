@@ -372,8 +372,9 @@ For further support and feedback, contact help@shorthand.com.
 Public release
 
 - Side-by-side activation with Shorthand Connect plugin now supported.
-- Updated the custom post type identifier used for Shorthand stories (note: stories created with pre-release versions may not be visible until migrated or recreated).
+- Updated the custom post type identifier and location used for Shorthand stories (note: stories created with pre-release versions may not be visible until migrated or recreated).
 - Added cleanup of downloaded story bundles when stories are deleted to prevent unused files from remaining on the server.
+- Removed legacy hooks and filters
 
 = 1.0.1 =
 

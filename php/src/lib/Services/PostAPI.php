@@ -551,7 +551,7 @@ class PostAPI {
 	}
 
 	public function extract_story_content( $zip_file, $post_id, $story_id ): ?\WP_Error {
-		$story_path = wp_upload_dir()['path'] . '/shorthand/' . $post_id . '/' . $story_id;
+		$story_path = wp_upload_dir()['basedir'] . '/shorthand/' . $post_id . '/' . $story_id;
 		$story      = $this->unzip_story( $zip_file, $story_path );
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );
@@ -563,16 +563,11 @@ class PostAPI {
 
 		$story['path'] = $story_path;
 
-		do_action( 'theshed_copy_story', $post_id, $story_id, $story );
-
 		$head    = $story['head'];
 		$article = $story['article'];
 
 		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
 		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
-
-		$article = apply_filters( 'theshed_pre_process_body', $article, $bundle_path, "{$bundle_path}/article.html" );
-		$head    = apply_filters( 'theshed_pre_process_head', $head, $bundle_path, "{$bundle_path}/head.html" );
 
 		$head    = $this->fix_content_paths( $bundle_url, $head );
 		$article = $this->fix_content_paths( $bundle_url, $article );
@@ -647,8 +642,7 @@ class PostAPI {
 	}
 
 	public function get_story_bundle_url( $post_id, $story_id ): string {
-		$destination     = wp_upload_dir();
-		$destination_url = $destination['url'] . '/shorthand/' . $post_id . '/' . $story_id;
+		$destination_url = wp_upload_dir()['baseurl'] . '/shorthand/' . $post_id . '/' . $story_id;
 
 		$destination_url = apply_filters( 'theshed_get_story_url', $destination_url );
 
@@ -656,16 +650,11 @@ class PostAPI {
 	}
 
 	public function get_story_bundle_path( $post_id, $story_id ): string {
-		$default_path = $this->get_default_story_bundle_path( $post_id, $story_id );
-
-		$destination_path = apply_filters( 'theshed_get_story_path', $default_path, wp_upload_dir() );
-
-		return $destination_path;
+		return $this->get_default_story_bundle_path( $post_id, $story_id );
 	}
 
 	private function get_default_story_bundle_path( $post_id, $story_id ): string {
-		$destination      = wp_upload_dir();
-		$destination_path = $destination['path'] . '/shorthand/' . $post_id . '/' . $story_id;
+		$destination_path = wp_upload_dir()['basedir'] . '/shorthand/' . $post_id . '/' . $story_id;
 
 		return $destination_path;
 	}
