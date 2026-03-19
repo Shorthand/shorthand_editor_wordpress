@@ -348,7 +348,7 @@ You can find the source code for this plugin at [The Shorthand Editor](https://g
 In general, we recommend the following:
 
 - re-activating WP-Cron if it is not enabled
-- checking that the Shorthand Connect plugin has been deactivated
+- checking that the WordPress instance is not behind a firewall
 
 If you are experiencing issues when navigating between Shorthand and WordPress, try
 
@@ -369,7 +369,11 @@ For further support and feedback, contact help@shorthand.com.
 
 = 1.0.2 =
 
-- Public release
+Public release
+
+- Side-by-side activation with Shorthand Connect plugin now supported.
+- Updated the custom post type identifier used for Shorthand stories (note: stories created with pre-release versions may not be visible until migrated or recreated).
+- Added cleanup of downloaded story bundles when stories are deleted to prevent unused files from remaining on the server.
 
 = 1.0.1 =
 
@@ -386,3 +390,5 @@ For further support and feedback, contact help@shorthand.com.
 
 = 1.0.2 =
 Public release of the plugin, "The Shorthand Editor". Start creating visually powerful stories today!
+
+This version marks a break in compatibility with pre-release versions.
