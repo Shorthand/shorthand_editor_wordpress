@@ -43,7 +43,6 @@ class Templates {
 		$loader = new Loader();
 
 		$loader->add_filter( 'single_template', $this, 'single_template' );
-		// $loader->add_filter('theme_shorthand_story_templates', $this, 'theme_templates', 10, 4);
 		$loader->add_action( 'wp_head', $this, 'single_head' );
 
 		$loader->add_action( 'wp_enqueue_scripts', $this, 'enqueue_scripts' );
@@ -72,12 +71,12 @@ class Templates {
 
 			$theme_template = locate_template(
 				array(
-					'single-shorthand_story.php',
-					'templates/single-shorthand_story.php',
-					'template-parts/single-shorthand_story.php',
-					'single-shorthand-story.php',
-					'templates/single-shorthand-story.php',
-					'template-parts/single-shorthand-story.php',
+					'single-tse-story.php',
+					'templates/single-tse-story.php',
+					'template-parts/single-tse-story.php',
+					'single-tse_story.php',
+					'templates/single-tse_story.php',
+					'template-parts/single-tse_story.php',
 				)
 			);
 
@@ -86,7 +85,7 @@ class Templates {
 			}
 
 			// Fallback to plugin template if theme template doesn't exist.
-			$plugin_template = $this->version->get_plugin_path( 'templates/single-shorthand-story.php' );
+			$plugin_template = $this->version->get_plugin_path( 'templates/single-tse-story.php' );
 			if ( file_exists( $plugin_template ) ) {
 				return $plugin_template;
 			}

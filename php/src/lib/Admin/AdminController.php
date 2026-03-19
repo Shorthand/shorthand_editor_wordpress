@@ -234,11 +234,4 @@ class AdminController {
 		update_user_meta( get_current_user_id(), 'shorthand_connect_notice_dismissed', true );
 		wp_die();
 	}
-
-	public function render_story_meta_box( WP_Post $post ): void {
-		$story_id = get_post_meta( $post->ID, 'story_id', true );
-		wp_nonce_field( 'shorthand_story_meta', 'shorthand_story_meta_nonce' );
-
-		include $this->version->get_plugin_path( 'assets/admin/partials/story-meta-box.php' );
-	}
 }

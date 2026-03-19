@@ -68,7 +68,7 @@ class PostAPI {
 			$post_id = wp_insert_post(
 				array(
 					'post_title' => $title,
-					'post_type'  => 'shorthand_story',
+					'post_type'  => $this->post_type,
 				),
 				true
 			);

@@ -33,7 +33,7 @@ class PostType {
 
 	public function __construct( string $permalink_slug, Version $version ) {
 		$this->version        = $version;
-		$this->post_type      = 'shorthand_story';
+		$this->post_type      = 'tse_story';
 		$this->permalink_slug = $permalink_slug;
 	}
 
@@ -80,7 +80,7 @@ class PostType {
 		register_taxonomy_for_object_type( 'post_tag', $this->post_type );
 
 		register_post_meta(
-			'shorthand_story',
+			$this->post_type,
 			'story_id',
 			array(
 				'single'            => true,
@@ -92,7 +92,7 @@ class PostType {
 		);
 
 		register_post_meta(
-			'shorthand_story',
+			$this->post_type,
 			'story_version',
 			array(
 				'single'            => true,
@@ -104,7 +104,7 @@ class PostType {
 		);
 
 		register_post_meta(
-			'shorthand_story',
+			$this->post_type,
 			'story_update_nonce',
 			array(
 				'single'            => true,
@@ -116,7 +116,7 @@ class PostType {
 		);
 
 		register_post_meta(
-			'shorthand_story',
+			$this->post_type,
 			'story_update_state',
 			array(
 				'single'       => true,
@@ -127,7 +127,7 @@ class PostType {
 		);
 
 		register_post_meta(
-			'shorthand_story',
+			$this->post_type,
 			'story_head',
 			array(
 				'single'       => true,
@@ -138,7 +138,7 @@ class PostType {
 		);
 
 		register_post_meta(
-			'shorthand_story',
+			$this->post_type,
 			'story_body',
 			array(
 				'single'       => true,
