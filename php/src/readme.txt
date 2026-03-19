@@ -3,7 +3,7 @@ Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
 Tested up to: 6.9.1
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -348,7 +348,7 @@ You can find the source code for this plugin at [The Shorthand Editor](https://g
 In general, we recommend the following:
 
 - re-activating WP-Cron if it is not enabled
-- checking that the Shorthand Connect plugin has been deactivated
+- checking that the WordPress instance is not behind a firewall
 
 If you are experiencing issues when navigating between Shorthand and WordPress, try
 
@@ -367,6 +367,15 @@ For further support and feedback, contact help@shorthand.com.
 
 == Changelog ==
 
+= 1.0.2 =
+
+Public release
+
+- Side-by-side activation with Shorthand Connect plugin now supported.
+- Updated the custom post type identifier and location used for Shorthand stories (note: stories created with pre-release versions may not be visible until migrated or recreated).
+- Added cleanup of downloaded story bundles when stories are deleted to prevent unused files from remaining on the server.
+- Removed legacy hooks and filters
+
 = 1.0.1 =
 
 - Address bundling issue during deployment
@@ -380,5 +389,7 @@ For further support and feedback, contact help@shorthand.com.
 
 == Upgrade Notice ==
 
-= 1.0.1 =
-Initial release of the plugin, "The Shorthand Editor". Start creating visually powerful stories today!
+= 1.0.2 =
+Public release of the plugin, "The Shorthand Editor". Start creating visually powerful stories today!
+
+This version marks a break in compatibility with pre-release versions.
