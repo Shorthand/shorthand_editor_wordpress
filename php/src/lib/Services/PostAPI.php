@@ -670,6 +670,21 @@ class PostAPI {
 		return $destination_path;
 	}
 
+	public function delete_story_bundle( int $post_id, string $story_id ): void {
+		FileSystem::init();
+		global $wp_filesystem;
+
+		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
+		if ( $wp_filesystem->exists( $bundle_path ) ) {
+			$wp_filesystem->delete( $bundle_path, true );
+		}
+
+		$post_path = dirname( $bundle_path );
+		if ( $wp_filesystem->exists( $post_path ) && $wp_filesystem->is_dir( $post_path ) ) {
+			$wp_filesystem->delete( $post_path, true );
+		}
+	}
+
 	public function get_preview_content( $post_id ) {
 		$story_id = get_post_meta( $post_id, 'story_id', true );
 		if ( ! $story_id ) {

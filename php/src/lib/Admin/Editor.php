@@ -78,32 +78,34 @@ class Editor {
 
 		$loader->add_action( "save_post_{$this->post_type}", $this, 'save_shorthand_story', 10, 2 );
 
-		// $loader->add_filter("status_save_pre", $this, 'status_save_pre', 10, 2);
-		// $loader->add_action( "add_meta_boxes_{$this->post_type}", $this, 'add_meta_boxes_for_post_type', 10, 1 );
-
 		$loader->add_action( 'edit_form_after_title', $this, 'edit_form_after_title', 10, 1 );
 
 		$loader->add_filter( 'post_row_actions', $this, 'row_action_edit_with_shorthand', 10, 2 );
-		// $loader->add_filter( 'edit_form_before_permalink', $this, 'edit_form_before_permalink', 10, 1 );
 		$loader->add_filter( 'preview_post_link', $this, 'preview_post_link', 10, 2 );
 
 		$loader->add_filter( 'admin_enqueue_scripts', $this, 'admin_enqueue_scripts', 10, 1 );
 
 		$loader->add_action( 'wp_ajax_shorthand_get_story_state', $this, 'ajax_get_story_state', 10, 1 );
+
+		$loader->add_action( 'before_delete_post', $this, 'before_delete_post', 10, 2 );
 	}
 
 	public function get_story_id( WP_Post $post ): string {
 		return get_post_meta( $post->ID, 'story_id', true );
 	}
 
-	// public function status_save_pre(string $status): string
-	// {
-	// if (!$this->is_story_type()) {
-	// return $status;
-	// }
+	public function before_delete_post( int $post_id, WP_Post $post ): void {
+		if ( $post->post_type !== $this->post_type ) {
+			return;
+		}
 
-	// return $status;
-	// }
+		$story_id = get_post_meta( $post_id, 'story_id', true );
+		if ( empty( $story_id ) ) {
+			return;
+		}
+
+		$this->post_api->delete_story_bundle( $post_id, $story_id );
+	}
 
 	public function wp_insert_post_data( array $data, array $postarr, array $unsanitized_postarr, bool $update ): array {
 		if ( ! $this->is_story_type( $data['post_type'] ) ) {
