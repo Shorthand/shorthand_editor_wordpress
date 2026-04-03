@@ -60,26 +60,63 @@ class Dependencies {
 	 */
 	protected $cron;
 
-	public function __construct() {
-		$this->version     = new Version();
-		$this->permissions = new Permissions();
+	/**
+	 * @var bool
+	 */
+	private $booted = false;
 
-		$this->options = new Options( $this->version );
+	public function __construct( ?Version $version = null, ?Permissions $permissions = null ) {
+		$this->version     = $version ? $version : new Version();
+		$this->permissions = $permissions ? $permissions : new Permissions();
+	}
+
+	public function boot(): void {
+		if ( $this->booted ) {
+			return;
+		}
+
+		$this->options = $this->create_options( $this->version );
 		$this->options->init();
 
-		$this->shorthand = new Shorthand( $this->options, $this->version );
+		$this->shorthand = $this->create_shorthand( $this->options, $this->version );
 
-		$this->token_manager = new TokenManager( $this->options, $this->shorthand );
+		$this->token_manager = $this->create_token_manager( $this->options, $this->shorthand );
 		$this->token_manager->init();
 
-		$this->post_type = new PostType( $this->options->get_permalink(), $this->version );
+		$this->post_type = $this->create_post_type( $this->options->get_permalink(), $this->version );
 		$this->post_type->init();
 
-		$this->templates = new Templates( $this->post_type->post_type, $this->options, $this->version );
+		$this->templates = $this->create_templates( $this->post_type->post_type, $this->options, $this->version );
 		$this->templates->init();
 
-		$this->cron = new Cron( $this );
+		$this->cron = $this->create_cron( $this );
 		$this->cron->init();
+
+		$this->booted = true;
+	}
+
+	protected function create_options( Version $version ): Options {
+		return new Options( $version );
+	}
+
+	protected function create_shorthand( Options $options, Version $version ): Shorthand {
+		return new Shorthand( $options, $version );
+	}
+
+	protected function create_token_manager( Options $options, Shorthand $shorthand ): TokenManager {
+		return new TokenManager( $options, $shorthand );
+	}
+
+	protected function create_post_type( string $permalink, Version $version ): PostType {
+		return new PostType( $permalink, $version );
+	}
+
+	protected function create_templates( string $post_type, Options $options, Version $version ): Templates {
+		return new Templates( $post_type, $options, $version );
+	}
+
+	protected function create_cron( Dependencies $dependencies ): Cron {
+		return new Cron( $dependencies );
 	}
 
 	public function get_version(): Version {
@@ -91,14 +128,17 @@ class Dependencies {
 	}
 
 	public function get_post_type(): PostType {
+		$this->boot();
 		return $this->post_type;
 	}
 
 	public function get_templates(): Templates {
+		$this->boot();
 		return $this->templates;
 	}
 
 	public function get_post_api(): PostAPI {
+		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
 			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type );
 		}
@@ -106,6 +146,7 @@ class Dependencies {
 	}
 
 	public function get_admin(): AdminController {
+		$this->boot();
 		if ( ! isset( $this->admin ) ) {
 			$this->admin = new AdminController(
 				$this->get_options(),
@@ -122,10 +163,12 @@ class Dependencies {
 	}
 
 	public function get_options(): Options {
+		$this->boot();
 		return $this->options;
 	}
 
 	public function get_shorthand(): Shorthand {
+		$this->boot();
 		return $this->shorthand;
 	}
 
@@ -134,6 +177,7 @@ class Dependencies {
 	}
 
 	public function get_cron(): Cron {
+		$this->boot();
 		return $this->cron;
 	}
 }

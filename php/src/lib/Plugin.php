@@ -50,8 +50,9 @@ class Plugin {
 	 */
 	private $version;
 
-	public function __construct() {
-		$this->dependencies = new Dependencies();
+	public function __construct( ?Dependencies $dependencies = null, ?StoryKses $story_kses = null ) {
+		$this->dependencies = $dependencies ? $dependencies : new Dependencies();
+		$this->story_kses   = $story_kses ? $story_kses : new StoryKses();
 	}
 
 	public function init() {
@@ -63,11 +64,12 @@ class Plugin {
 		register_activation_hook( THESHED_PLUGIN_FILE, array( $this, 'activate' ) );
 		register_deactivation_hook( THESHED_PLUGIN_FILE, array( $this, 'deactivate' ) );
 
+		$this->dependencies->boot();
+
 		$this->options   = $this->dependencies->get_options();
 		$this->version   = $this->dependencies->get_version();
 		$this->post_type = $this->dependencies->get_post_type();
 
-		$this->story_kses = new StoryKses();
 		$this->story_kses->init();
 
 		if ( is_admin() ) {

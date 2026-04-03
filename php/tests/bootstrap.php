@@ -117,6 +117,8 @@ function tests_wp_settings_errors(): array {
 
 function add_action( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {}
 
+function add_filter( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {}
+
 function register_activation_hook( string $file, $callback ): void {}
 
 function register_deactivation_hook( string $file, $callback ): void {}
