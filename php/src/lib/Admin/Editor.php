@@ -11,6 +11,7 @@ use Shorthand\Core\Version;
 use Shorthand\Services\Options;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\PostAPI;
+use Shorthand\Services\StorySyncState;
 use Shorthand\Admin\Actions\PostPreview;
 use Shorthand\Admin\Actions\EditWithShorthand;
 use Shorthand\Services\Cron;
@@ -345,21 +346,9 @@ class Editor {
 
 	public function get_post_story_state( int $post_id ): ?array {
 		$live_version = $this->post_api->get_post_story_version( $post_id );
-		$data         = array(
-			'errors'      => array( 'publishing' => null ),
-			'liveVersion' => $live_version,
-		);
-
 		$error = $this->post_api->get_story_update_error( $post_id );
-		if ( $error ) {
-			$data['errors']['publishing'] = $error;
-		} else {
-			$state = $this->post_api->get_story_update_progress( $post_id );
-			if ( $state && is_numeric( $state['percent'] ) ) {
-				$data['progress'] = $state;
-			}
-		}
+		$state = $error ? null : $this->post_api->get_story_update_progress( $post_id );
 
-		return $data;
+		return ( new StorySyncState( $live_version, $error, $state ) )->to_array();
 	}
 }

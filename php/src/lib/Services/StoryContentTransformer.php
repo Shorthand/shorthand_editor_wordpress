@@ -25,59 +25,17 @@ class StoryContentTransformer {
 	 * @return string[]
 	 */
 	public function apply_processing_rule_set( string $head, string $article, string $rules_json ): array {
-		$rules = $this->get_processing_rules( $rules_json );
+		$rule_set = RegexRuleSet::from_json( $rules_json );
+		if ( null === $rule_set ) {
+			return array(
+				'head'    => $head,
+				'article' => $article,
+			);
+		}
 
 		return array(
-			'head'    => $this->apply_processing_rules( $head, $rules['head'] ),
-			'article' => $this->apply_processing_rules( $article, $rules['body'] ),
+			'head'    => $rule_set->apply_to_head( $head ),
+			'article' => $rule_set->apply_to_body( $article ),
 		);
-	}
-
-	/**
-	 * @return object[][]
-	 */
-	private function get_processing_rules( string $rules_json ): array {
-		$result = array(
-			'head' => array(),
-			'body' => array(),
-		);
-
-		if ( '' === $rules_json ) {
-			return $result;
-		}
-
-		$rules = json_decode( $rules_json );
-		if ( ! is_object( $rules ) ) {
-			return $result;
-		}
-
-		if ( isset( $rules->head ) && is_array( $rules->head ) ) {
-			$result['head'] = $rules->head;
-		}
-
-		if ( isset( $rules->body ) && is_array( $rules->body ) ) {
-			$result['body'] = $rules->body;
-		}
-
-		return $result;
-	}
-
-	/**
-	 * @param object[] $rules
-	 */
-	private function apply_processing_rules( string $content, array $rules ): string {
-		return array_reduce( $rules, array( $this, 'apply_processing_regex_rule' ), $content );
-	}
-
-	/**
-	 * @param mixed $rule
-	 */
-	private function apply_processing_regex_rule( string $content, $rule ): string {
-		if ( ! is_object( $rule ) || ! isset( $rule->query ) || ! isset( $rule->replace ) ) {
-			return $content;
-		}
-
-		$updated_content = preg_replace( $rule->query, $rule->replace, $content );
-		return is_string( $updated_content ) ? $updated_content : $content;
 	}
 }

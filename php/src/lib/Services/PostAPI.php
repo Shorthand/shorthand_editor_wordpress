@@ -128,23 +128,15 @@ class PostAPI {
 		}
 	}
 
-	public function get_story_update_progress( int $post_id ): ?array {
-		$progress = get_post_meta( $post_id, 'story_update_state', true );
-		return is_array( $progress ) ? $progress : null;
+	public function get_story_update_progress( int $post_id ): ?StorySyncProgress {
+		return StorySyncProgress::from_meta_value( get_post_meta( $post_id, 'story_update_state', true ) );
 	}
 
-	public function set_story_update_progress( int $post_id, ?float $progress = null, ?string $status = null ) {
+	public function set_story_update_progress( int $post_id, ?StorySyncProgress $progress = null ) {
 		if ( ! isset( $progress ) ) {
 			delete_post_meta( $post_id, 'story_update_state' );
 		} else {
-			update_post_meta(
-				$post_id,
-				'story_update_state',
-				array(
-					'percent' => $progress,
-					'status'  => $status,
-				)
-			);
+			update_post_meta( $post_id, 'story_update_state', $progress->to_array() );
 		}
 	}
 
@@ -189,7 +181,7 @@ class PostAPI {
 		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
 
 		$this->set_story_update_error( $post_id );
-		$this->set_story_update_progress( $post_id, 0, 'Requesting story from Shorthand' );
+		$this->set_story_update_progress( $post_id, new StorySyncProgress( 0, 'Requesting story from Shorthand' ) );
 
 		$story_id = get_post_meta( $post_id, 'story_id', true );
 		if ( ! $story_id ) {
@@ -390,7 +382,7 @@ class PostAPI {
 
 		$progress = $args->get_progress_percent( 90 );
 
-		$this->set_story_update_progress( $args->post_id, $progress, 'Saving story to WordPress' );
+		$this->set_story_update_progress( $args->post_id, new StorySyncProgress( $progress, 'Saving story to WordPress' ) );
 
 		return new WP_Error( 'retry', 'Request further file data', 0 );
 	}
@@ -662,10 +654,10 @@ class PostAPI {
 		}
 	}
 
-	public function get_preview_content( $post_id ) {
+	public function get_preview_content( $post_id ): ?StoryPreview {
 		$story_id = get_post_meta( $post_id, 'story_id', true );
 		if ( ! $story_id ) {
-			return;
+			return null;
 		}
 
 		$response = $this->shorthand->shorthand_api_authed_request(
@@ -674,18 +666,10 @@ class PostAPI {
 		);
 
 		if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
-			return;
+			return null;
 		}
 
 		$payload = json_decode( wp_remote_retrieve_body( $response ) );
-
-		$transformed_preview = $this->content_transformer->apply_processing_rule_set(
-			isset( $payload->head ) ? $payload->head : '',
-			isset( $payload->article ) ? $payload->article : '',
-			$this->options->get_post_regex_list()
-		);
-		$head                = $transformed_preview['head'];
-		$article             = $transformed_preview['article'];
 
 		$content_version = wp_remote_retrieve_header( $response, 'content-version' );
 
@@ -694,11 +678,18 @@ class PostAPI {
 		}
 
 		$content_version = ! empty( $content_version ) ? (int) $content_version : null;
-		return array(
-			'head'            => $head,
-			'body'            => $article,
-			'content_version' => $content_version,
+		$preview         = StoryPreview::from_payload( $payload, $content_version );
+		if ( null === $preview ) {
+			return null;
+		}
+
+		$transformed_preview = $this->content_transformer->apply_processing_rule_set(
+			$preview->get_head(),
+			$preview->get_body(),
+			$this->options->get_post_regex_list()
 		);
+
+		return $preview->with_content( $transformed_preview['head'], $transformed_preview['article'] );
 	}
 
 	public function get_wp_error_as_array( WP_Error $error ): array {

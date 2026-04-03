@@ -103,9 +103,9 @@ class PostPreview {
 			$this->die_with_error( __( 'The story does not exist in this Shorthand workspace. It may have been deleted, or your WordPress site may have been connected to a different workspace. Please contact your administrator.', 'the-shorthand-editor' ), 404 );
 		}
 
-		$story_version = $preview_content['content_version'];
-		$story_head    = $preview_content['head'];
-		$story_body    = $preview_content['body'];
+		$story_version = $preview_content->get_content_version();
+		$story_head    = $preview_content->get_head();
+		$story_body    = $preview_content->get_body();
 		$user_style    = $this->options->get_post_css();
 
 		// Enqueue scripts and stylesheets from story head content.
