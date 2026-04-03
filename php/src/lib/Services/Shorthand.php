@@ -23,10 +23,25 @@ class Shorthand {
 	 * @var \Shorthand\Core\Version
 	 */
 	private $version;
+	/**
+	 * @var \Shorthand\Services\ShorthandApiClient
+	 */
+	private $api_client;
+	/**
+	 * @var \Shorthand\Services\WordPressContextProvider
+	 */
+	private $context_provider;
 
-	public function __construct( Options $options, Version $version ) {
-		$this->options = $options;
-		$this->version = $version;
+	public function __construct(
+		Options $options,
+		Version $version,
+		?ShorthandApiClient $api_client = null,
+		?WordPressContextProvider $context_provider = null
+	) {
+		$this->options          = $options;
+		$this->version          = $version;
+		$this->api_client       = $api_client ?? new ShorthandApiClient( $options, $version );
+		$this->context_provider = $context_provider ?? new WordPressContextProvider( $version );
 	}
 
 	/**
@@ -100,10 +115,10 @@ class Shorthand {
 		$body = array(
 			'token'             => $token,
 			'dpop'              => $dpop,
-			'wordpress_context' => $this->get_wordpress_context(),
+			'wordpress_context' => $this->context_provider->get_context(),
 		);
 
-		$response = $this->shorthand_api_request( $url, 'POST', null, array(), $body );
+		$response = $this->api_client->request( $url, 'POST', null, array(), $body );
 		if ( is_wp_error( $response ) ) {
 			wp_die(
 				esc_html__( 'Could not connect to Shorthand at this time. Please try again later.', 'the-shorthand-editor' ),
@@ -274,17 +289,7 @@ class Shorthand {
 	 * @return mixed[]|\WP_Error
 	 */
 	public function shorthand_api_authed_request( $url, $method = 'GET', $options = array(), $body = null ) {
-		$token = $this->options->get_v2_token();
-		if ( $token == '' ) {
-			return new WP_Error( 'settings', __( 'WordPress is not yet linked to a Shorthand workspace', 'the-shorthand-editor' ) );
-		}
-
-		$result = $this->shorthand_api_request( $url, $method, $token, $options, $body );
-		if ( is_wp_error( $result ) ) {
-			$result->add( 'pretty', 'Shorthand is not available at this time.' );
-		}
-
-		return $result;
+		return $this->api_client->authed_request( $url, $method, $options, $body );
 	}
 
 	/**
@@ -292,73 +297,10 @@ class Shorthand {
 	 * Returns the token info or WP_Error on failure.
 	 *
 	 * @param string $token
-	 * @return object|WP_Error Token info object or error
+	 * @return mixed[]|\WP_Error Token info object or error
 	 */
 	public function fetch_token_info( $token ) {
-		if ( empty( $token ) ) {
-			return new WP_Error( 'invalid_token', 'An API token must be provided.' );
-		}
-
-		$url = $this->options->get_api_url() . '/v2/token-info';
-
-		$ssl_verify      = ( defined( 'THESHED_NO_SSL_VERIFY' ) && THESHED_NO_SSL_VERIFY ) ? 0 : 1;
-		$request_options = array(
-			'headers'   => $this->get_request_headers( $token ),
-			'sslverify' => $ssl_verify,
-		);
-
-        $response = wp_remote_request($url, $request_options); // @codingStandardsIgnoreLine
-
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		$status_code = wp_remote_retrieve_response_code( $response );
-		if ( 200 !== $status_code ) {
-			return new WP_Error( 'status', "Verifying API token received HTTP status {$status_code}.", $status_code );
-		}
-
-		return json_decode( wp_remote_retrieve_body( $response ), true );
-	}
-
-	private function shorthand_api_request( $url, $method, $token = null, $options = array(), $body = null ) {
-		$ssl_verify      = ( defined( 'THESHED_NO_SSL_VERIFY' ) && THESHED_NO_SSL_VERIFY ) ? 0 : 1;
-		$request_options = array_merge(
-			array(
-				'headers' => array(),
-			),
-			$options,
-			array(
-				'redirection' => false,
-				'sslverify'   => $ssl_verify,
-				'method'      => $method,
-			)
-		);
-
-		$request_headers            = $this->get_request_headers( $token );
-		$request_options['headers'] = array_merge( $request_options['headers'], $request_headers );
-
-		if ( $body ) {
-			$request_options['body']                    = wp_json_encode( $body );
-			$request_options['headers']['Content-Type'] = 'application/json';
-		}
-
-        $response = wp_remote_request($url, $request_options); // @codingStandardsIgnoreLine
-
-		return $response;
-	}
-
-	private function get_request_headers( $token = null ) {
-		$user_agent = "WordPress/{$GLOBALS['wp_version']} {$this->version->get_plugin_name()}/{$this->version->get_plugin_version()}";
-		$result     = array(
-			'user-agent' => $user_agent,
-		);
-
-		if ( $token ) {
-			$result['Authorization'] = 'Token ' . $token;
-		}
-
-		return $result;
+		return $this->api_client->fetch_token_info( $token );
 	}
 
 	private function sign_identity_for_current_user( string $res, string $return_url ): string {
@@ -390,7 +332,7 @@ class Shorthand {
 					'team'         => $this->options->get_token_team_id(),
 					'organisation' => $this->options->get_token_org_id(),
 				),
-				'wordpress_context' => $this->get_wordpress_context(),
+				'wordpress_context' => $this->context_provider->get_context(),
 			),
 		);
 
@@ -424,7 +366,7 @@ class Shorthand {
 			'scope'           => 'connect',
 			'connect_request' => array(
 				'return_url'        => $return_url,
-				'wordpress_context' => $this->get_wordpress_context(),
+				'wordpress_context' => $this->context_provider->get_context(),
 			),
 		);
 
@@ -477,14 +419,4 @@ class Shorthand {
 		return JWT::encode( $payload, $key, $alg, null, $head );
 	}
 
-	private function get_wordpress_context(): array {
-		return array(
-			'wp_version'     => $GLOBALS['wp_version'],
-			'plugin_name'    => $this->version->get_plugin_name(),
-			'plugin_version' => $this->version->get_plugin_version(),
-			'site_name'      => get_bloginfo( 'name' ),
-			'site_url'       => get_site_url(),
-			'site_rest_url'  => get_rest_url(),
-		);
-	}
 }

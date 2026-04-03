@@ -43,6 +43,17 @@ if ( ! class_exists( 'WP_Error' ) ) {
 
 			return $this->errors[ $code ][0];
 		}
+
+		/**
+		 * @param mixed $data
+		 */
+		public function add( string $code, string $message, $data = null ): void {
+			if ( ! isset( $this->errors[ $code ] ) ) {
+				$this->errors[ $code ] = array();
+			}
+
+			$this->errors[ $code ][] = $message;
+		}
 	}
 }
 
@@ -64,6 +75,7 @@ function tests_wp_reset_state(): void {
 		),
 		'environment_type'     => 'production',
 	);
+	$GLOBALS['wp_version']   = '6.0';
 }
 
 tests_wp_reset_state();
@@ -189,6 +201,18 @@ function wp_remote_get( string $url, array $args = array() ) {
 }
 
 /**
+ * @return array<string, mixed>|WP_Error
+ */
+function wp_remote_request( string $url, array $args = array() ) {
+	$GLOBALS['tests_wp_state']['remote_requests'][] = array(
+		'url'  => $url,
+		'args' => $args,
+	);
+
+	return $GLOBALS['tests_wp_state']['remote_get_response'];
+}
+
+/**
  * @param mixed $thing
  */
 function is_wp_error( $thing ): bool {
@@ -252,6 +276,18 @@ function sanitize_text_field( string $value ): string {
 
 function wp_kses_no_null( string $value ): string {
 	return str_replace( "\0", '', $value );
+}
+
+function get_bloginfo( string $show = '' ): string {
+	return 'Example Site';
+}
+
+function get_site_url(): string {
+	return 'https://example.test';
+}
+
+function get_rest_url(): string {
+	return 'https://example.test/wp-json';
 }
 
 function trailingslashit( string $value ): string {
