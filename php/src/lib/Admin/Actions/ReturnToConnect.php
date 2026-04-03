@@ -15,8 +15,14 @@ class ReturnToConnect {
 	 */
 	private $shorthand;
 
-	public function __construct( Shorthand $shorthand ) {
+	/**
+	 * @var \Shorthand\Admin\Actions\ConnectionCompletionService
+	 */
+	private $connection_completion_service;
+
+	public function __construct( Shorthand $shorthand, ?ConnectionCompletionService $connection_completion_service = null ) {
 		$this->shorthand = $shorthand;
+		$this->connection_completion_service = $connection_completion_service ? $connection_completion_service : new ConnectionCompletionService( $shorthand, new \Shorthand\Admin\AdminGateway() );
 	}
 
 	/**
@@ -99,13 +105,8 @@ class ReturnToConnect {
 			exit;
 		}
 
-		// Complete the connection.
-		$err = $this->shorthand->connect( $token );
-
-		// Redirect to the Shorthand dashboard or a specific post if needed.
 		$post_id = isset( $_GET['post_id'] ) && is_numeric( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0;
-
-		$redirect_url = $post_id ? get_edit_post_link( $post_id, 'raw' ) : admin_url( 'options-general.php?page=shorthand-settings' );
+		$redirect_url = $this->connection_completion_service->complete( $token, $post_id );
 		wp_safe_redirect( $redirect_url );
 		exit;
 	}

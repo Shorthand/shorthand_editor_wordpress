@@ -18,6 +18,9 @@ use Shorthand\Admin\Actions\ReturnToConnect;
 use Shorthand\Admin\Actions\EditWithShorthand;
 use Shorthand\Admin\Actions\RedirectToIntegration;
 use Shorthand\Admin\Actions\PostPreview;
+use Shorthand\Admin\Actions\ConnectionCompletionService;
+use Shorthand\Admin\Actions\StoryEditorLinkBuilder;
+use Shorthand\Admin\Actions\StoryReturnHandler;
 
 use WP_Post;
 
@@ -101,10 +104,30 @@ class AdminController {
 
 	public function admin_init(): void {
 		$loader = new Loader();
+		$admin_gateway = new AdminGateway();
 
-		$return_to_connect = new ReturnToConnect( $this->shorthand );
+		$return_to_connect = new ReturnToConnect(
+			$this->shorthand,
+			new ConnectionCompletionService( $this->shorthand, $admin_gateway )
+		);
 
-		$redirect_to_shorthand_story = new EditWithShorthand( $this->shorthand, $this->options, $this->post_api, $this->post_type );
+		$story_editor_link_builder = new StoryEditorLinkBuilder();
+		$story_return_handler      = new StoryReturnHandler(
+			$this->post_api,
+			$this->shorthand,
+			$admin_gateway,
+			$story_editor_link_builder,
+			$this->post_type
+		);
+
+		$redirect_to_shorthand_story = new EditWithShorthand(
+			$this->shorthand,
+			$this->options,
+			$this->post_api,
+			$this->post_type,
+			$story_return_handler,
+			$story_editor_link_builder
+		);
 		$redirect_to_integration     = new RedirectToIntegration( $this->shorthand, $return_to_connect, admin_url( 'plugins.php' ) );
 
 		$post_preview = new PostPreview( $this->options, $this->post_api, $this->permissions, $this->version );

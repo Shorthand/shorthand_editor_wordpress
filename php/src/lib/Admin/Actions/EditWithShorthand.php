@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\Options;
 use Shorthand\Services\PostAPI;
+use Shorthand\Admin\AdminGateway;
 use Shorthand\Core\Loader;
 
 use WP_Post;
@@ -40,11 +41,23 @@ class EditWithShorthand {
 	 */
 	protected $post_type;
 
-	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type ) {
+	/**
+	 * @var \Shorthand\Admin\Actions\StoryReturnHandler
+	 */
+	private $story_return_handler;
+
+	/**
+	 * @var \Shorthand\Admin\Actions\StoryEditorLinkBuilder
+	 */
+	private $link_builder;
+
+	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, ?StoryReturnHandler $story_return_handler = null, ?StoryEditorLinkBuilder $link_builder = null ) {
 		$this->shorthand = $shorthand;
 		$this->options   = $options;
 		$this->post_api  = $post_api;
 		$this->post_type = $post_type;
+		$this->link_builder = $link_builder ? $link_builder : new StoryEditorLinkBuilder();
+		$this->story_return_handler = $story_return_handler ? $story_return_handler : new StoryReturnHandler( $post_api, $shorthand, new AdminGateway(), $this->link_builder, $post_type );
 	}
 
 	public function define_redirect_and_return_pages( Loader $loader ): void {
@@ -76,14 +89,7 @@ class EditWithShorthand {
 	}
 
 	public function get_url( ?\WP_Post $post = null, ?string $story_id = null ): string {
-		$nonce      = wp_create_nonce( 'shorthand_redirect' );
-		$params     = array( '_wpnonce' => $nonce );
-		$post_param = $post ? "&post={$post->ID}" : '';
-
-		return add_query_arg(
-			$params,
-			admin_url( "admin-post.php?action=shorthand_editor&story={$story_id}{$post_param}" )
-		);
+		return $this->link_builder->build( $post ? (int) $post->ID : null, $story_id );
 	}
 
 	public function redirect_to_login(): void {
@@ -179,65 +185,35 @@ class EditWithShorthand {
 			);
 		}
 
-		if ( $error ) {
-			$link_url = get_edit_post_link( $post_id );
-			wp_die(
-				esc_html__( 'An error occurred during navigation. Please contact Shorthand support.', 'the-shorthand-editor' ),
-				esc_html__( 'Error', 'the-shorthand-editor' ),
-				$link_url ? array(
-					'link_url'  => esc_url( $link_url ),
-					'link_text' => esc_html__( 'Return to story', 'the-shorthand-editor' ),
-				) : array(
-					'link_url'  => esc_url( $this->get_all_stories_url() ),
-					'link_text' => esc_html__( 'Return to all stories', 'the-shorthand-editor' ),
-				)
-			);
-		}
+		$result = $this->story_return_handler->handle( $post_id, $story_id, $error, $target, $create_type );
 
-		if ( $create_type && $create_type !== $this->post_type ) {
-			wp_die( esc_html__( 'Received unexpected post type to connect to Shorthand story.', 'the-shorthand-editor' ) );
-		}
-
-		if ( $create_type && $story_id ) {
-			$post   = $this->post_api->connect_story( $story_id, null );
-			$target = $this->get_url( $post, $story_id );
-
-			$post_id = $post->ID;
-
-			wp_safe_redirect( $target );
-			exit;
-		}
-
-		$post = get_post( $post_id );
-
-		if ( $story_id && $post ) {
-			$title = sanitize_post_field( 'post_title', $this->shorthand->get_story_title( $story_id ), $post->ID, 'db' );
-			if ( $title && $post->post_title !== $title ) {
-				// Update the post title to match the story title
-				wp_update_post(
-					array(
-						'ID'         => $post->ID,
-						'post_title' => $title,
-					)
-				);
-			}
-		}
-
-		if ( ! $target ) {
-			$target = get_edit_post_link( $post, 'raw' );
-		}
-
-		if ( ! $target ) {
-			$target = $this->get_all_stories_url();
-		}
-
-		wp_safe_redirect( $target );
-		exit;
+		$this->respond( $result );
 	}
 
 	private function get_all_stories_url(): string {
 		return admin_url(
 			"edit.php?post_type={$this->post_type}"
+		);
+	}
+
+	private function respond( ActionResult $result ): void {
+		if ( $result->isRedirect() ) {
+			wp_safe_redirect( $result->getRedirectUrl() );
+			exit;
+		}
+
+		$args = array();
+		if ( $result->getLinkUrl() ) {
+			$args['link_url'] = esc_url( $result->getLinkUrl() );
+		}
+		if ( $result->getLinkText() ) {
+			$args['link_text'] = esc_html( $result->getLinkText() );
+		}
+
+		wp_die(
+			esc_html( $result->getMessage() ),
+			esc_html( $result->getTitle() ),
+			$args
 		);
 	}
 
