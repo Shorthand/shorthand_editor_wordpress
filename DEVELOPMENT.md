@@ -86,6 +86,13 @@ compatibility rules for the lower language version.
 composer run-script check-7.2
 ```
 
+For the PHP unit tests, run the following command from within the `php`
+directory.
+
+```bash
+composer test
+```
+
 #### Third-party dependencies
 
 Best practices for WordPress plugins recommend bundling third-party library

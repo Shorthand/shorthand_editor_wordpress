@@ -6,7 +6,8 @@
     "humbug/php-scoper": "^0.18.17",
     "wp-coding-standards/wpcs": "^3.0",
     "automattic/vipwpcs": "^3.0",
-    "symplify/rule-doc-generator": "^12.2"
+    "symplify/rule-doc-generator": "^12.2",
+    "phpunit/phpunit": "^11.5"
   },
   "require": {
     "php": "^7.2 || ^8.0",
@@ -40,6 +41,9 @@
     ],
     "check-7.2": [
       "phpcs -n --standard=PHPCompatibility --runtime-set testVersion 7.2 ./src"
+    ],
+    "test": [
+      "phpunit --configuration phpunit.xml.dist"
     ],
     "cs": [
       "phpcs ./src"

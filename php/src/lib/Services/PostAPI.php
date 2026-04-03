@@ -36,11 +36,16 @@ class PostAPI {
 	 * @var string
 	 */
 	private $post_type;
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type ) {
+	/**
+	 * @var \Shorthand\Services\StoryContentTransformer
+	 */
+	private $content_transformer;
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, ?StoryContentTransformer $content_transformer = null ) {
 		$this->shorthand   = $shorthand;
 		$this->options     = $options;
 		$this->permissions = $permissions;
 		$this->post_type   = $post_type;
+		$this->content_transformer = $content_transformer ? $content_transformer : new StoryContentTransformer();
 	}
 
 	/**
@@ -340,11 +345,9 @@ class PostAPI {
 			return $res;
 		}
 
-		if ( $args->end === 0 ) {
-			$args->end = 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
-		}
+		$args->ensure_chunk_window();
 
-		if ( $args->start && $args->start >= $args->size ) {
+		if ( $args->is_download_complete() ) {
 			/* this request has been completed */
 			return $this->pull_story_completed( $args );
 		}
@@ -383,13 +386,9 @@ class PostAPI {
 			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
 		}
 
-		++$args->files;
+		$args->mark_chunk_downloaded();
 
-		$chunk_size  = $args->end - $args->start;
-		$args->start = $args->end;
-		$args->end   = $args->start + $chunk_size;
-
-		$progress = min( 90, round( ( 90 * $args->start ) / max( $args->size, 1 ) ) );
+		$progress = $args->get_progress_percent( 90 );
 
 		$this->set_story_update_progress( $args->post_id, $progress, 'Saving story to WordPress' );
 
@@ -569,17 +568,19 @@ class PostAPI {
 		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
 		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
 
-		$head    = $this->fix_content_paths( $bundle_url, $head );
-		$article = $this->fix_content_paths( $bundle_url, $article );
+		$head    = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $head );
+		$article = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $article );
 
-		$rules = json_decode( $this->options->get_post_regex_list() );
+		$head    = apply_filters( 'theshed_fix_content_paths', $head );
+		$article = apply_filters( 'theshed_fix_content_paths', $article );
 
-		if ( $rules && isset( $rules->body ) && is_array( $rules->body ) ) {
-			$article = array_reduce( $rules->body, array( $this, 'apply_processing_regex_rule' ), $article );
-		}
-		if ( $rules && isset( $rules->head ) && is_array( $rules->head ) ) {
-			$head = array_reduce( $rules->head, array( $this, 'apply_processing_regex_rule' ), $head );
-		}
+		$transformed_story = $this->content_transformer->apply_processing_rule_set(
+			$head,
+			$article,
+			$this->options->get_post_regex_list()
+		);
+		$head              = $transformed_story['head'];
+		$article           = $transformed_story['article'];
 
 		$article = apply_filters( 'theshed_post_process_body', $article, $bundle_path, "{$bundle_path}/article.html" );
 		$head    = apply_filters( 'theshed_post_process_head', $head, $bundle_path, "{$bundle_path}/head.html" );
@@ -588,11 +589,6 @@ class PostAPI {
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
 
 		return null;
-	}
-
-	private function apply_processing_regex_rule( $content, $rule ) {
-		$content = preg_replace( $rule->query, $rule->replace, $content );
-		return $content;
 	}
 
 	private function unzip_story( $zip_file, $story_path ) {
@@ -631,14 +627,6 @@ class PostAPI {
 			'head'    => $head,
 			'article' => $article,
 		);
-	}
-
-	private function fix_content_paths( $assets_path, $content ) {
-		$content = str_replace( './assets/', $assets_path . '/assets/', $content );
-		$content = str_replace( './static/', $assets_path . '/static/', $content );
-		$content = preg_replace( '/.(\/theme-\w+.min.css)/', $assets_path . '$1', $content );
-		$content = apply_filters( 'theshed_fix_content_paths', $content );
-		return $content;
 	}
 
 	public function get_story_bundle_url( $post_id, $story_id ): string {
@@ -691,17 +679,13 @@ class PostAPI {
 
 		$payload = json_decode( wp_remote_retrieve_body( $response ) );
 
-		$rules   = json_decode( $this->options->get_post_regex_list() );
-		$head    = $payload->head;
-		$article = $payload->article;
-
-		if ( $rules && isset( $rules->body ) && is_array( $rules->body ) ) {
-			$article = array_reduce( $rules->body, array( $this, 'apply_processing_regex_rule' ), $article );
-		}
-
-		if ( $rules && isset( $rules->head ) && is_array( $rules->head ) ) {
-			$head = array_reduce( $rules->head, array( $this, 'apply_processing_regex_rule' ), $head );
-		}
+		$transformed_preview = $this->content_transformer->apply_processing_rule_set(
+			isset( $payload->head ) ? $payload->head : '',
+			isset( $payload->article ) ? $payload->article : '',
+			$this->options->get_post_regex_list()
+		);
+		$head                = $transformed_preview['head'];
+		$article             = $transformed_preview['article'];
 
 		$content_version = wp_remote_retrieve_header( $response, 'content-version' );
 

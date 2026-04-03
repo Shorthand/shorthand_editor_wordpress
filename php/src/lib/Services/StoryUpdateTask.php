@@ -77,6 +77,28 @@ class StoryUpdateTask {
 		$this->storage_path  = $storage_path;
 	}
 
+	public function ensure_chunk_window(): void {
+		if ( 0 === $this->end ) {
+			$this->end = 1024 * 1024 * self::CHUNK_SIZE_MB;
+		}
+	}
+
+	public function is_download_complete(): bool {
+		return $this->start > 0 && $this->start >= $this->size;
+	}
+
+	public function mark_chunk_downloaded(): void {
+		++$this->files;
+
+		$chunk_size  = max( $this->end - $this->start, 1 );
+		$this->start = $this->end;
+		$this->end   = $this->start + $chunk_size;
+	}
+
+	public function get_progress_percent( int $cap = 90 ): int {
+		return min( $cap, (int) round( ( $cap * $this->start ) / max( $this->size, 1 ) ) );
+	}
+
 	public static function from_json( string $json ): ?\Shorthand\Services\StoryUpdateTask {
 		$data = json_decode( $json, true );
 		if ( ! is_array( $data ) ) {
