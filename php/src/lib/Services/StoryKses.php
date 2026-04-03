@@ -110,20 +110,7 @@ class StoryKses {
 			return;
 		}
 
-		wp_enqueue_script( self::SCRIPT_HANDLE );
-
-		foreach ( self::$scripts as $script ) {
-			if ( preg_match( '/src=["\']([^"\']+)["\']/', $script, $src_match ) ) {
-				// External script - enqueue it.
-				$handle = 'theshed-story-' . md5( $src_match[1] );
-				wp_enqueue_script( $handle, $src_match[1], array(), $story_version, true );
-			} elseif ( preg_match( '/<script\b[^>]*>(.*?)<\/script>/is', $script, $content_match ) ) {
-				// Inline script - decode HTML entities and add to registered handle.
-				// This script does not have a version.
-				$script_content = html_entity_decode( $content_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-				wp_add_inline_script( self::SCRIPT_HANDLE, $script_content ); /* phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion */
-			}
-		}
+		( new StoryAssetEnqueuer() )->enqueue_story_scripts( self::$scripts, $story_version );
 
 		self::$scripts = array();
 	}
@@ -367,26 +354,21 @@ class StoryKses {
 			$allowed_html = wp_kses_allowed_html( $allowed_html );
 		}
 
-		// Find all sh-* tag names in the content.
-		if ( preg_match_all( '/<(sh-[a-z0-9-]+)/i', $content, $matches ) ) {
-			$global_attrs = $allowed_html['div'] ?? array();
+		$global_attrs = $allowed_html['div'] ?? array();
 
-			foreach ( array_unique( $matches[1] ) as $tag ) {
-				$tag = strtolower( $tag );
-				if ( ! isset( $allowed_html[ $tag ] ) ) {
-					// Add a filter that will include this tag.
-					add_filter(
-						'wp_kses_allowed_html',
-						function ( $tags, $context ) use ( $tag, $global_attrs ) {
-							if ( self::$enabled && 'post' === $context && is_array( $tags ) ) {
-								$tags[ $tag ] = $global_attrs;
-							}
-							return $tags;
-						},
-						11,
-						2
-					);
-				}
+		foreach ( ( new StoryAssetParser() )->find_shorthand_tags( $content ) as $tag ) {
+			if ( ! isset( $allowed_html[ $tag ] ) ) {
+				add_filter(
+					'wp_kses_allowed_html',
+					function ( $tags, $context ) use ( $tag, $global_attrs ) {
+						if ( self::$enabled && 'post' === $context && is_array( $tags ) ) {
+							$tags[ $tag ] = $global_attrs;
+						}
+						return $tags;
+					},
+					11,
+					2
+				);
 			}
 		}
 
@@ -407,12 +389,10 @@ class StoryKses {
 			return $content;
 		}
 
-		if ( preg_match_all( '/<script\b[^>]*>.*?<\/script>/is', $content, $matches ) ) {
-			self::$scripts = array_merge( self::$scripts, $matches[0] );
-			$content       = preg_replace( '/<script\b[^>]*>.*?<\/script>/is', '', $content );
-		}
+		$result        = ( new StoryAssetParser() )->extract_script_tags( $content );
+		self::$scripts = array_merge( self::$scripts, $result['scripts'] );
 
-		return $content;
+		return $result['content'];
 	}
 
 	/**
@@ -426,27 +406,15 @@ class StoryKses {
 	 * @param int|null $story_version Story version for cache busting.
 	 */
 	public static function echo_extract_and_enqueue_assets( string $content, ?int $story_version = null ): void {
-		// Extract and remove <script> tags.
-		if ( preg_match_all( '/<script\b[^>]*>.*?<\/script>/is', $content, $script_matches ) ) {
-			self::$scripts = array_merge( self::$scripts, $script_matches[0] );
-			$content       = preg_replace( '/<script\b[^>]*>.*?<\/script>/is', '', $content );
-		}
+		$parser          = new StoryAssetParser();
+		$script_result   = $parser->extract_script_tags( $content );
+		$style_result    = $parser->extract_style_tags( $script_result['content'] );
+		$asset_enqueuer  = new StoryAssetEnqueuer();
+		self::$scripts   = array_merge( self::$scripts, $script_result['scripts'] );
+		$content         = $style_result['content'];
 
-		// Extract and remove <style> tags, enqueue via WordPress.
-		$style_index = 0;
-		if ( preg_match_all( '/<style\b[^>]*>(.*?)<\/style>/is', $content, $style_matches, PREG_SET_ORDER ) ) {
-			foreach ( $style_matches as $match ) {
-				$handle = 'theshed-story-body-style-' . $style_index;
-				// Inline styles do not have a version.
-				wp_register_style( $handle, false, array(), null ); /* phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion */
-				wp_enqueue_style( $handle );
-				wp_add_inline_style( $handle, $match[1] );
-				++$style_index;
-			}
-			$content = preg_replace( '/<style\b[^>]*>.*?<\/style>/is', '', $content );
-		}
+		$asset_enqueuer->enqueue_inline_styles( $style_result['styles'], 'theshed-story-body-style-' );
 
-		// Enqueue extracted scripts.
 		self::enqueue_story_scripts( $story_version );
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted Shorthand content.
@@ -485,12 +453,7 @@ class StoryKses {
 	 * @param string $head_content The story head HTML content.
 	 */
 	public static function echo_meta_tags( string $head_content ): void {
-		if ( ! preg_match_all( '/<meta\b([^>]*)>/is', $head_content, $matches ) ) {
-			return;
-		}
-
-		foreach ( $matches[1] as $attrs_string ) {
-			$attrs = self::parse_html_attributes( $attrs_string );
+		foreach ( ( new StoryAssetParser() )->extract_meta_tags( $head_content ) as $attrs ) {
 			if ( empty( $attrs ) ) {
 				continue;
 			}
@@ -508,40 +471,6 @@ class StoryKses {
 	}
 
 	/**
-	 * Parses HTML attributes from a string.
-	 *
-	 * Handles both value attributes (name="value") and boolean attributes (defer, async).
-	 *
-	 * @param string $attrs_string The attributes portion of an HTML tag.
-	 * @return array<string, string|true> Associative array of attribute name => value (or true for boolean attributes).
-	 */
-	private static function parse_html_attributes( string $attrs_string ): array {
-		$attrs = array();
-
-		// Match attribute="value", attribute='value', attribute=value, or boolean attributes.
-		if ( preg_match_all( '/([a-z0-9_-]+)(?:\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+)))?/is', $attrs_string, $matches, PREG_SET_ORDER ) ) {
-			foreach ( $matches as $match ) {
-				$name = strtolower( $match[1] );
-				if ( isset( $match[2] ) && $match[2] !== '' ) {
-					// Double-quoted value.
-					$attrs[ $name ] = html_entity_decode( $match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-				} elseif ( isset( $match[3] ) && $match[3] !== '' ) {
-					// Single-quoted value.
-					$attrs[ $name ] = html_entity_decode( $match[3], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-				} elseif ( isset( $match[4] ) && $match[4] !== '' ) {
-					// Unquoted value.
-					$attrs[ $name ] = html_entity_decode( $match[4], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-				} else {
-					// Boolean attribute (no value).
-					$attrs[ $name ] = true;
-				}
-			}
-		}
-
-		return $attrs;
-	}
-
-	/**
 	 * Enqueues scripts and stylesheets from story head content.
 	 *
 	 * Assets are enqueued in the same order they appear in the original content.
@@ -551,71 +480,10 @@ class StoryKses {
 	 * @param int|null $story_version  Story version for cache busting. Default null.
 	 */
 	public static function enqueue_head_assets( string $head_content, bool $in_footer = false, ?int $story_version = null ): void {
-		// Match all link, style, and script tags in order with their positions.
-		$pattern = '/<(link|style|script)\b([^>]*)>(.*?)<\/\1>|<(link)\b([^>]*)>/is';
-
-		if ( ! preg_match_all( $pattern, $head_content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
-			return;
-		}
-
-		$style_index  = 0;
-		$script_index = 0;
-
-		foreach ( $matches as $match ) {
-			// For self-closing link tags, tag name is in group 4, attrs in group 5.
-			// For paired tags, tag name is in group 1, attrs in group 2, content in group 3.
-			if ( ! empty( $match[4][0] ) ) {
-				$tag_name     = strtolower( $match[4][0] );
-				$attrs_string = $match[5][0];
-				$content      = '';
-			} else {
-				$tag_name     = strtolower( $match[1][0] );
-				$attrs_string = $match[2][0];
-				$content      = $match[3][0];
-			}
-
-			$attrs = self::parse_html_attributes( $attrs_string );
-
-			if ( 'link' === $tag_name ) {
-				// Check if it's a stylesheet link.
-				$rel  = $attrs['rel'] ?? '';
-				$href = $attrs['href'] ?? '';
-				if ( 'stylesheet' === $rel && $href ) {
-					$handle = 'theshed-story-style-' . $style_index;
-					wp_enqueue_style( $handle, $href, array(), $story_version );
-					++$style_index;
-				}
-			} elseif ( 'style' === $tag_name ) {
-				$handle = 'theshed-story-inline-style-' . $style_index;
-				// This inline style sheet does not have a version.
-				wp_register_style( $handle, false, array(), null ); /* phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion */
-				wp_enqueue_style( $handle );
-				wp_add_inline_style( $handle, $content );
-				++$style_index;
-			} elseif ( 'script' === $tag_name ) {
-				$script_args = array(
-					'in_footer' => $in_footer,
-				);
-				if ( isset( $attrs['defer'] ) ) {
-					$script_args['strategy'] = 'defer';
-				}
-
-				$src = $attrs['src'] ?? '';
-				if ( $src ) {
-					// External script.
-					$handle = 'theshed-story-head-script-' . $script_index;
-					wp_enqueue_script( $handle, $src, array(), $story_version, $script_args );
-				} else {
-					// Inline script.
-					$handle  = 'theshed-story-head-inline-' . $script_index;
-					$decoded = html_entity_decode( $content, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-					// This script does not have a version.
-					wp_register_script( $handle, false, array(), null, $script_args ); /* phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion */
-					wp_enqueue_script( $handle );
-					wp_add_inline_script( $handle, $decoded );
-				}
-				++$script_index;
-			}
-		}
+		( new StoryAssetEnqueuer() )->enqueue_head_assets(
+			( new StoryAssetParser() )->parse_head_assets( $head_content ),
+			$in_footer,
+			$story_version
+		);
 	}
 }

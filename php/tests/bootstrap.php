@@ -73,6 +73,12 @@ function tests_wp_reset_state(): void {
 			),
 			'body'     => '',
 		),
+		'enqueued_scripts'     => array(),
+		'registered_scripts'   => array(),
+		'inline_scripts'       => array(),
+		'enqueued_styles'      => array(),
+		'registered_styles'    => array(),
+		'inline_styles'        => array(),
 		'environment_type'     => 'production',
 	);
 	$GLOBALS['wp_version']   = '6.0';
@@ -127,9 +133,53 @@ function tests_wp_settings_errors(): array {
 	return $GLOBALS['tests_wp_state']['settings_errors'];
 }
 
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_enqueued_scripts(): array {
+	return $GLOBALS['tests_wp_state']['enqueued_scripts'];
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_registered_scripts(): array {
+	return $GLOBALS['tests_wp_state']['registered_scripts'];
+}
+
+/**
+ * @return array<int, array<string, string>>
+ */
+function tests_wp_inline_scripts(): array {
+	return $GLOBALS['tests_wp_state']['inline_scripts'];
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_enqueued_styles(): array {
+	return $GLOBALS['tests_wp_state']['enqueued_styles'];
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_registered_styles(): array {
+	return $GLOBALS['tests_wp_state']['registered_styles'];
+}
+
+/**
+ * @return array<int, array<string, string>>
+ */
+function tests_wp_inline_styles(): array {
+	return $GLOBALS['tests_wp_state']['inline_styles'];
+}
+
 function add_action( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {}
 
 function add_filter( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {}
+
+function remove_filter( string $hook_name, $callback, int $priority = 10 ): void {}
 
 function register_activation_hook( string $file, $callback ): void {}
 
@@ -144,6 +194,10 @@ function is_admin(): bool {
 }
 
 function flush_rewrite_rules(): void {}
+
+function wp_allowed_protocols(): array {
+	return array( 'http', 'https' );
+}
 
 function plugin_basename( string $file ): string {
 	return basename( dirname( $file ) ) . '/' . basename( $file );
@@ -260,6 +314,80 @@ function get_option( string $option, $default = false ) {
  */
 function update_option( string $option, $value ): bool {
 	$GLOBALS['tests_wp_state']['options'][ $option ] = $value;
+	return true;
+}
+
+/**
+ * @param array<int, string> $deps
+ * @param mixed $ver
+ * @param mixed $args
+ */
+function wp_enqueue_script( string $handle, string $src = '', array $deps = array(), $ver = false, $args = false ): void {
+	$GLOBALS['tests_wp_state']['enqueued_scripts'][] = array(
+		'handle' => $handle,
+		'src'    => $src,
+		'deps'   => $deps,
+		'ver'    => $ver,
+		'args'   => $args,
+	);
+}
+
+/**
+ * @param array<int, string> $deps
+ * @param mixed $ver
+ * @param mixed $args
+ */
+function wp_register_script( string $handle, $src = '', array $deps = array(), $ver = false, $args = false ): void {
+	$GLOBALS['tests_wp_state']['registered_scripts'][] = array(
+		'handle' => $handle,
+		'src'    => false === $src ? '' : (string) $src,
+		'deps'   => $deps,
+		'ver'    => $ver,
+		'args'   => $args,
+	);
+}
+
+function wp_add_inline_script( string $handle, string $data ): bool {
+	$GLOBALS['tests_wp_state']['inline_scripts'][] = array(
+		'handle' => $handle,
+		'data'   => $data,
+	);
+	return true;
+}
+
+/**
+ * @param array<int, string> $deps
+ * @param mixed $ver
+ */
+function wp_enqueue_style( string $handle, string $src = '', array $deps = array(), $ver = false, string $media = 'all' ): void {
+	$GLOBALS['tests_wp_state']['enqueued_styles'][] = array(
+		'handle' => $handle,
+		'src'    => $src,
+		'deps'   => $deps,
+		'ver'    => $ver,
+		'media'  => $media,
+	);
+}
+
+/**
+ * @param array<int, string> $deps
+ * @param mixed $ver
+ */
+function wp_register_style( string $handle, $src = '', array $deps = array(), $ver = false, string $media = 'all' ): void {
+	$GLOBALS['tests_wp_state']['registered_styles'][] = array(
+		'handle' => $handle,
+		'src'    => false === $src ? '' : (string) $src,
+		'deps'   => $deps,
+		'ver'    => $ver,
+		'media'  => $media,
+	);
+}
+
+function wp_add_inline_style( string $handle, string $data ): bool {
+	$GLOBALS['tests_wp_state']['inline_styles'][] = array(
+		'handle' => $handle,
+		'data'   => $data,
+	);
 	return true;
 }
 
