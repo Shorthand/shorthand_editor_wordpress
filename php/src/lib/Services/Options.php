@@ -193,8 +193,9 @@ class Options {
 		}
 
 		return array(
-			'state'      => $auth_state['state'],
-			'changed_at' => absint( $auth_state['changed_at'] ),
+			'state'           => $auth_state['state'],
+			'changed_at'      => absint( $auth_state['changed_at'] ),
+			'pending_upgrade' => ! empty( $auth_state['pending_upgrade'] ),
 		);
 	}
 

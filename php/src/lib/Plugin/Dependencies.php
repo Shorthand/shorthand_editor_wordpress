@@ -109,7 +109,7 @@ class Dependencies {
 	}
 
 	protected function create_auth_state_manager(): AuthStateManager {
-		return new AuthStateManager();
+		return new AuthStateManager( $this->version );
 	}
 
 	protected function create_api_client( Options $options, Version $version, AuthStateManager $auth_state_manager ): ShorthandApiClient {
