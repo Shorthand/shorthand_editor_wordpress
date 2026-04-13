@@ -83,7 +83,17 @@ class Options {
 			)
 		);
 
-		/* Internal settings, used to persist  token information */
+		/* Internal settings, used to persist token information and auth state */
+		register_setting(
+			'theshed-internal-options-group',
+			'shorthand_auth_state',
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( $this, 'sanitize_auth_state' ),
+				'default'           => null,
+			)
+		);
+
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_token_info',
@@ -160,6 +170,32 @@ class Options {
 
 	public function handle_permalink_updated( $option, $old_value, $value ): void {
 		flush_rewrite_rules();
+	}
+
+	/**
+	 * @param mixed $auth_state
+	 * @return array{state: string, changed_at: int}|null
+	 */
+	public function sanitize_auth_state( $auth_state ) {
+		if ( ! is_array( $auth_state ) || ! isset( $auth_state['state'], $auth_state['changed_at'] ) ) {
+			return null;
+		}
+
+		$valid_states = array(
+			AuthStateManager::STATE_DISCONNECTED,
+			AuthStateManager::STATE_CONNECTED,
+			AuthStateManager::STATE_INVALID,
+			AuthStateManager::STATE_UPGRADE_REQUIRED,
+		);
+
+		if ( ! in_array( $auth_state['state'], $valid_states, true ) ) {
+			return null;
+		}
+
+		return array(
+			'state'      => $auth_state['state'],
+			'changed_at' => absint( $auth_state['changed_at'] ),
+		);
 	}
 
 	public function sanitize_v2_token_info( $token_info ) {
@@ -337,5 +373,8 @@ class Options {
 			$old_css = wp_kses_no_null( get_option( 'sh_css', $this->get_default_css() ) );
 			add_option( 'shorthand_css', $old_css, '', true );
 		}
+
+		/* Clean up legacy notice dismissal meta from earlier plugin versions. */
+		delete_metadata( 'user', 0, 'shorthand_connect_notice_dismissed', '', true );
 	}
 }

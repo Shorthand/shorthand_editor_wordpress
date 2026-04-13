@@ -40,12 +40,18 @@ class PostAPI {
 	 * @var \Shorthand\Services\StoryContentTransformer
 	 */
 	private $content_transformer;
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, ?StoryContentTransformer $content_transformer = null ) {
-		$this->shorthand   = $shorthand;
-		$this->options     = $options;
-		$this->permissions = $permissions;
-		$this->post_type   = $post_type;
+	/**
+	 * @var \Shorthand\Services\AuthStateManager|null
+	 */
+	private $auth_state_manager;
+
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, ?StoryContentTransformer $content_transformer = null, ?AuthStateManager $auth_state_manager = null ) {
+		$this->shorthand           = $shorthand;
+		$this->options             = $options;
+		$this->permissions         = $permissions;
+		$this->post_type           = $post_type;
 		$this->content_transformer = $content_transformer ? $content_transformer : new StoryContentTransformer();
+		$this->auth_state_manager  = $auth_state_manager;
 	}
 
 	/**
@@ -177,6 +183,10 @@ class PostAPI {
 	 * @return \Shorthand\Services\StoryUpdateTask|\WP_Error
 	 */
 	public function pull_story_begin( int $post_id ) {
+		if ( $this->auth_state_manager && ! $this->auth_state_manager->is_connected() ) {
+			return new WP_Error( 'auth', __( 'Cannot publish: the Shorthand connection is not active.', 'the-shorthand-editor' ) );
+		}
+
 		/* abort any outstanding requests by updating the nonce */
 		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
 

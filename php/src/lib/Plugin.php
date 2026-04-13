@@ -82,6 +82,7 @@ class Plugin {
 		$loader->add_filter( 'pre_set_site_transient_update_plugins', $this, 'check_for_updates' );
 		$loader->add_filter( 'plugins_api', $this, 'plugin_info', 10, 3 );
 		$loader->add_filter( 'delete_site_transient_update_plugins', $this, 'clear_update_cache' );
+		$loader->add_action( 'upgrader_process_complete', $this, 'handle_upgrade_complete', 10, 2 );
 		if ( defined( 'THESHED_BLOCK_UPGRADE' ) && THESHED_BLOCK_UPGRADE ) {
 			$loader->add_filter( 'upgrader_pre_install', $this, 'block_upgrade', 10, 2 );
 		}
@@ -91,6 +92,12 @@ class Plugin {
 	public function activate() {
 		$options = $this->dependencies->get_options();
 		$options->activate_plugin();
+
+		/* If a token already exists, refetch the token info to update the auth state. */
+		$token = $options->get_v2_token();
+		if ( '' !== $token ) {
+			$this->dependencies->get_token_manager()->fetch_and_store_token_info( $token );
+		}
 
 		flush_rewrite_rules();
 	}
@@ -173,6 +180,31 @@ class Plugin {
 			'banners'        => (array) ( $remote->banners ?? array() ),
 			'icons'          => (array) ( $remote->icons ?? array() ),
 		);
+	}
+
+	/**
+	 * After this plugin is upgraded, refetch token info to update the auth state.
+	 *
+	 * This allows the plugin to recover from an `upgrade_required` state after
+	 * the user has installed a newer version.
+	 *
+	 * @param \WP_Upgrader $upgrader
+	 * @param array        $hook_extra
+	 */
+	public function handle_upgrade_complete( $upgrader, $hook_extra ) {
+		if ( ! isset( $hook_extra['plugins'] ) || ! is_array( $hook_extra['plugins'] ) ) {
+			return;
+		}
+
+		$plugin_basename = $this->version->get_plugin_base_name();
+		if ( ! in_array( $plugin_basename, $hook_extra['plugins'], true ) ) {
+			return;
+		}
+
+		$token = $this->options->get_v2_token();
+		if ( '' !== $token ) {
+			$this->dependencies->get_token_manager()->fetch_and_store_token_info( $token );
+		}
 	}
 
 	public function block_upgrade( $response, $hook_extra ) {

@@ -8,6 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 use Shorthand\Core\Loader;
 use Shorthand\Core\Version;
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Options;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\PostAPI;
@@ -54,6 +55,11 @@ class Editor {
 	 */
 	private $version;
 
+	/**
+	 * @var \Shorthand\Services\AuthStateManager
+	 */
+	private $auth_state_manager;
+
 	public function __construct(
 		Options $options,
 		Shorthand $shorthand,
@@ -62,7 +68,8 @@ class Editor {
 		PostAPI $post_api,
 		PostPreview $post_preview,
 		EditWithShorthand $edit_with_shorthand,
-		string $post_type
+		string $post_type,
+		AuthStateManager $auth_state_manager
 	) {
 		$this->post_type           = $post_type;
 		$this->options             = $options;
@@ -72,6 +79,7 @@ class Editor {
 		$this->post_api            = $post_api;
 		$this->post_preview        = $post_preview;
 		$this->edit_with_shorthand = $edit_with_shorthand;
+		$this->auth_state_manager  = $auth_state_manager;
 	}
 
 	public function init( Loader $loader ) {
@@ -118,7 +126,7 @@ class Editor {
 		$old_title = get_post_field( 'post_title', $postarr['ID'], 'raw' );
 		$new_title = stripslashes( $data['post_title'] );
 
-		if ( $old_title !== $new_title ) {
+		if ( $old_title !== $new_title && $this->auth_state_manager->is_connected() ) {
 			$story_id = get_post_meta( $post_id, 'story_id', true );
 			if ( isset( $story_id ) && $story_id ) {
 				$this->shorthand->set_story_title( $story_id, $new_title );
@@ -126,6 +134,15 @@ class Editor {
 		}
 
 		if ( ! $this->is_publishing_status( $data['post_status'] ) ) {
+			return $data;
+		}
+
+		if ( ! $this->auth_state_manager->is_connected() ) {
+			$this->post_api->set_story_update_error(
+				$post_id,
+				new WP_Error( 'auth', __( 'Cannot publish: the Shorthand connection is not active.', 'the-shorthand-editor' ) )
+			);
+			$data['post_status'] = get_post_status( $post_id );
 			return $data;
 		}
 
@@ -240,7 +257,7 @@ class Editor {
 			return $actions;
 		}
 
-		if ( ! $this->options->is_verified() ) {
+		if ( ! $this->auth_state_manager->is_connected() ) {
 			return $actions;
 		}
 
@@ -285,10 +302,11 @@ class Editor {
 		$post     = get_post();
 		$story_id = $this->get_story_id( $post );
 
-		/* TODO: alternative content when token is not verified */
+		$is_connected = $this->auth_state_manager->is_connected();
+		$auth_state   = $this->auth_state_manager->get_state();
 
-		// Inject the early-page toolbar components and styles.
-		$edit_url    = $this->edit_with_shorthand->get_url( $post, $story_id );
+		// Only provide an edit URL when the plugin is in a connected state.
+		$edit_url    = $is_connected ? $this->edit_with_shorthand->get_url( $post, $story_id ) : null;
 		$story_state = $this->get_post_story_state( $post->ID );
 
 		wp_enqueue_style( 'theshed-post-components-style', $this->version->get_plugin_url( 'public/scripts/post.min.css' ), array(), $this->version->get_plugin_version() );
@@ -304,6 +322,7 @@ class Editor {
 			window.Shorthand.WordPress.restApiUrl = <?php echo wp_json_encode( get_rest_url(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>;
 			window.Shorthand.WordPress.pluginFilesUrl = <?php echo wp_json_encode( $this->version->get_plugin_url(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>;
 			window.Shorthand.WordPress.ajaxApiUrl = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>;
+			window.Shorthand.WordPress.authState = <?php echo wp_json_encode( $auth_state, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>;
 		<?php
 
 		$post_components_src = ob_get_clean();

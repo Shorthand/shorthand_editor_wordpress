@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\Options;
 use Shorthand\Services\PostAPI;
@@ -51,13 +52,19 @@ class EditWithShorthand {
 	 */
 	private $link_builder;
 
-	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, ?StoryReturnHandler $story_return_handler = null, ?StoryEditorLinkBuilder $link_builder = null ) {
-		$this->shorthand = $shorthand;
-		$this->options   = $options;
-		$this->post_api  = $post_api;
-		$this->post_type = $post_type;
-		$this->link_builder = $link_builder ? $link_builder : new StoryEditorLinkBuilder();
+	/**
+	 * @var \Shorthand\Services\AuthStateManager|null
+	 */
+	private $auth_state_manager;
+
+	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, ?StoryReturnHandler $story_return_handler = null, ?StoryEditorLinkBuilder $link_builder = null, ?AuthStateManager $auth_state_manager = null ) {
+		$this->shorthand            = $shorthand;
+		$this->options              = $options;
+		$this->post_api             = $post_api;
+		$this->post_type            = $post_type;
+		$this->link_builder         = $link_builder ? $link_builder : new StoryEditorLinkBuilder();
 		$this->story_return_handler = $story_return_handler ? $story_return_handler : new StoryReturnHandler( $post_api, $shorthand, new AdminGateway(), $this->link_builder, $post_type );
+		$this->auth_state_manager   = $auth_state_manager;
 	}
 
 	public function define_redirect_and_return_pages( Loader $loader ): void {
@@ -109,6 +116,7 @@ class EditWithShorthand {
 		}
 
 		$this->check_permissions();
+		$this->check_auth_state();
 
 		$redirect_url = $this->get_redirect_url();
 
@@ -130,6 +138,7 @@ class EditWithShorthand {
 		$story_id = isset( $_GET['story'] ) ? sanitize_text_field( wp_unslash( $_GET['story'] ) ) : null;
 
 		$this->check_permissions( $post_id );
+		$this->check_auth_state();
 
 		$redirect_url = $this->get_redirect_url( $post_id, $story_id );
 
@@ -230,6 +239,18 @@ class EditWithShorthand {
 		}
 	}
 
+
+	private function check_auth_state(): void {
+		if ( $this->auth_state_manager && ! $this->auth_state_manager->is_connected() ) {
+			wp_die(
+				esc_html__( 'The Shorthand connection is not active. Please ask your administrator to reconnect the plugin.', 'the-shorthand-editor' ),
+				esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
+				array(
+					'back_link' => true,
+				)
+			);
+		}
+	}
 
 	private function get_redirect_url( ?int $post_id = null, ?string $story_id = null ): string {
 		$target_url = $this->get_callback_url( $post_id );

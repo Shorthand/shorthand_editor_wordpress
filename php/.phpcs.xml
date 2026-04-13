@@ -37,4 +37,7 @@
     <exclude-pattern>*/vendor_prefixed/*</exclude-pattern>
     <exclude-pattern>*/node_modules/*</exclude-pattern>
     <exclude-pattern>*/firebase/*</exclude-pattern>
+    <rule ref="WordPress.Files.FileName">
+        <severity>0</severity>
+    </rule>
 </ruleset>

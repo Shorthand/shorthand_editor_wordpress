@@ -10,11 +10,14 @@ declare global {
   }
 }
 
+type AuthState = "disconnected" | "connected" | "invalid" | "upgrade_required";
+
 interface IShorthandWordPressAPI {
   WordPress: {
     restApiUrl: string;
     ajaxApiUrl: string;
     pluginFilesUrl: string;
+    authState?: AuthState;
     ui: {
       createPostEditorToolBar?: (
         container: HTMLDivElement,

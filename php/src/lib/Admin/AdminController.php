@@ -8,6 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 use Shorthand\Core\Loader;
 use Shorthand\Core\Version;
 
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Options;
 use Shorthand\Services\PostApi;
 use Shorthand\Services\Permissions;
@@ -61,6 +62,10 @@ class AdminController {
 	 * @var string
 	 */
 	private $settings_page_slug;
+	/**
+	 * @var \Shorthand\Services\AuthStateManager
+	 */
+	private $auth_state_manager;
 
 	public function __construct(
 		Options $options,
@@ -69,15 +74,19 @@ class AdminController {
 		PostAPI $post_api,
 		Permissions $permissions,
 		Version $version,
-		string $post_type
+		string $post_type,
+		AuthStateManager $auth_state_manager
 	) {
-		$this->options     = $options;
-		$this->shorthand   = $shorthand;
-		$this->cron        = $cron;
-		$this->version     = $version;
-		$this->post_api    = $post_api;
-		$this->permissions = $permissions;
-		$this->post_type   = $post_type;
+		$this->settings_page_slug = 'theshed-settings';
+
+		$this->options            = $options;
+		$this->shorthand          = $shorthand;
+		$this->cron               = $cron;
+		$this->version            = $version;
+		$this->post_api           = $post_api;
+		$this->permissions        = $permissions;
+		$this->post_type          = $post_type;
+		$this->auth_state_manager = $auth_state_manager;
 	}
 
 	public function init(): void {
@@ -93,17 +102,20 @@ class AdminController {
 		/* Initialise the editor, preview and Shorthand redirection. */
 		$loader->add_action( 'admin_init', $this, 'admin_init' );
 
-		/* Show a notice on the dashboard if the plugin is not connected to Shorthand. */
-		$loader->add_action( 'admin_notices', $this, 'render_connect_notice' );
-		$loader->add_action( 'wp_ajax_shorthand_dismiss_connect_notice', $this, 'dismiss_connect_notice' );
+		/* Handle workspace disconnection. */
+		$loader->add_action( 'admin_post_shorthand_disconnect', $this, 'handle_disconnect' );
+
+		/* Show a notice on admin pages if the plugin is not in a connected state. */
+		$loader->add_action( 'admin_notices', $this, 'render_auth_notice' );
+		$loader->add_action( 'wp_ajax_shorthand_dismiss_auth_notice', $this, 'dismiss_auth_notice' );
 	}
 
 	public function add_admin_menu(): void {
-		GeneralSettingsPage::register( $this->options, $this->version, 'shorthand-settings' );
+		GeneralSettingsPage::register( $this->options, $this->version, $this->auth_state_manager, $this->settings_page_slug );
 	}
 
 	public function admin_init(): void {
-		$loader = new Loader();
+		$loader        = new Loader();
 		$admin_gateway = new AdminGateway();
 
 		$return_to_connect = new ReturnToConnect(
@@ -126,11 +138,12 @@ class AdminController {
 			$this->post_api,
 			$this->post_type,
 			$story_return_handler,
-			$story_editor_link_builder
+			$story_editor_link_builder,
+			$this->auth_state_manager
 		);
-		$redirect_to_integration     = new RedirectToIntegration( $this->shorthand, $return_to_connect, admin_url( 'plugins.php' ) );
+		$redirect_to_integration     = new RedirectToIntegration( $this->shorthand, $return_to_connect, admin_url( 'plugins.php' ), $this->auth_state_manager );
 
-		$post_preview = new PostPreview( $this->options, $this->post_api, $this->permissions, $this->version );
+		$post_preview = new PostPreview( $this->options, $this->post_api, $this->permissions, $this->version, $this->auth_state_manager );
 
 		$redirect_to_shorthand_story->define_redirect_and_return_pages( $loader );
 		$redirect_to_integration->define_redirect_page( $loader );
@@ -138,7 +151,7 @@ class AdminController {
 		$return_to_connect->define_return_page( $loader );
 		$post_preview->define_preview_page( $loader );
 
-		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type );
+		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager );
 		$post->init( $loader );
 
 		$loader->add_filter(
@@ -205,18 +218,45 @@ class AdminController {
 
 	public function get_settings_page_url(): string {
 		return add_query_arg(
-			array( 'page' => 'shorthand-settings' ),
+			array( 'page' => $this->settings_page_slug ),
 			admin_url( 'options-general.php' )
 		);
 	}
 
-	public function render_connect_notice(): void {
-		$screen = get_current_screen();
-		if ( ! $screen || $screen->id !== 'dashboard' ) {
-			return;
+	/**
+	 * Handle the "Disconnect from Shorthand" action.
+	 *
+	 * Clears the API token, which triggers TokenManager to clear token_info
+	 * and set the auth state to disconnected.
+	 */
+	public function handle_disconnect(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to perform this action.', 'the-shorthand-editor' ), '', array( 'response' => 403 ) );
 		}
 
-		if ( $this->options->is_verified() ) {
+		check_admin_referer( 'shorthand_disconnect' );
+
+		update_option( 'shorthand_v2_token', '' );
+
+		wp_safe_redirect( $this->get_settings_page_url() );
+		exit;
+	}
+
+	/**
+	 * Display an admin notice when the plugin is not in a connected state.
+	 *
+	 * The notice is shown on all admin pages and varies by auth state:
+	 *
+	 * - `disconnected`      – prompts the user to connect.
+	 * - `invalid`           – explains the connection has expired.
+	 * - `upgrade_required`  – asks the user to update the plugin.
+	 *
+	 * Each user may dismiss the notice.  A state change causes the notice to
+	 * reappear for all users by comparing the dismissal timestamp with the
+	 * state's `changed_at` timestamp.
+	 */
+	public function render_auth_notice(): void {
+		if ( $this->auth_state_manager->is_connected() ) {
 			return;
 		}
 
@@ -224,37 +264,72 @@ class AdminController {
 			return;
 		}
 
-		if ( get_user_meta( get_current_user_id(), 'shorthand_connect_notice_dismissed', true ) ) {
+		$dismissed_at = (int) get_user_meta( get_current_user_id(), 'shorthand_auth_notice_dismissed_at', true );
+		if ( $dismissed_at > 0 && $dismissed_at >= $this->auth_state_manager->get_changed_at() ) {
 			return;
 		}
 
-		$connect_url = admin_url( 'admin-post.php?action=shorthand_connect_start' );
+		$state = $this->auth_state_manager->get_state();
+
+		switch ( $state ) {
+			case AuthStateManager::STATE_UPGRADE_REQUIRED:
+				$notice_class = 'notice-error';
+				$message      = __( 'This version of the Shorthand plugin is no longer compatible with Shorthand. Please update the plugin to restore functionality.', 'the-shorthand-editor' );
+				$action_url   = self_admin_url( 'plugins.php' );
+				$action_label = __( 'Go to Plugins', 'the-shorthand-editor' );
+				break;
+
+			case AuthStateManager::STATE_INVALID:
+				$notice_class = 'notice-warning';
+				$message      = __( 'Your Shorthand connection has expired or been revoked. Please reconnect your workspace.', 'the-shorthand-editor' );
+				$action_url   = admin_url( 'admin-post.php?action=shorthand_connect_start' );
+				$action_label = __( 'Connect to Shorthand', 'the-shorthand-editor' );
+				break;
+
+			default: /* disconnected */
+				$notice_class = 'notice-warning';
+				$message      = __( 'Connect your Shorthand workspace to start creating and publishing stories.', 'the-shorthand-editor' );
+				$action_url   = admin_url( 'admin-post.php?action=shorthand_connect_start' );
+				$action_label = __( 'Connect to Shorthand', 'the-shorthand-editor' );
+				break;
+		}
+
 		?>
-		<div class="notice notice-warning is-dismissible" id="shorthand-connect-notice">
+		<div class="notice <?php echo esc_attr( $notice_class ); ?> is-dismissible" id="shorthand-auth-notice">
 			<p>
 				<strong><?php esc_html_e( 'Shorthand', 'the-shorthand-editor' ); ?></strong> &mdash;
-				<?php esc_html_e( 'Connect your Shorthand workspace to start creating and publishing stories.', 'the-shorthand-editor' ); ?>
-				<a href="<?php echo esc_url( $connect_url ); ?>">
-					<?php esc_html_e( 'Connect to Shorthand', 'the-shorthand-editor' ); ?> &rarr;
+				<?php echo esc_html( $message ); ?>
+				<a href="<?php echo esc_url( $action_url ); ?>">
+					<?php echo esc_html( $action_label ); ?> &rarr;
 				</a>
 			</p>
 		</div>
 		<script>
-		jQuery( document ).on( 'click', '#shorthand-connect-notice .notice-dismiss', function() {
+		jQuery( document ).on( 'click', '#shorthand-auth-notice .notice-dismiss', function() {
 			jQuery.post( ajaxurl, {
-				action: 'shorthand_dismiss_connect_notice',
-				nonce: '<?php echo esc_js( wp_create_nonce( 'shorthand_dismiss_connect_notice' ) ); ?>'
+				action: 'shorthand_dismiss_auth_notice',
+				nonce: '<?php echo esc_js( wp_create_nonce( 'shorthand_dismiss_auth_notice' ) ); ?>'
 			} );
 		} );
 		</script>
 		<?php
 	}
 
-	public function dismiss_connect_notice(): void {
-		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'shorthand_dismiss_connect_notice' ) ) {
+	/**
+	 * AJAX handler: dismiss the auth state notice for the current user.
+	 *
+	 * Stores the auth state's `changed_at` timestamp so the notice reappears
+	 * only when the state changes again.
+	 */
+	public function dismiss_auth_notice(): void {
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'shorthand_dismiss_auth_notice' ) ) {
 			wp_die( '', '', array( 'response' => 403 ) );
 		}
-		update_user_meta( get_current_user_id(), 'shorthand_connect_notice_dismissed', true );
+		update_user_meta(
+			get_current_user_id(),
+			'shorthand_auth_notice_dismissed_at',
+			$this->auth_state_manager->get_changed_at()
+		);
 		wp_die();
 	}
 }

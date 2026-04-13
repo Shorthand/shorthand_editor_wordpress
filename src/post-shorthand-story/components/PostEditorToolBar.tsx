@@ -12,6 +12,38 @@ interface IPostEditorToolBarProps {
   editUrl: string;
 }
 
+function getAuthState(): string | undefined {
+  return window.Shorthand?.WordPress?.authState;
+}
+
+function AuthStateNotice(): React.JSX.Element | null {
+  const authState = getAuthState();
+
+  if (!authState || authState === "connected") {
+    return null;
+  }
+
+  let message: string;
+  switch (authState) {
+    case "upgrade_required":
+      message =
+        "This version of the Shorthand plugin is no longer compatible with Shorthand. Please update the plugin to restore functionality.";
+      break;
+    case "invalid":
+      message =
+        "Your Shorthand connection has expired or been revoked. Please reconnect your workspace from the WordPress admin.";
+      break;
+    default:
+      message =
+        "Connect your Shorthand workspace to start creating and publishing stories.";
+      break;
+  }
+
+  return (
+    <p className={styles.toolbarError}>{message}</p>
+  );
+}
+
 export function PostEditorToolBar({
   editUrl,
 }: IPostEditorToolBarProps): React.JSX.Element {
@@ -43,10 +75,14 @@ export function PostEditorToolBar({
     };
   }, []);
 
+  const authState = getAuthState();
+  const isConnected = authState === "connected";
+
   return (
     <div className={styles.toolbarContainer}>
       <div className={styles.toolbarHstack}>
         <div className={styles.toolbarLeft}>
+          <AuthStateNotice />
           <StoryError error={errors.publishing}>
             The last publishing attempt was unsuccessful.{" "}
             {additionalPublishingErrorMessage(errors.publishing?.code)}
@@ -56,7 +92,7 @@ export function PostEditorToolBar({
             contact your administrator.
           </StoryError>
         </div>
-        <EditButton url={editUrl} />
+        {isConnected && <EditButton url={editUrl} />}
       </div>
       {progress && (
         <Progress

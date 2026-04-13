@@ -8,8 +8,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 use Shorthand\Core\Loader;
 use Shorthand\Core\Version;
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Permissions;
-
 
 use Shorthand\Services\Options;
 use Shorthand\Services\PostAPI;
@@ -49,16 +49,23 @@ class PostPreview {
 	 */
 	private $version;
 
+	/**
+	 * @var \Shorthand\Services\AuthStateManager|null
+	 */
+	private $auth_state_manager;
+
 	public function __construct(
 		Options $options,
 		PostAPI $post_api,
 		Permissions $permissions,
-		Version $version
+		Version $version,
+		?AuthStateManager $auth_state_manager = null
 	) {
-		$this->options     = $options;
-		$this->post_api    = $post_api;
-		$this->permissions = $permissions;
-		$this->version     = $version;
+		$this->options            = $options;
+		$this->post_api           = $post_api;
+		$this->permissions        = $permissions;
+		$this->version            = $version;
+		$this->auth_state_manager = $auth_state_manager;
 	}
 
 	/**
@@ -96,6 +103,10 @@ class PostPreview {
 
 		if ( ! current_user_can( 'edit_post', $post_id ) ) {
 			$this->die_with_error( __( 'You do not have permission to view this page.', 'the-shorthand-editor' ), 403 );
+		}
+
+		if ( $this->auth_state_manager && ! $this->auth_state_manager->is_connected() ) {
+			$this->die_with_error( __( 'The preview is unavailable because the Shorthand connection is not active.', 'the-shorthand-editor' ), 503 );
 		}
 
 		$preview_content = $this->post_api->get_preview_content( $post_id );

@@ -6,15 +6,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Options;
 use Shorthand\Core\Version;
 
 class GeneralSettingsPage extends SettingsPage {
 
-	public static function register( Options $options, Version $version, string $slug ): void {
+	/**
+	 * @var \Shorthand\Services\AuthStateManager
+	 */
+	private $auth_state_manager;
+
+	public static function register( Options $options, Version $version, AuthStateManager $auth_state_manager, string $slug ): void {
 		$instance = new self(
 			$options,
 			$version,
+			$auth_state_manager,
 			esc_html__( 'Shorthand Options', 'the-shorthand-editor' ),
 			array( 'theshed-general-options-group' ),
 			$slug
@@ -27,6 +34,11 @@ class GeneralSettingsPage extends SettingsPage {
 			$instance->settings_page_slug,
 			array( $instance, 'display_options_page' )
 		);
+	}
+
+	protected function __construct( Options $options, Version $version, AuthStateManager $auth_state_manager, string $page_title, array $option_groups, string $settings_page_slug ) {
+		parent::__construct( $options, $version, $page_title, $option_groups, $settings_page_slug );
+		$this->auth_state_manager = $auth_state_manager;
 	}
 
 	protected function build_settings_sections(): void {
@@ -70,6 +82,14 @@ class GeneralSettingsPage extends SettingsPage {
 				);
 			}
 		}
+
+		add_settings_field(
+			'shorthand_connection',
+			esc_html__( 'Connection', 'the-shorthand-editor' ),
+			array( $this, 'render_connection_button' ),
+			$this->settings_page_slug,
+			'shorthand_workspace_section'
+		);
 
 		add_settings_section(
 			'shorthand_processing_section',
@@ -122,5 +142,49 @@ class GeneralSettingsPage extends SettingsPage {
 				'cols'      => 80,
 			)
 		);
+	}
+
+	/**
+	 * Render the Connect / Disconnect button in the Workspace section.
+	 */
+	public function render_connection_button(): void {
+		$state = $this->auth_state_manager->get_state();
+
+		if ( $state === AuthStateManager::STATE_CONNECTED ) {
+			$disconnect_url = wp_nonce_url(
+				admin_url( 'admin-post.php?action=shorthand_disconnect' ),
+				'shorthand_disconnect'
+			);
+			?>
+			<a href="<?php echo esc_url( $disconnect_url ); ?>"
+			   class="button"
+			   onclick="return confirm('<?php echo esc_js( __( 'Are you sure you want to disconnect from Shorthand? You will no longer be able to create or publish stories until you reconnect.', 'the-shorthand-editor' ) ); ?>');"
+			><?php esc_html_e( 'Disconnect from Shorthand', 'the-shorthand-editor' ); ?></a>
+			<?php
+		} elseif ( $state === AuthStateManager::STATE_UPGRADE_REQUIRED ) {
+			?>
+			<a href="<?php echo esc_url( self_admin_url( 'plugins.php' ) ); ?>"
+			   class="button button-primary"
+			><?php esc_html_e( 'Update Plugin', 'the-shorthand-editor' ); ?></a>
+			<p class="description">
+				<?php esc_html_e( 'This version of the Shorthand plugin is no longer compatible. Please update to restore connectivity.', 'the-shorthand-editor' ); ?>
+			</p>
+			<?php
+		} else {
+			/* disconnected or invalid */
+			$connect_url = admin_url( 'admin-post.php?action=shorthand_connect_start' );
+			?>
+			<a href="<?php echo esc_url( $connect_url ); ?>"
+			   class="button button-primary"
+			><?php esc_html_e( 'Connect to Shorthand', 'the-shorthand-editor' ); ?></a>
+			<?php
+			if ( $state === AuthStateManager::STATE_INVALID ) {
+				?>
+				<p class="description">
+					<?php esc_html_e( 'Your previous connection has expired or been revoked. Please reconnect.', 'the-shorthand-editor' ); ?>
+				</p>
+				<?php
+			}
+		}
 	}
 }
