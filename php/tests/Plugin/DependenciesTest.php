@@ -9,11 +9,13 @@ use Shorthand\Core\Version;
 use Shorthand\Plugin\Dependencies;
 use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Cron;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
+use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\TokenManager;
 use Shorthand\Tests\WordPressTestCase;
 
@@ -67,11 +69,11 @@ final class TestDependencies extends Dependencies {
 		return $this->test_options;
 	}
 
-	protected function create_shorthand( Options $options, Version $version ): Shorthand {
+	protected function create_shorthand( Options $options, Version $version, ?ShorthandApiClient $api_client = null ): Shorthand {
 		return new TestShorthand();
 	}
 
-	protected function create_token_manager( Options $options, Shorthand $shorthand ): TokenManager {
+	protected function create_token_manager( Options $options, Shorthand $shorthand, AuthStateManager $auth_state_manager ): TokenManager {
 		++$this->token_manager_created;
 		$this->test_token_manager = new TestTokenManager();
 		return $this->test_token_manager;

@@ -65,6 +65,7 @@ function tests_wp_reset_state(): void {
 		'options'              => array(),
 		'transients'           => array(),
 		'transient_ttls'       => array(),
+		'site_transients'      => array(),
 		'settings_errors'      => array(),
 		'remote_requests'      => array(),
 		'remote_get_response'  => array(
@@ -412,6 +413,21 @@ function get_bloginfo( string $show = '' ): string {
 
 function get_site_url(): string {
 	return 'https://example.test';
+}
+
+/**
+ * @return mixed
+ */
+function get_site_transient( string $transient ) {
+	return $GLOBALS['tests_wp_state']['site_transients'][ $transient ] ?? false;
+}
+
+/**
+ * @param mixed $value
+ */
+function set_site_transient( string $transient, $value, int $expiration = 0 ): bool {
+	$GLOBALS['tests_wp_state']['site_transients'][ $transient ] = $value;
+	return true;
 }
 
 function get_rest_url(): string {
