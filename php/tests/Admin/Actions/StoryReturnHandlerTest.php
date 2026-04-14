@@ -37,10 +37,18 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 	}
 
 	public function test_rejects_unexpected_post_type_during_story_creation(): void {
+		$admin_gateway = $this->createMock( AdminGateway::class );
+
+		$admin_gateway
+			->expects( $this->once() )
+			->method( 'get_all_stories_url' )
+			->with( 'tse_story' )
+			->willReturn( 'https://example.test/stories' );
+
 		$handler = new StoryReturnHandler(
 			$this->createMock( PostAPI::class ),
 			$this->createMock( Shorthand::class ),
-			$this->createMock( AdminGateway::class ),
+			$admin_gateway,
 			$this->createMock( StoryEditorLinkBuilder::class ),
 			'tse_story'
 		);
@@ -48,7 +56,9 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 		$result = $handler->handle( null, 'story-123', null, null, 'page' );
 
 		$this->assertTrue( $result->isError() );
-		$this->assertStringContainsString( 'unexpected post type', $result->getMessage() );
+		$this->assertStringContainsString( 'unexpected error', $result->getMessage() );
+		$this->assertSame( 'https://example.test/stories', $result->getLinkUrl() );
+		$this->assertSame( 'Return to all stories', $result->getLinkText() );
 	}
 
 	public function test_connects_story_and_redirects_back_to_the_editor(): void {

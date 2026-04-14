@@ -430,6 +430,14 @@ function set_site_transient( string $transient, $value, int $expiration = 0 ): b
 	return true;
 }
 
+function admin_url( string $path = '' ): string {
+	return 'https://example.test/wp-admin/' . ltrim( $path, '/' );
+}
+
+function self_admin_url( string $path = '' ): string {
+	return admin_url( $path );
+}
+
 function get_rest_url(): string {
 	return 'https://example.test/wp-json';
 }

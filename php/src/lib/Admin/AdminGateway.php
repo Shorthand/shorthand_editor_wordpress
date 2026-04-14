@@ -33,6 +33,6 @@ class AdminGateway {
 	}
 
 	public function get_settings_page_url(): string {
-		return admin_url( 'options-general.php?page=shorthand-settings' );
+		return admin_url( 'options-general.php?page=theshed-settings' );
 	}
 }

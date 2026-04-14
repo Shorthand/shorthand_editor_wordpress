@@ -51,7 +51,7 @@ class StoryReturnHandler {
 			$link_text = $post_id ? __( 'Return to story', 'the-shorthand-editor' ) : __( 'Return to all stories', 'the-shorthand-editor' );
 
 			return ActionResult::error(
-				__( 'An error occurred during navigation. Please contact Shorthand support.', 'the-shorthand-editor' ),
+				__( 'Something went wrong while returning from Shorthand. Your story has not been lost. Please contact Shorthand support if this problem continues.', 'the-shorthand-editor' ),
 				__( 'Error', 'the-shorthand-editor' ),
 				$link_url,
 				$link_text
@@ -60,8 +60,10 @@ class StoryReturnHandler {
 
 		if ( $create_type && $create_type !== $this->post_type ) {
 			return ActionResult::error(
-				__( 'Received unexpected post type to connect to Shorthand story.', 'the-shorthand-editor' ),
-				__( 'Error', 'the-shorthand-editor' )
+				__( 'An unexpected error occurred while creating the story. The post type received does not match what was expected.', 'the-shorthand-editor' ),
+				__( 'Error', 'the-shorthand-editor' ),
+				$this->admin_gateway->get_all_stories_url( $this->post_type ),
+				__( 'Return to all stories', 'the-shorthand-editor' )
 			);
 		}
 

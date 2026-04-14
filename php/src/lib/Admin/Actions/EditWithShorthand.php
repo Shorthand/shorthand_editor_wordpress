@@ -242,13 +242,24 @@ class EditWithShorthand {
 
 	private function check_auth_state(): void {
 		if ( $this->auth_state_manager && ! $this->auth_state_manager->is_connected() ) {
-			wp_die(
-				esc_html__( 'The Shorthand connection is not active. Please ask your administrator to reconnect the plugin.', 'the-shorthand-editor' ),
-				esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
-				array(
-					'back_link' => true,
-				)
-			);
+			if ( current_user_can( 'manage_options' ) ) {
+				wp_die(
+					esc_html__( 'The Shorthand connection is not active. Please reconnect from the settings page to continue.', 'the-shorthand-editor' ),
+					esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
+					array(
+						'link_url'  => esc_url( admin_url( 'options-general.php?page=theshed-settings' ) ),
+						'link_text' => esc_html__( 'Go to Shorthand Settings', 'the-shorthand-editor' ),
+					)
+				);
+			} else {
+				wp_die(
+					esc_html__( 'The Shorthand connection is not active. Please ask your administrator to reconnect the plugin.', 'the-shorthand-editor' ),
+					esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
+					array(
+						'back_link' => true,
+					)
+				);
+			}
 		}
 	}
 

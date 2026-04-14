@@ -98,11 +98,11 @@ class Shorthand {
 
 		if ( null === $payload->nonce ) {
 			wp_die(
-				esc_html__( 'Could not connect to Shorthand because the credentials provided were invalid.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection failed', 'the-shorthand-editor' ),
+				esc_html__( 'Could not connect to Shorthand because the credentials provided were invalid. Please try connecting again. If this problem persists, contact Shorthand support.', 'the-shorthand-editor' ),
+				esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
 				array(
-					'link_url'  => esc_url( admin_url( 'plugins.php' ) ),
-					'link_text' => esc_html__( 'Return to Plugins', 'the-shorthand-editor' ),
+					'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
+					'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
 				)
 			);
 		}
@@ -121,28 +121,18 @@ class Shorthand {
 		$response = $this->api_client->request( $url, 'POST', null, array(), $body );
 		if ( is_wp_error( $response ) ) {
 			wp_die(
-				esc_html__( 'Could not connect to Shorthand at this time. Please try again later.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection failed', 'the-shorthand-editor' ),
+				esc_html__( 'Could not reach the Shorthand server. Please check your network connection and try again. If this problem persists, contact your site administrator.', 'the-shorthand-editor' ),
+				esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
 				array(
-					'link_url'  => esc_url( admin_url( 'plugins.php' ) ),
-					'link_text' => esc_html__( 'Return to Plugins', 'the-shorthand-editor' ),
+					'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
+					'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
 				)
 			);
 		}
 
 		$status_code = wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $status_code ) {
-			wp_die(
-				esc_html__( 'An error occurred while connecting to Shorthand.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection failed', 'the-shorthand-editor' ),
-				array(
-					'additional_errors' => array(
-						array( 'message' => esc_html( "The request returned HTTP status code {$status_code}." ) ),
-					),
-					'link_url'          => esc_url( admin_url( 'plugins.php' ) ),
-					'link_text'         => esc_html__( 'Return to Plugins', 'the-shorthand-editor' ),
-				)
-			);
+			$this->die_on_connect_error( $status_code );
 		}
 
 		$body      = json_decode( wp_remote_retrieve_body( $response ), true );
@@ -152,6 +142,60 @@ class Shorthand {
 		update_option( 'shorthand_v2_token', $api_token );
 	}
 
+
+	private function die_on_connect_error( int $status_code ): void {
+		$retry_link = array(
+			'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
+			'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
+		);
+
+		if ( 401 === $status_code || 403 === $status_code ) {
+			wp_die(
+				esc_html__( 'Shorthand rejected the connection request. The authorization may have expired or been revoked. Please try connecting again.', 'the-shorthand-editor' ),
+				esc_html__( 'Authorization Failed', 'the-shorthand-editor' ),
+				$retry_link
+			);
+		}
+
+		if ( 426 === $status_code ) {
+			wp_die(
+				esc_html__( 'This version of the Shorthand plugin is no longer compatible with Shorthand. Please update the plugin to continue.', 'the-shorthand-editor' ),
+				esc_html__( 'Plugin Update Required', 'the-shorthand-editor' ),
+				array(
+					'link_url'  => esc_url( self_admin_url( 'plugins.php' ) ),
+					'link_text' => esc_html__( 'Go to Plugins', 'the-shorthand-editor' ),
+				)
+			);
+		}
+
+		if ( $status_code >= 500 && $status_code < 600 ) {
+			wp_die(
+				esc_html__( 'The Shorthand server encountered an error. Please try again in a few minutes. If this problem persists, contact Shorthand support.', 'the-shorthand-editor' ),
+				esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
+				array_merge(
+					$retry_link,
+					array(
+						'additional_errors' => array(
+							array( 'message' => esc_html( "The request returned HTTP status code {$status_code}." ) ),
+						),
+					)
+				)
+			);
+		}
+
+		wp_die(
+			esc_html__( 'An unexpected error occurred while connecting to Shorthand. Please try again or contact Shorthand support.', 'the-shorthand-editor' ),
+			esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
+			array_merge(
+				$retry_link,
+				array(
+					'additional_errors' => array(
+						array( 'message' => esc_html( "The request returned HTTP status code {$status_code}." ) ),
+					),
+				)
+			)
+		);
+	}
 
 	public function get_story_creation_url( string $return_url ): string {
 		return $this->get_authorised_resource_url( $return_url, 'stories', 'create' );
