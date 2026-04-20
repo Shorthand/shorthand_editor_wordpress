@@ -15,7 +15,7 @@ class StoryContentTransformer {
 		$content = str_replace( './assets/', $bundle_url . '/assets/', $content );
 		$content = str_replace( './static/', $bundle_url . '/static/', $content );
 
-		$rewritten_content = preg_replace( '/.(\/theme-\w+.min.css)/', $bundle_url . '$1', $content );
+		$rewritten_content = preg_replace( '/\.(\/theme-\w+\.min\.css)/', $bundle_url . '$1', $content );
 		return is_string( $rewritten_content ) ? $rewritten_content : $content;
 	}
 

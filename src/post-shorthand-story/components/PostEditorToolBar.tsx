@@ -9,7 +9,7 @@ import { StoryUpdateTime } from "./StoryUpdateTime";
 import { Tooltip } from "./Tooltip";
 
 interface IPostEditorToolBarProps {
-  editUrl: string;
+  editUrl: string | null;
 }
 
 function getAuthState(): string | undefined {
@@ -92,7 +92,7 @@ export function PostEditorToolBar({
             contact your administrator.
           </StoryError>
         </div>
-        {isConnected && <EditButton url={editUrl} />}
+        {isConnected && editUrl && <EditButton url={editUrl} />}
       </div>
       {progress && (
         <Progress

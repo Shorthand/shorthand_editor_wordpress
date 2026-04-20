@@ -174,7 +174,7 @@ class Options {
 
 	/**
 	 * @param mixed $auth_state
-	 * @return array{state: string, changed_at: int}|null
+	 * @return array{state: string, changed_at: int, pending_upgrade: bool}|null
 	 */
 	public function sanitize_auth_state( $auth_state ) {
 		if ( ! is_array( $auth_state ) || ! isset( $auth_state['state'], $auth_state['changed_at'] ) ) {
