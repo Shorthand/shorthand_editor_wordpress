@@ -380,7 +380,7 @@ class Shorthand {
 			'iss'             => get_site_url(),
 			'aud'             => 'shorthand.com',
 			'iat'             => $time,
-			'exp'             => $time + 60,
+			'exp'             => $time + 5 * 60, // 5 minutes
 			'sub'             => "wordpress/{$user->ID}",
 			'scope'           => 'stories',
 			'session_request' => array(
