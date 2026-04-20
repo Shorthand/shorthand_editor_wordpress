@@ -247,7 +247,9 @@ class AdminController {
 	 *
 	 * The notice is shown on all admin pages and varies by auth state:
 	 *
-	 * - `disconnected`      – prompts the user to connect.
+	 * - `never_connected`   – welcomes the user and invites them to connect.
+	 * - `disconnected`      – invites the user to reconnect after an
+	 *                         intentional disconnect.
 	 * - `invalid`           – explains the connection has expired.
 	 * - `upgrade_required`  – asks the user to update the plugin.
 	 *
@@ -286,9 +288,16 @@ class AdminController {
 				$action_label = __( 'Connect to Shorthand', 'the-shorthand-editor' );
 				break;
 
-			default: /* disconnected */
-				$notice_class = 'notice-warning';
-				$message      = __( 'Connect your Shorthand workspace to start creating and publishing stories.', 'the-shorthand-editor' );
+			case AuthStateManager::STATE_DISCONNECTED:
+				$notice_class = 'notice-info';
+				$message      = __( 'Your Shorthand workspace is disconnected. Reconnect to resume creating and publishing stories.', 'the-shorthand-editor' );
+				$action_url   = admin_url( 'admin-post.php?action=shorthand_connect_start' );
+				$action_label = __( 'Connect to Shorthand', 'the-shorthand-editor' );
+				break;
+
+			default: /* never_connected */
+				$notice_class = 'notice-info';
+				$message      = __( 'Welcome to Shorthand! Connect your workspace to start creating and publishing stories.', 'the-shorthand-editor' );
 				$action_url   = admin_url( 'admin-post.php?action=shorthand_connect_start' );
 				$action_label = __( 'Connect to Shorthand', 'the-shorthand-editor' );
 				break;

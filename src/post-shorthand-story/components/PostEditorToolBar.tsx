@@ -33,9 +33,13 @@ function AuthStateNotice(): React.JSX.Element | null {
       message =
         "Your Shorthand connection has expired or been revoked. Please reconnect your workspace from the WordPress admin.";
       break;
+    case "disconnected":
+      message =
+        "Your Shorthand workspace is disconnected. Reconnect from the WordPress admin to resume creating and publishing stories.";
+      break;
     default:
       message =
-        "Connect your Shorthand workspace to start creating and publishing stories.";
+        "Welcome to Shorthand! Connect your workspace from the WordPress admin to start creating and publishing stories.";
       break;
   }
 

@@ -10,7 +10,12 @@ declare global {
   }
 }
 
-type AuthState = "disconnected" | "connected" | "invalid" | "upgrade_required";
+type AuthState =
+  | "never_connected"
+  | "disconnected"
+  | "connected"
+  | "invalid"
+  | "upgrade_required";
 
 interface IShorthandWordPressAPI {
   WordPress: {

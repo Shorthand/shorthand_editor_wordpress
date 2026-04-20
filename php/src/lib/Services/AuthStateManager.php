@@ -11,10 +11,16 @@ use Shorthand\Core\Version;
 /**
  * Manages the persistent authorisation state of the plugin.
  *
- * The plugin operates in one of four modes based on its relationship with the
+ * The plugin operates in one of five modes based on its relationship with the
  * Shorthand API:
  *
- * - `disconnected`      — no token is configured.
+ * - `never_connected`   — the plugin has just been activated and has never
+ *                         been connected to a Shorthand workspace.  This is
+ *                         the default on a fresh install, and the UI shows a
+ *                         welcome message inviting the user to connect.
+ * - `disconnected`      — the user has explicitly disconnected from
+ *                         Shorthand, clearing the token.  The UI invites the
+ *                         user to reconnect without signalling an error.
  * - `connected`         — the token has been validated successfully.
  * - `invalid`           — the API rejected the token (HTTP 401), or a 426 was
  *                         received but no plugin update is available yet.
@@ -31,6 +37,7 @@ use Shorthand\Core\Version;
  */
 class AuthStateManager {
 
+	const STATE_NEVER_CONNECTED  = 'never_connected';
 	const STATE_DISCONNECTED     = 'disconnected';
 	const STATE_CONNECTED        = 'connected';
 	const STATE_INVALID          = 'invalid';
@@ -193,7 +200,7 @@ class AuthStateManager {
 
 		if ( ! is_array( $option ) || ! isset( $option['state'], $option['changed_at'] ) ) {
 			return array(
-				'state'           => self::STATE_DISCONNECTED,
+				'state'           => self::STATE_NEVER_CONNECTED,
 				'changed_at'      => 0,
 				'pending_upgrade' => false,
 			);

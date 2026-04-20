@@ -24,7 +24,7 @@ final class AuthStateManagerTest extends WordPressTestCase {
 		$option = \get_option( AuthStateManager::OPTION_KEY, false );
 		if ( ! is_array( $option ) ) {
 			return array(
-				'state'           => AuthStateManager::STATE_DISCONNECTED,
+				'state'           => AuthStateManager::STATE_NEVER_CONNECTED,
 				'changed_at'      => 0,
 				'pending_upgrade' => false,
 			);
@@ -83,14 +83,14 @@ final class AuthStateManagerTest extends WordPressTestCase {
 	}
 
 	/**
-	 * A fresh manager with no stored option defaults to disconnected.
+	 * A fresh manager with no stored option defaults to never_connected.
 	 *
 	 * @group default-state
 	 */
-	public function test_default_state_is_disconnected(): void {
+	public function test_default_state_is_never_connected(): void {
 		$manager = $this->make_manager();
 
-		$this->assertSame( AuthStateManager::STATE_DISCONNECTED, $manager->get_state() );
+		$this->assertSame( AuthStateManager::STATE_NEVER_CONNECTED, $manager->get_state() );
 	}
 
 	/**
@@ -667,19 +667,19 @@ final class AuthStateManagerTest extends WordPressTestCase {
 	}
 
 	/**
-	 * A missing option degrades to disconnected with zero timestamp.
+	 * A missing option degrades to never_connected with zero timestamp.
 	 *
 	 * @group malformed-option
 	 */
 	public function test_get_state_handles_missing_option(): void {
 		$manager = $this->make_manager();
 
-		$this->assertSame( AuthStateManager::STATE_DISCONNECTED, $manager->get_state() );
+		$this->assertSame( AuthStateManager::STATE_NEVER_CONNECTED, $manager->get_state() );
 		$this->assertSame( 0, $manager->get_changed_at() );
 	}
 
 	/**
-	 * A non-array option degrades to disconnected.
+	 * A non-array option degrades to never_connected.
 	 *
 	 * @group malformed-option
 	 */
@@ -687,17 +687,32 @@ final class AuthStateManagerTest extends WordPressTestCase {
 		$manager = $this->make_manager();
 		\tests_wp_set_option( AuthStateManager::OPTION_KEY, 'garbage' );
 
-		$this->assertSame( AuthStateManager::STATE_DISCONNECTED, $manager->get_state() );
+		$this->assertSame( AuthStateManager::STATE_NEVER_CONNECTED, $manager->get_state() );
 	}
 
 	/**
-	 * An array missing changed_at degrades to disconnected.
+	 * An array missing changed_at degrades to never_connected.
 	 *
 	 * @group malformed-option
 	 */
 	public function test_get_state_handles_partial_option(): void {
 		$manager = $this->make_manager();
 		\tests_wp_set_option( AuthStateManager::OPTION_KEY, array( 'state' => 'connected' ) );
+
+		$this->assertSame( AuthStateManager::STATE_NEVER_CONNECTED, $manager->get_state() );
+	}
+
+	/**
+	 * set_state(disconnected) persists the disconnected state distinct from never_connected.
+	 *
+	 * @group set-state
+	 */
+	public function test_set_state_disconnected_persists_distinct_from_never_connected(): void {
+		$manager = $this->make_manager();
+
+		$this->assertSame( AuthStateManager::STATE_NEVER_CONNECTED, $manager->get_state() );
+
+		$manager->set_state( AuthStateManager::STATE_DISCONNECTED );
 
 		$this->assertSame( AuthStateManager::STATE_DISCONNECTED, $manager->get_state() );
 	}

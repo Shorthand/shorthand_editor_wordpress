@@ -182,6 +182,7 @@ class Options {
 		}
 
 		$valid_states = array(
+			AuthStateManager::STATE_NEVER_CONNECTED,
 			AuthStateManager::STATE_DISCONNECTED,
 			AuthStateManager::STATE_CONNECTED,
 			AuthStateManager::STATE_INVALID,

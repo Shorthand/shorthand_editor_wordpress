@@ -171,7 +171,7 @@ class GeneralSettingsPage extends SettingsPage {
 			</p>
 			<?php
 		} else {
-			/* disconnected or invalid */
+			/* never_connected, disconnected, or invalid */
 			$connect_url = admin_url( 'admin-post.php?action=shorthand_connect_start' );
 			?>
 			<a href="<?php echo esc_url( $connect_url ); ?>"
@@ -182,6 +182,19 @@ class GeneralSettingsPage extends SettingsPage {
 				?>
 				<p class="description">
 					<?php esc_html_e( 'Your previous connection has expired or been revoked. Please reconnect.', 'the-shorthand-editor' ); ?>
+				</p>
+				<?php
+			} elseif ( $state === AuthStateManager::STATE_DISCONNECTED ) {
+				?>
+				<p class="description">
+					<?php esc_html_e( 'Your workspace is disconnected. Reconnect to resume creating and publishing stories.', 'the-shorthand-editor' ); ?>
+				</p>
+				<?php
+			} else {
+				/* never_connected */
+				?>
+				<p class="description">
+					<?php esc_html_e( 'Welcome! Connect a Shorthand workspace to start creating and publishing stories.', 'the-shorthand-editor' ); ?>
 				</p>
 				<?php
 			}
