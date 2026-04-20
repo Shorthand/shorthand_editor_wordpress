@@ -31,12 +31,12 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 
 		$result = $handler->handle( 7, null, 'oops', null, null );
 
-		$this->assertTrue( $result->isError() );
-		$this->assertSame( 'https://example.test/post/7', $result->getLinkUrl() );
-		$this->assertSame( 'Return to story', $result->getLinkText() );
-		$this->assertNull( $result->getSecondaryLinkUrl() );
-		$this->assertStringContainsString( 'oops', $result->getMessage() );
-		$this->assertStringContainsString( 'Your story is safe', $result->getMessage() );
+		$this->assertTrue( $result->is_error() );
+		$this->assertSame( 'https://example.test/post/7', $result->get_link_url() );
+		$this->assertSame( 'Return to story', $result->get_link_text() );
+		$this->assertNull( $result->get_secondary_link_url() );
+		$this->assertStringContainsString( 'oops', $result->get_message() );
+		$this->assertStringContainsString( 'Your story is safe', $result->get_message() );
 	}
 
 	public function test_navigation_error_with_story_id_offers_reopen_and_fallback(): void {
@@ -61,12 +61,12 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 
 		$result = $handler->handle( 7, 'story-123', 'timeout', null, null );
 
-		$this->assertTrue( $result->isError() );
-		$this->assertSame( 'https://example.test/reopen', $result->getLinkUrl() );
-		$this->assertSame( 'Reopen story in Shorthand', $result->getLinkText() );
-		$this->assertSame( 'https://example.test/post/7/edit', $result->getSecondaryLinkUrl() );
-		$this->assertSame( 'Return to story', $result->getSecondaryLinkText() );
-		$this->assertStringContainsString( 'timeout', $result->getMessage() );
+		$this->assertTrue( $result->is_error() );
+		$this->assertSame( 'https://example.test/reopen', $result->get_link_url() );
+		$this->assertSame( 'Reopen story in Shorthand', $result->get_link_text() );
+		$this->assertSame( 'https://example.test/post/7/edit', $result->get_secondary_link_url() );
+		$this->assertSame( 'Return to story', $result->get_secondary_link_text() );
+		$this->assertStringContainsString( 'timeout', $result->get_message() );
 	}
 
 	public function test_navigation_error_during_story_creation_mentions_creation(): void {
@@ -85,11 +85,11 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 
 		$result = $handler->handle( null, null, 'forbidden', null, 'tse_story' );
 
-		$this->assertTrue( $result->isError() );
-		$this->assertSame( 'https://example.test/stories', $result->getLinkUrl() );
-		$this->assertSame( 'Return to all stories', $result->getLinkText() );
-		$this->assertStringContainsString( 'creating your story', $result->getMessage() );
-		$this->assertStringContainsString( 'forbidden', $result->getMessage() );
+		$this->assertTrue( $result->is_error() );
+		$this->assertSame( 'https://example.test/stories', $result->get_link_url() );
+		$this->assertSame( 'Return to all stories', $result->get_link_text() );
+		$this->assertStringContainsString( 'creating your story', $result->get_message() );
+		$this->assertStringContainsString( 'forbidden', $result->get_message() );
 	}
 
 	public function test_rejects_unexpected_post_type_during_story_creation(): void {
@@ -111,11 +111,11 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 
 		$result = $handler->handle( null, 'story-123', null, null, 'page' );
 
-		$this->assertTrue( $result->isError() );
-		$this->assertStringContainsString( 'different content type', $result->getMessage() );
-		$this->assertStringContainsString( 'No content was lost', $result->getMessage() );
-		$this->assertSame( 'https://example.test/stories', $result->getLinkUrl() );
-		$this->assertSame( 'Return to all stories', $result->getLinkText() );
+		$this->assertTrue( $result->is_error() );
+		$this->assertStringContainsString( 'different content type', $result->get_message() );
+		$this->assertStringContainsString( 'No content was lost', $result->get_message() );
+		$this->assertSame( 'https://example.test/stories', $result->get_link_url() );
+		$this->assertSame( 'Return to all stories', $result->get_link_text() );
 	}
 
 	public function test_connects_story_and_redirects_back_to_the_editor(): void {
@@ -145,8 +145,8 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 
 		$result = $handler->handle( null, 'story-123', null, null, 'tse_story' );
 
-		$this->assertTrue( $result->isRedirect() );
-		$this->assertSame( 'https://example.test/editor?post=7', $result->getRedirectUrl() );
+		$this->assertTrue( $result->is_redirect() );
+		$this->assertSame( 'https://example.test/editor?post=7', $result->get_redirect_url() );
 	}
 
 	public function test_updates_post_title_and_redirects_to_the_post_when_no_target_is_given(): void {
@@ -187,8 +187,8 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 
 		$result = $handler->handle( 7, 'story-123', null, null, null );
 
-		$this->assertTrue( $result->isRedirect() );
-		$this->assertSame( 'https://example.test/post/7/edit', $result->getRedirectUrl() );
+		$this->assertTrue( $result->is_redirect() );
+		$this->assertSame( 'https://example.test/post/7/edit', $result->get_redirect_url() );
 	}
 
 	public function test_falls_back_to_the_stories_list_when_no_specific_target_exists(): void {
@@ -213,7 +213,7 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 
 		$result = $handler->handle( 7, null, null, null, null );
 
-		$this->assertTrue( $result->isRedirect() );
-		$this->assertSame( 'https://example.test/stories', $result->getRedirectUrl() );
+		$this->assertTrue( $result->is_redirect() );
+		$this->assertSame( 'https://example.test/stories', $result->get_redirect_url() );
 	}
 }

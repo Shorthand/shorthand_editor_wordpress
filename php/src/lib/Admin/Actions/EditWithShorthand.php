@@ -206,32 +206,32 @@ class EditWithShorthand {
 	}
 
 	private function respond( ActionResult $result ): void {
-		if ( $result->isRedirect() ) {
-			wp_safe_redirect( $result->getRedirectUrl() );
+		if ( $result->is_redirect() ) {
+			wp_safe_redirect( $result->get_redirect_url() );
 			exit;
 		}
 
 		$args = array();
-		if ( $result->getLinkUrl() ) {
-			$args['link_url'] = esc_url( $result->getLinkUrl() );
+		if ( $result->get_link_url() ) {
+			$args['link_url'] = esc_url( $result->get_link_url() );
 		}
-		if ( $result->getLinkText() ) {
-			$args['link_text'] = esc_html( $result->getLinkText() );
+		if ( $result->get_link_text() ) {
+			$args['link_text'] = esc_html( $result->get_link_text() );
 		}
 
-		$message_html = '<p>' . esc_html( $result->getMessage() ) . '</p>';
+		$message_html = '<p>' . esc_html( $result->get_message() ) . '</p>';
 
-		if ( $result->getSecondaryLinkUrl() && $result->getSecondaryLinkText() ) {
+		if ( $result->get_secondary_link_url() && $result->get_secondary_link_text() ) {
 			$message_html .= sprintf(
 				'<p><a href="%1$s">%2$s</a></p>',
-				esc_url( $result->getSecondaryLinkUrl() ),
-				esc_html( $result->getSecondaryLinkText() )
+				esc_url( $result->get_secondary_link_url() ),
+				esc_html( $result->get_secondary_link_text() )
 			);
 		}
 
 		wp_die(
 			wp_kses_post( $message_html ),
-			esc_html( $result->getTitle() ),
+			esc_html( $result->get_title() ),
 			$args
 		);
 	}

@@ -67,39 +67,39 @@ class ActionResult {
 		return new self( 'error', null, $message, $title, $link_url, $link_text, $secondary_link_url, $secondary_link_text );
 	}
 
-	public function isRedirect(): bool {
+	public function is_redirect(): bool {
 		return 'redirect' === $this->type;
 	}
 
-	public function isError(): bool {
+	public function is_error(): bool {
 		return 'error' === $this->type;
 	}
 
-	public function getRedirectUrl(): ?string {
+	public function get_redirect_url(): ?string {
 		return $this->redirect_url;
 	}
 
-	public function getMessage(): ?string {
+	public function get_message(): ?string {
 		return $this->message;
 	}
 
-	public function getTitle(): ?string {
+	public function get_title(): ?string {
 		return $this->title;
 	}
 
-	public function getLinkUrl(): ?string {
+	public function get_link_url(): ?string {
 		return $this->link_url;
 	}
 
-	public function getLinkText(): ?string {
+	public function get_link_text(): ?string {
 		return $this->link_text;
 	}
 
-	public function getSecondaryLinkUrl(): ?string {
+	public function get_secondary_link_url(): ?string {
 		return $this->secondary_link_url;
 	}
 
-	public function getSecondaryLinkText(): ?string {
+	public function get_secondary_link_text(): ?string {
 		return $this->secondary_link_text;
 	}
 }
