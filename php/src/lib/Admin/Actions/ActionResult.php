@@ -38,21 +38,33 @@ class ActionResult {
 	 */
 	private $link_text;
 
-	private function __construct( string $type, ?string $redirect_url = null, ?string $message = null, ?string $title = null, ?string $link_url = null, ?string $link_text = null ) {
-		$this->type         = $type;
-		$this->redirect_url = $redirect_url;
-		$this->message      = $message;
-		$this->title        = $title;
-		$this->link_url     = $link_url;
-		$this->link_text    = $link_text;
+	/**
+	 * @var string|null
+	 */
+	private $secondary_link_url;
+
+	/**
+	 * @var string|null
+	 */
+	private $secondary_link_text;
+
+	private function __construct( string $type, ?string $redirect_url = null, ?string $message = null, ?string $title = null, ?string $link_url = null, ?string $link_text = null, ?string $secondary_link_url = null, ?string $secondary_link_text = null ) {
+		$this->type                = $type;
+		$this->redirect_url        = $redirect_url;
+		$this->message             = $message;
+		$this->title               = $title;
+		$this->link_url            = $link_url;
+		$this->link_text           = $link_text;
+		$this->secondary_link_url  = $secondary_link_url;
+		$this->secondary_link_text = $secondary_link_text;
 	}
 
 	public static function redirect( string $redirect_url ): self {
 		return new self( 'redirect', $redirect_url );
 	}
 
-	public static function error( string $message, string $title, ?string $link_url = null, ?string $link_text = null ): self {
-		return new self( 'error', null, $message, $title, $link_url, $link_text );
+	public static function error( string $message, string $title, ?string $link_url = null, ?string $link_text = null, ?string $secondary_link_url = null, ?string $secondary_link_text = null ): self {
+		return new self( 'error', null, $message, $title, $link_url, $link_text, $secondary_link_url, $secondary_link_text );
 	}
 
 	public function isRedirect(): bool {
@@ -81,5 +93,13 @@ class ActionResult {
 
 	public function getLinkText(): ?string {
 		return $this->link_text;
+	}
+
+	public function getSecondaryLinkUrl(): ?string {
+		return $this->secondary_link_url;
+	}
+
+	public function getSecondaryLinkText(): ?string {
+		return $this->secondary_link_text;
 	}
 }

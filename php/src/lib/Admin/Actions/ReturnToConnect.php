@@ -105,7 +105,8 @@ class ReturnToConnect {
 			exit;
 		}
 
-		$post_id      = isset( $_GET['post_id'] ) && is_numeric( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0;
+		$raw_post_id  = isset( $_GET['post_id'] ) ? wp_unslash( $_GET['post_id'] ) : '';
+		$post_id      = is_numeric( $raw_post_id ) ? absint( $raw_post_id ) : 0;
 		$redirect_url = $this->connection_completion_service->complete( $token, $post_id );
 		wp_safe_redirect( $redirect_url );
 		exit;

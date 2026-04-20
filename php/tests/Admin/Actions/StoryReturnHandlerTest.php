@@ -34,6 +34,62 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 		$this->assertTrue( $result->isError() );
 		$this->assertSame( 'https://example.test/post/7', $result->getLinkUrl() );
 		$this->assertSame( 'Return to story', $result->getLinkText() );
+		$this->assertNull( $result->getSecondaryLinkUrl() );
+		$this->assertStringContainsString( 'oops', $result->getMessage() );
+		$this->assertStringContainsString( 'Your story is safe', $result->getMessage() );
+	}
+
+	public function test_navigation_error_with_story_id_offers_reopen_and_fallback(): void {
+		$post_api      = $this->createMock( PostAPI::class );
+		$shorthand     = $this->createMock( Shorthand::class );
+		$admin_gateway = $this->createMock( AdminGateway::class );
+		$link_builder  = $this->createMock( StoryEditorLinkBuilder::class );
+
+		$admin_gateway
+			->expects( $this->once() )
+			->method( 'get_edit_post_link' )
+			->with( 7 )
+			->willReturn( 'https://example.test/post/7/edit' );
+
+		$link_builder
+			->expects( $this->once() )
+			->method( 'build' )
+			->with( 7, 'story-123' )
+			->willReturn( 'https://example.test/reopen' );
+
+		$handler = new StoryReturnHandler( $post_api, $shorthand, $admin_gateway, $link_builder, 'tse_story' );
+
+		$result = $handler->handle( 7, 'story-123', 'timeout', null, null );
+
+		$this->assertTrue( $result->isError() );
+		$this->assertSame( 'https://example.test/reopen', $result->getLinkUrl() );
+		$this->assertSame( 'Reopen story in Shorthand', $result->getLinkText() );
+		$this->assertSame( 'https://example.test/post/7/edit', $result->getSecondaryLinkUrl() );
+		$this->assertSame( 'Return to story', $result->getSecondaryLinkText() );
+		$this->assertStringContainsString( 'timeout', $result->getMessage() );
+	}
+
+	public function test_navigation_error_during_story_creation_mentions_creation(): void {
+		$post_api      = $this->createMock( PostAPI::class );
+		$shorthand     = $this->createMock( Shorthand::class );
+		$admin_gateway = $this->createMock( AdminGateway::class );
+		$link_builder  = $this->createMock( StoryEditorLinkBuilder::class );
+
+		$admin_gateway
+			->expects( $this->once() )
+			->method( 'get_all_stories_url' )
+			->with( 'tse_story' )
+			->willReturn( 'https://example.test/stories' );
+
+		$handler = new StoryReturnHandler( $post_api, $shorthand, $admin_gateway, $link_builder, 'tse_story' );
+
+		$result = $handler->handle( null, null, 'forbidden', null, 'tse_story' );
+
+		$this->assertTrue( $result->isError() );
+		$this->assertSame( 'https://example.test/stories', $result->getLinkUrl() );
+		$this->assertSame( 'Return to all stories', $result->getLinkText() );
+		$this->assertStringContainsString( 'creating your story', $result->getMessage() );
+		$this->assertStringContainsString( 'forbidden', $result->getMessage() );
 	}
 
 	public function test_rejects_unexpected_post_type_during_story_creation(): void {
@@ -56,7 +112,8 @@ final class StoryReturnHandlerTest extends WordPressTestCase {
 		$result = $handler->handle( null, 'story-123', null, null, 'page' );
 
 		$this->assertTrue( $result->isError() );
-		$this->assertStringContainsString( 'unexpected error', $result->getMessage() );
+		$this->assertStringContainsString( 'different content type', $result->getMessage() );
+		$this->assertStringContainsString( 'No content was lost', $result->getMessage() );
 		$this->assertSame( 'https://example.test/stories', $result->getLinkUrl() );
 		$this->assertSame( 'Return to all stories', $result->getLinkText() );
 	}

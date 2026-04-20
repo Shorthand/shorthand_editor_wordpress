@@ -219,8 +219,18 @@ class EditWithShorthand {
 			$args['link_text'] = esc_html( $result->getLinkText() );
 		}
 
+		$message_html = '<p>' . esc_html( $result->getMessage() ) . '</p>';
+
+		if ( $result->getSecondaryLinkUrl() && $result->getSecondaryLinkText() ) {
+			$message_html .= sprintf(
+				'<p><a href="%1$s">%2$s</a></p>',
+				esc_url( $result->getSecondaryLinkUrl() ),
+				esc_html( $result->getSecondaryLinkText() )
+			);
+		}
+
 		wp_die(
-			esc_html( $result->getMessage() ),
+			wp_kses_post( $message_html ),
 			esc_html( $result->getTitle() ),
 			$args
 		);

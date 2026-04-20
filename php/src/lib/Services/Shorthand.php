@@ -143,10 +143,28 @@ class Shorthand {
 	}
 
 
+	/**
+	 * Terminate the connect flow with a status-code-aware wp_die screen.
+	 *
+	 * Translates the HTTP status returned by the Shorthand API into a
+	 * user-friendly message with an appropriate recovery action:
+	 * reauthorise on 401/403, update the plugin on 426, retry on 5xx,
+	 * or a generic retry screen for any other non-success response.
+	 *
+	 * @param int $status_code HTTP status code returned by the Shorthand API.
+	 */
 	private function die_on_connect_error( int $status_code ): void {
 		$retry_link = array(
 			'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
 			'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
+		);
+
+		$status_detail = array(
+			'message' => sprintf(
+				/* translators: %d: HTTP status code returned by the Shorthand API. */
+				esc_html__( 'The request returned HTTP status code %d.', 'the-shorthand-editor' ),
+				$status_code
+			),
 		);
 
 		if ( 401 === $status_code || 403 === $status_code ) {
@@ -175,9 +193,7 @@ class Shorthand {
 				array_merge(
 					$retry_link,
 					array(
-						'additional_errors' => array(
-							array( 'message' => esc_html( "The request returned HTTP status code {$status_code}." ) ),
-						),
+						'additional_errors' => array( $status_detail ),
 					)
 				)
 			);
@@ -189,9 +205,7 @@ class Shorthand {
 			array_merge(
 				$retry_link,
 				array(
-					'additional_errors' => array(
-						array( 'message' => esc_html( "The request returned HTTP status code {$status_code}." ) ),
-					),
+					'additional_errors' => array( $status_detail ),
 				)
 			)
 		);
