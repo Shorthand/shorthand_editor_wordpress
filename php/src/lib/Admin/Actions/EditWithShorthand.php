@@ -10,7 +10,6 @@ use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\Options;
 use Shorthand\Services\PostAPI;
-use Shorthand\Admin\AdminGateway;
 use Shorthand\Core\Loader;
 
 use WP_Post;
@@ -57,13 +56,13 @@ class EditWithShorthand {
 	 */
 	private $auth_state_manager;
 
-	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, ?StoryReturnHandler $story_return_handler = null, ?StoryEditorLinkBuilder $link_builder = null, ?AuthStateManager $auth_state_manager = null ) {
+	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, ?StoryEditorLinkBuilder $link_builder = null, ?AuthStateManager $auth_state_manager = null ) {
 		$this->shorthand            = $shorthand;
 		$this->options              = $options;
 		$this->post_api             = $post_api;
 		$this->post_type            = $post_type;
 		$this->link_builder         = $link_builder ? $link_builder : new StoryEditorLinkBuilder();
-		$this->story_return_handler = $story_return_handler ? $story_return_handler : new StoryReturnHandler( $post_api, $shorthand, new AdminGateway(), $this->link_builder, $post_type );
+		$this->story_return_handler = $story_return_handler;
 		$this->auth_state_manager   = $auth_state_manager;
 	}
 

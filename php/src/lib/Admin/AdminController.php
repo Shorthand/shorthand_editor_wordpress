@@ -102,6 +102,31 @@ class AdminController {
 		/* Initialise the editor, preview and Shorthand redirection. */
 		$loader->add_action( 'admin_init', $this, 'admin_init' );
 
+		/*
+		 * Register connect-flow admin-post hooks at plugins_loaded time.
+		 *
+		 * admin-post.php fires admin_init then immediately checks
+		 * has_action("admin_post_{$action}") — if registration were deferred
+		 * to admin_init and anything interrupted that callback before
+		 * $loader->register() ran, the check would fail and WordPress would
+		 * emit wp_die('', 400), producing a blank error screen on return
+		 * from the Shorthand connect flow.
+		 */
+		$admin_gateway     = new AdminGateway( $this->settings_page_slug );
+		$return_to_connect = new ReturnToConnect(
+			$this->shorthand,
+			new ConnectionCompletionService( $this->shorthand, $admin_gateway )
+		);
+		$return_to_connect->define_return_page( $loader );
+
+		$redirect_to_integration = new RedirectToIntegration(
+			$this->shorthand,
+			$return_to_connect,
+			admin_url( 'plugins.php' ),
+			$this->auth_state_manager
+		);
+		$redirect_to_integration->define_redirect_page( $loader );
+
 		/* Handle workspace disconnection. */
 		$loader->add_action( 'admin_post_shorthand_disconnect', $this, 'handle_disconnect' );
 
@@ -116,12 +141,7 @@ class AdminController {
 
 	public function admin_init(): void {
 		$loader        = new Loader();
-		$admin_gateway = new AdminGateway();
-
-		$return_to_connect = new ReturnToConnect(
-			$this->shorthand,
-			new ConnectionCompletionService( $this->shorthand, $admin_gateway )
-		);
+		$admin_gateway = new AdminGateway( $this->settings_page_slug );
 
 		$story_editor_link_builder = new StoryEditorLinkBuilder();
 		$story_return_handler      = new StoryReturnHandler(
@@ -141,14 +161,10 @@ class AdminController {
 			$story_editor_link_builder,
 			$this->auth_state_manager
 		);
-		$redirect_to_integration     = new RedirectToIntegration( $this->shorthand, $return_to_connect, admin_url( 'plugins.php' ), $this->auth_state_manager );
 
 		$post_preview = new PostPreview( $this->options, $this->post_api, $this->permissions, $this->version, $this->auth_state_manager );
 
 		$redirect_to_shorthand_story->define_redirect_and_return_pages( $loader );
-		$redirect_to_integration->define_redirect_page( $loader );
-
-		$return_to_connect->define_return_page( $loader );
 		$post_preview->define_preview_page( $loader );
 
 		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager );

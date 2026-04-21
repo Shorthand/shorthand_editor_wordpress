@@ -8,6 +8,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AdminGateway {
 
+	/**
+	 * The slug of the plugin's settings page, used to build its admin URL.
+	 *
+	 * @readonly
+	 * @var string
+	 */
+	private $settings_page_slug;
+
+	public function __construct( string $settings_page_slug ) {
+		$this->settings_page_slug = $settings_page_slug;
+	}
+
 	public function get_post( int $post_id ) {
 		return get_post( $post_id );
 	}
@@ -33,6 +45,6 @@ class AdminGateway {
 	}
 
 	public function get_settings_page_url(): string {
-		return admin_url( 'options-general.php?page=theshed-settings' );
+		return admin_url( 'options-general.php?page=' . rawurlencode( $this->settings_page_slug ) );
 	}
 }
