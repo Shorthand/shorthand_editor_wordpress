@@ -20,9 +20,9 @@ class ReturnToConnect {
 	 */
 	private $connection_completion_service;
 
-	public function __construct( Shorthand $shorthand, ?ConnectionCompletionService $connection_completion_service = null ) {
+	public function __construct( Shorthand $shorthand, ConnectionCompletionService $connection_completion_service ) {
 		$this->shorthand                     = $shorthand;
-		$this->connection_completion_service = $connection_completion_service ? $connection_completion_service : new ConnectionCompletionService( $shorthand, new \Shorthand\Admin\AdminGateway() );
+		$this->connection_completion_service = $connection_completion_service;
 	}
 
 	/**
