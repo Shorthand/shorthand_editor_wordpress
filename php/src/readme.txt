@@ -278,7 +278,7 @@ for the content you will create.
 1. Find the plugin named "The Shorthand Editor" and click "Connect to Shorthand…"
 1. Sign in with your Shorthand account, or create a new account by selecting "Start Creating For Free"
 1. Select a new or existing workspace to be associated with your organisation
-1. Select a new or existing WordPress team for your site
+1. Select a new or existing Shorthand site for your WordPress site
 1. Click "Connect" to complete the connection
 
 == Frequently Asked Questions ==
@@ -353,7 +353,7 @@ In general, we recommend the following:
 If you are experiencing issues when navigating between Shorthand and WordPress, try
 
 - ensuring that your WordPress site is configured to use HTTPS; and
-- following the process to [reconnect to your existing WordPress team in Shorthand](#connect-to-shorthand).
+- following the process to [reconnect to your existing site in Shorthand](#connect-to-shorthand).
 
 If you are experiencing publishing issues, ensure that your Shorthand workspace has been
 activated, and has sufficient story credit.

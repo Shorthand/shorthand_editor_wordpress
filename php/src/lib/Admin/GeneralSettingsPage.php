@@ -44,7 +44,7 @@ class GeneralSettingsPage extends SettingsPage {
 	protected function build_settings_sections(): void {
 		add_settings_section(
 			'shorthand_workspace_section',
-			esc_html__( 'Workspace and Team', 'the-shorthand-editor' ),
+			esc_html__( 'Workspace and Site', 'the-shorthand-editor' ),
 			null,
 			$this->settings_page_slug
 		);
@@ -69,7 +69,7 @@ class GeneralSettingsPage extends SettingsPage {
 			if ( $this->options->get_token_type() != 'Organisation' ) {
 				add_settings_field(
 					'shorthand_v2_token_team',
-					esc_html__( 'Team Name', 'the-shorthand-editor' ),
+					esc_html__( 'Site Name', 'the-shorthand-editor' ),
 					array( $this, 'render_partial' ),
 					$this->settings_page_slug,
 					'shorthand_workspace_section',

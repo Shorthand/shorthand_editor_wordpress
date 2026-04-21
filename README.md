@@ -44,8 +44,8 @@ Shorthand.
 3. Ensure the plugin has been activated (and do so if not)
 4. Click the `Connect to Shorthand` link
 5. When redirected to Shorthand, log in, if not already
-6. Select or create a Shorthand workspace that will hold the WordPress team
-7. Select an existing WordPress team, or create a new one
+6. Select or create a Shorthand workspace that will be connected to the site
+7. Select an existing site connection, or create a new one
 8. Navigate back to WordPress (using the previous credentials)
 
 From this point, a user with editing permissions in WordPress will be able to
@@ -81,8 +81,8 @@ The user can preview the story via the usual WP preview button.
 Choosing `Edit With Shorthand` will redirect the user to a session in Shorthand,
 still not needing to log in.
 
-The following tools will have been removed from the editor for stories in a team
-associated with a WordPress team:
+The following tools will have been removed from the editor for stories in a site
+associated with a WordPress site:
 
 - collaborators
 - comments
