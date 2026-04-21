@@ -31,7 +31,10 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		}
 
 		public function get_error_code(): string {
-			return (string) array_key_first( $this->errors );
+			foreach ( $this->errors as $code => $_messages ) {
+				return (string) $code;
+			}
+			return '';
 		}
 
 		public function get_error_message(): string {
