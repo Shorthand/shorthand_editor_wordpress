@@ -7,7 +7,7 @@
     "wp-coding-standards/wpcs": "^3.0",
     "automattic/vipwpcs": "^3.0",
     "symplify/rule-doc-generator": "^12.2",
-    "phpunit/phpunit": "^11.5"
+    "phpunit/phpunit": "^8.5 || ^9.6 || ^10.5 || ^11.5"
   },
   "require": {
     "php": "^7.2 || ^8.0",
