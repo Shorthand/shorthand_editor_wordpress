@@ -92,11 +92,11 @@ class PostPreview {
 			$this->die_with_error( __( 'Invalid preview request: missing nonce.', 'the-shorthand-editor' ), 400 );
 		}
 
-		if ( ! wp_verify_nonce( sanitize_key( $_GET['_wpnonce'] ), 'shorthand_preview' ) ) {
+		if ( ! wp_verify_nonce( sanitize_key( wp_unslash( $_GET['_wpnonce'] ) ), 'shorthand_preview' ) ) {
 			$this->die_with_error( __( 'Bad preview request: expired nonce.', 'the-shorthand-editor' ), 400 );
 		}
 
-		$post_id = isset( $_REQUEST['post'] ) ? absint( $_REQUEST['post'] ) : null;
+		$post_id = isset( $_REQUEST['post'] ) ? absint( wp_unslash( $_REQUEST['post'] ) ) : null;
 		if ( ! $post_id ) {
 			$this->die_with_error( __( 'A post ID is required for a preview request.', 'the-shorthand-editor' ), 400 );
 		}

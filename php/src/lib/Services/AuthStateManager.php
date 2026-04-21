@@ -62,22 +62,20 @@ class AuthStateManager {
 	 * appeared, the state is promoted to `upgrade_required` on the spot.
 	 */
 	public function get_state(): string {
-		$option = $this->get_option();
-
-		if ( $option['pending_upgrade'] && $this->has_update_available() ) {
-			$this->set_state( self::STATE_UPGRADE_REQUIRED );
-			return self::STATE_UPGRADE_REQUIRED;
-		}
-
-		return $option['state'];
+		return $this->resolve_current_option()['state'];
 	}
 
 	/**
 	 * Return the Unix timestamp of the most recent state change.
+	 *
+	 * Performs the same lazy promotion as `get_state()` so the timestamp
+	 * reflects the current (possibly just-promoted) state rather than a
+	 * stale `pending_upgrade` snapshot.  This matters for dismissal
+	 * comparisons: a user who dismisses the `invalid` notice must still see
+	 * the follow-up `upgrade_required` notice once an update appears.
 	 */
 	public function get_changed_at(): int {
-		$option = $this->get_option();
-		return $option['changed_at'];
+		return $this->resolve_current_option()['changed_at'];
 	}
 
 	/**
@@ -152,6 +150,28 @@ class AuthStateManager {
 		if ( 401 === $status_code && ! $this->requires_upgrade() ) {
 			$this->set_state( self::STATE_INVALID );
 		}
+	}
+
+	/**
+	 * Read the stored option and apply lazy `pending_upgrade` promotion.
+	 *
+	 * When a 426 was previously recorded but no plugin update was available,
+	 * the state is stored as `invalid` with `pending_upgrade = true`.  Once
+	 * an update becomes available, calling this method promotes the state
+	 * to `upgrade_required` (updating `changed_at`) and returns the fresh
+	 * option so callers see a consistent view.
+	 *
+	 * @return array{state: string, changed_at: int, pending_upgrade: bool}
+	 */
+	private function resolve_current_option(): array {
+		$option = $this->get_option();
+
+		if ( $option['pending_upgrade'] && $this->has_update_available() ) {
+			$this->set_state( self::STATE_UPGRADE_REQUIRED );
+			return $this->get_option();
+		}
+
+		return $option;
 	}
 
 	/**

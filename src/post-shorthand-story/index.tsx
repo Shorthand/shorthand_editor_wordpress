@@ -27,7 +27,7 @@ interface IShorthandWordPressAPI {
       createPostEditorToolBar?: (
         container: HTMLDivElement,
         postId: number,
-        editUrl: string,
+        editUrl: string | null,
         initialState: PHPStoryState,
         wpNonce: string
       ) => void;
@@ -57,7 +57,7 @@ export function initPostEditor(): void {
 function createPostEditorToolBar(
   container: HTMLDivElement,
   postId: number,
-  editUrl: string,
+  editUrl: string | null,
   initialState: PHPStoryState,
   wpNonce: string
 ): void {

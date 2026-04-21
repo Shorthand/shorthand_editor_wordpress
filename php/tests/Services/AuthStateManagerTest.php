@@ -428,6 +428,31 @@ final class AuthStateManagerTest extends WordPressTestCase {
 	}
 
 	/**
+	 * get_changed_at() triggers the same lazy promotion as get_state().
+	 *
+	 * Callers that consult `get_changed_at()` without first calling
+	 * `get_state()` must still see the promoted timestamp — otherwise a
+	 * user who dismissed the `invalid` notice would never see the
+	 * follow-up `upgrade_required` notice.
+	 *
+	 * @group lazy-promotion
+	 */
+	public function test_get_changed_at_promotes_to_upgrade_required_when_update_appears(): void {
+		$manager = $this->make_manager();
+		$this->set_state_option( AuthStateManager::STATE_INVALID, 100, true );
+
+		$this->set_update_available();
+
+		$changed_at = $manager->get_changed_at();
+
+		$this->assertGreaterThan( 100, $changed_at, 'changed_at should reflect the promotion time, not the stale invalid timestamp' );
+
+		$stored = $this->get_stored_option();
+		$this->assertSame( AuthStateManager::STATE_UPGRADE_REQUIRED, $stored['state'] );
+		$this->assertFalse( $stored['pending_upgrade'] );
+	}
+
+	/**
 	 * No promotion when pending_upgrade is false.
 	 *
 	 * @group lazy-promotion

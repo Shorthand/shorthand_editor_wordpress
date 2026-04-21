@@ -108,27 +108,24 @@ class StoryReturnHandler {
 		$title = __( "Couldn't return from Shorthand", 'the-shorthand-editor' );
 
 		if ( $create_type ) {
-			$message = __(
-				'Shorthand reported a problem while creating your story. Nothing has been lost — if the story was created, you can reopen it from Shorthand.',
-				'the-shorthand-editor'
+			$message = sprintf(
+				/* translators: %s: short error code or message returned by Shorthand */
+				__( 'Shorthand reported a problem while creating your story. Nothing has been lost — if the story was created, you can reopen it from Shorthand. Details from Shorthand: %s. If this keeps happening, share this reference with Shorthand support.', 'the-shorthand-editor' ),
+				$error
 			);
 		} elseif ( $post_id ) {
-			$message = __(
-				'Shorthand reported a problem while returning to WordPress. Your story is safe and any saved changes are still in Shorthand. You can try opening it again, or go back to this post in WordPress.',
-				'the-shorthand-editor'
+			$message = sprintf(
+				/* translators: %s: short error code or message returned by Shorthand */
+				__( 'Shorthand reported a problem while returning to WordPress. Your story is safe and any saved changes are still in Shorthand. You can try opening it again, or go back to this post in WordPress. Details from Shorthand: %s. If this keeps happening, share this reference with Shorthand support.', 'the-shorthand-editor' ),
+				$error
 			);
 		} else {
-			$message = __(
-				'Shorthand reported a problem while returning to WordPress. Your story is safe in Shorthand.',
-				'the-shorthand-editor'
+			$message = sprintf(
+				/* translators: %s: short error code or message returned by Shorthand */
+				__( 'Shorthand reported a problem while returning to WordPress. Your story is safe in Shorthand. Details from Shorthand: %s. If this keeps happening, share this reference with Shorthand support.', 'the-shorthand-editor' ),
+				$error
 			);
 		}
-
-		$message .= ' ' . sprintf(
-			/* translators: %s: short error code or message returned by Shorthand */
-			__( 'Details from Shorthand: %s. If this keeps happening, share this reference with Shorthand support.', 'the-shorthand-editor' ),
-			$error
-		);
 
 		$primary_link_url  = null;
 		$primary_link_text = null;
