@@ -198,12 +198,6 @@ class EditWithShorthand {
 		$this->respond( $result );
 	}
 
-	private function get_all_stories_url(): string {
-		return admin_url(
-			"edit.php?post_type={$this->post_type}"
-		);
-	}
-
 	private function respond( ActionResult $result ): void {
 		if ( $result->is_redirect() ) {
 			wp_safe_redirect( $result->get_redirect_url() );
