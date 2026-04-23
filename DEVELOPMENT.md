@@ -7,26 +7,29 @@ See the accompanying [LICENSE](./LICENSE) file to understand how development and
 
 ## Releases
 
-A release is built and deployed when the `production` branch
-is advanced. The head of the `master` branch should be properly
-tagged with the new version number before `production` is
-fast-forwarded to this commit.
+A production release is built and deployed when a version tag is
+pushed to the repository. The CircleCI `production-release` workflow
+is gated on tags and handles bundling, uploading to the production
+S3 bucket, creating a GitHub release, and invalidating CloudFront.
 
-The following release checklist should be observed before
-merging to production:
+Pushes to `master` trigger a non-production bundle and upload via
+the `wp-plugin-workflow`; no `production` branch is used.
+
+The following release checklist should be observed before tagging:
 
 1. The version should be updated in all relevant places
    (See [Version](#plugin-version)).
 2. The changelog should be updated in `./deploy/update.json`.
-3. Tag `master` with the new version number.
-4. Fast-forward `production` to this commit of `master`.
+3. Tag `master` with the new version number and push the tag. The
+   `tag:release` script in `package.json` reads the version from
+   `deploy/update.json` and pushes the tag for you.
 
 ## Plugin version
 
 The version of the plugin is currently stored in several files:
 
 1. The top-level plugin file, `php/src/the-shorthand-editor.php`
-2. The `Plugin.php`, `php/src/lib/Plugin.php`
+2. The `Version.php` constant, `php/src/lib/Core/Version.php`
 3. The update-check file, `deploy/update.json`
 4. The WordPress directory file, `php/src/readme.txt`
 
