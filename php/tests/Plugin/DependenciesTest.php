@@ -52,11 +52,11 @@ final class DependenciesTest extends WordPressTestCase {
 }
 
 final class TestDependencies extends Dependencies {
-	public $options_created = 0;
+	public $options_created       = 0;
 	public $token_manager_created = 0;
-	public $post_type_created = 0;
-	public $templates_created = 0;
-	public $cron_created = 0;
+	public $post_type_created     = 0;
+	public $templates_created     = 0;
+	public $cron_created          = 0;
 
 	public $test_options;
 	public $test_token_manager;
@@ -84,7 +84,7 @@ final class TestDependencies extends Dependencies {
 		return $this->test_token_manager;
 	}
 
-	protected function create_post_type( string $permalink, Version $version ): PostType {
+	protected function create_post_type( Options $options, Version $version ): PostType {
 		++$this->post_type_created;
 		$this->test_post_type = new TestPostType();
 		return $this->test_post_type;
@@ -133,7 +133,7 @@ final class TestTokenManager extends TokenManager {
 
 final class TestPostType extends PostType {
 	public $init_called = false;
-	public $post_type = 'tse_story';
+	public $post_type   = 'tse_story';
 
 	public function __construct() {}
 

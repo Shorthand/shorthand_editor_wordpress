@@ -8,6 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 use Shorthand\Core\Version;
 use Shorthand\Core\Loader;
+use Shorthand\Services\Options;
 
 class PostType {
 
@@ -18,11 +19,6 @@ class PostType {
 	public $post_type;
 	/**
 	 * @readonly
-	 * @var string
-	 */
-	public $permalink_slug;
-	/**
-	 * @readonly
 	 * @var \Shorthand\Services\Options
 	 */
 	public $options;
@@ -31,10 +27,10 @@ class PostType {
 	 */
 	private $version;
 
-	public function __construct( string $permalink_slug, Version $version ) {
-		$this->version        = $version;
-		$this->post_type      = 'tse_story';
-		$this->permalink_slug = $permalink_slug;
+	public function __construct( Options $options, Version $version ) {
+		$this->options   = $options;
+		$this->version   = $version;
+		$this->post_type = 'tse_story';
 	}
 
 	public function init() {
@@ -70,7 +66,7 @@ class PostType {
 				'supports'           => array( 'title', 'thumbnail', 'excerpt', 'page-attributes', 'author', 'custom-fields' ),
 				'menu_icon'          => $this->version->get_plugin_url( 'assets/admin/images/icon.png' ),
 				'rewrite'            => array(
-					'slug' => $this->permalink_slug,
+					'slug' => $this->options->get_permalink(),
 				),
 				'taxonomies'         => array( 'category', 'post_tag' ),
 			)
