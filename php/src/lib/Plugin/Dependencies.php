@@ -96,7 +96,7 @@ class Dependencies {
 		$this->token_manager = $this->create_token_manager( $this->options, $this->shorthand, $this->auth_state_manager );
 		$this->token_manager->init();
 
-		$this->post_type = $this->create_post_type( $this->options->get_permalink(), $this->version );
+		$this->post_type = $this->create_post_type( $this->options, $this->version );
 		$this->post_type->init();
 
 		$this->templates = $this->create_templates( $this->post_type->post_type, $this->options, $this->version );
@@ -128,8 +128,8 @@ class Dependencies {
 		return new TokenManager( $options, $shorthand, $auth_state_manager );
 	}
 
-	protected function create_post_type( string $permalink, Version $version ): PostType {
-		return new PostType( $permalink, $version );
+	protected function create_post_type( Options $options, Version $version ): PostType {
+		return new PostType( $options, $version );
 	}
 
 	protected function create_templates( string $post_type, Options $options, Version $version ): Templates {
