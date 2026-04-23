@@ -6,6 +6,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 
+use Shorthand\Admin\AdminGateway;
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\Options;
 use Shorthand\Services\PostAPI;
@@ -40,11 +42,35 @@ class EditWithShorthand {
 	 */
 	protected $post_type;
 
-	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type ) {
-		$this->shorthand = $shorthand;
-		$this->options   = $options;
-		$this->post_api  = $post_api;
-		$this->post_type = $post_type;
+	/**
+	 * @var \Shorthand\Admin\Actions\StoryReturnHandler
+	 */
+	private $story_return_handler;
+
+	/**
+	 * @var \Shorthand\Admin\Actions\StoryEditorLinkBuilder
+	 */
+	private $link_builder;
+
+	/**
+	 * @var \Shorthand\Services\AuthStateManager
+	 */
+	private $auth_state_manager;
+
+	/**
+	 * @var \Shorthand\Admin\AdminGateway
+	 */
+	private $admin_gateway;
+
+	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, AuthStateManager $auth_state_manager, AdminGateway $admin_gateway, StoryEditorLinkBuilder $link_builder ) {
+		$this->shorthand            = $shorthand;
+		$this->options              = $options;
+		$this->post_api             = $post_api;
+		$this->post_type            = $post_type;
+		$this->link_builder         = $link_builder;
+		$this->story_return_handler = $story_return_handler;
+		$this->auth_state_manager   = $auth_state_manager;
+		$this->admin_gateway        = $admin_gateway;
 	}
 
 	public function define_redirect_and_return_pages( Loader $loader ): void {
@@ -76,14 +102,7 @@ class EditWithShorthand {
 	}
 
 	public function get_url( ?\WP_Post $post = null, ?string $story_id = null ): string {
-		$nonce      = wp_create_nonce( 'shorthand_redirect' );
-		$params     = array( '_wpnonce' => $nonce );
-		$post_param = $post ? "&post={$post->ID}" : '';
-
-		return add_query_arg(
-			$params,
-			admin_url( "admin-post.php?action=shorthand_editor&story={$story_id}{$post_param}" )
-		);
+		return $this->link_builder->build( $post ? (int) $post->ID : null, $story_id );
 	}
 
 	public function redirect_to_login(): void {
@@ -103,6 +122,7 @@ class EditWithShorthand {
 		}
 
 		$this->check_permissions();
+		$this->check_auth_state();
 
 		$redirect_url = $this->get_redirect_url();
 
@@ -124,6 +144,7 @@ class EditWithShorthand {
 		$story_id = isset( $_GET['story'] ) ? sanitize_text_field( wp_unslash( $_GET['story'] ) ) : null;
 
 		$this->check_permissions( $post_id );
+		$this->check_auth_state();
 
 		$redirect_url = $this->get_redirect_url( $post_id, $story_id );
 
@@ -179,65 +200,39 @@ class EditWithShorthand {
 			);
 		}
 
-		if ( $error ) {
-			$link_url = get_edit_post_link( $post_id );
-			wp_die(
-				esc_html__( 'An error occurred during navigation. Please contact Shorthand support.', 'the-shorthand-editor' ),
-				esc_html__( 'Error', 'the-shorthand-editor' ),
-				$link_url ? array(
-					'link_url'  => esc_url( $link_url ),
-					'link_text' => esc_html__( 'Return to story', 'the-shorthand-editor' ),
-				) : array(
-					'link_url'  => esc_url( $this->get_all_stories_url() ),
-					'link_text' => esc_html__( 'Return to all stories', 'the-shorthand-editor' ),
-				)
-			);
-		}
+		$result = $this->story_return_handler->handle( $post_id, $story_id, $error, $target, $create_type );
 
-		if ( $create_type && $create_type !== $this->post_type ) {
-			wp_die( esc_html__( 'Received unexpected post type to connect to Shorthand story.', 'the-shorthand-editor' ) );
-		}
+		$this->respond( $result );
+	}
 
-		if ( $create_type && $story_id ) {
-			$post   = $this->post_api->connect_story( $story_id, null );
-			$target = $this->get_url( $post, $story_id );
-
-			$post_id = $post->ID;
-
-			wp_safe_redirect( $target );
+	private function respond( ActionResult $result ): void {
+		if ( $result->is_redirect() ) {
+			wp_safe_redirect( $result->get_redirect_url() );
 			exit;
 		}
 
-		$post = get_post( $post_id );
-
-		if ( $story_id && $post ) {
-			$title = sanitize_post_field( 'post_title', $this->shorthand->get_story_title( $story_id ), $post->ID, 'db' );
-			if ( $title && $post->post_title !== $title ) {
-				// Update the post title to match the story title
-				wp_update_post(
-					array(
-						'ID'         => $post->ID,
-						'post_title' => $title,
-					)
-				);
-			}
+		$args = array();
+		if ( $result->get_link_url() ) {
+			$args['link_url'] = esc_url( $result->get_link_url() );
+		}
+		if ( $result->get_link_text() ) {
+			$args['link_text'] = esc_html( $result->get_link_text() );
 		}
 
-		if ( ! $target ) {
-			$target = get_edit_post_link( $post, 'raw' );
+		$message_html = '<p>' . esc_html( $result->get_message() ) . '</p>';
+
+		if ( $result->get_secondary_link_url() && $result->get_secondary_link_text() ) {
+			$message_html .= sprintf(
+				'<p><a href="%1$s">%2$s</a></p>',
+				esc_url( $result->get_secondary_link_url() ),
+				esc_html( $result->get_secondary_link_text() )
+			);
 		}
 
-		if ( ! $target ) {
-			$target = $this->get_all_stories_url();
-		}
-
-		wp_safe_redirect( $target );
-		exit;
-	}
-
-	private function get_all_stories_url(): string {
-		return admin_url(
-			"edit.php?post_type={$this->post_type}"
+		wp_die(
+			wp_kses_post( $message_html ),
+			esc_html( $result->get_title() ),
+			$args
 		);
 	}
 
@@ -254,6 +249,29 @@ class EditWithShorthand {
 		}
 	}
 
+
+	private function check_auth_state(): void {
+		if ( ! $this->auth_state_manager->is_connected() ) {
+			if ( current_user_can( 'manage_options' ) ) {
+				wp_die(
+					esc_html__( 'The Shorthand connection is not active. Please reconnect from the settings page to continue.', 'the-shorthand-editor' ),
+					esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
+					array(
+						'link_url'  => esc_url( $this->admin_gateway->get_settings_page_url() ),
+						'link_text' => esc_html__( 'Go to Shorthand Settings', 'the-shorthand-editor' ),
+					)
+				);
+			} else {
+				wp_die(
+					esc_html__( 'The Shorthand connection is not active. Please ask your administrator to reconnect the plugin.', 'the-shorthand-editor' ),
+					esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
+					array(
+						'back_link' => true,
+					)
+				);
+			}
+		}
+	}
 
 	private function get_redirect_url( ?int $post_id = null, ?string $story_id = null ): string {
 		$target_url = $this->get_callback_url( $post_id );

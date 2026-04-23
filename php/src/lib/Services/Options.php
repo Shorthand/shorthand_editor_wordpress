@@ -83,7 +83,17 @@ class Options {
 			)
 		);
 
-		/* Internal settings, used to persist  token information */
+		/* Internal settings, used to persist token information and auth state */
+		register_setting(
+			'theshed-internal-options-group',
+			'shorthand_auth_state',
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( $this, 'sanitize_auth_state' ),
+				'default'           => null,
+			)
+		);
+
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_token_info',
@@ -162,6 +172,34 @@ class Options {
 		flush_rewrite_rules();
 	}
 
+	/**
+	 * @param mixed $auth_state
+	 * @return array{state: string, changed_at: int, pending_upgrade: bool}|null
+	 */
+	public function sanitize_auth_state( $auth_state ) {
+		if ( ! is_array( $auth_state ) || ! isset( $auth_state['state'], $auth_state['changed_at'] ) ) {
+			return null;
+		}
+
+		$valid_states = array(
+			AuthStateManager::STATE_NEVER_CONNECTED,
+			AuthStateManager::STATE_DISCONNECTED,
+			AuthStateManager::STATE_CONNECTED,
+			AuthStateManager::STATE_INVALID,
+			AuthStateManager::STATE_UPGRADE_REQUIRED,
+		);
+
+		if ( ! in_array( $auth_state['state'], $valid_states, true ) ) {
+			return null;
+		}
+
+		return array(
+			'state'           => $auth_state['state'],
+			'changed_at'      => absint( $auth_state['changed_at'] ),
+			'pending_upgrade' => ! empty( $auth_state['pending_upgrade'] ),
+		);
+	}
+
 	public function sanitize_v2_token_info( $token_info ) {
 		$result = array(
 			'team_id'         => sanitize_text_field( $token_info['team_id'] ),
@@ -181,54 +219,13 @@ class Options {
 			return $regex_list;
 		}
 
-		$object = json_decode( $regex_list );
-		if ( json_last_error() !== JSON_ERROR_NONE ) {
-			$msg = json_last_error_msg();
-			add_settings_error( 'shorthand_regex_list', 'INVALID_REGEX_LIST', 'The post processing rules were invalid and could not be saved.' );
-			return;
-		}
-
-		if ( isset( $object->head ) && ! is_array( $object->head ) ) {
-			add_settings_error( 'shorthand_regex_list', 'INVALID_REGEX_LIST', 'The post processing `head` rule should be an array.' );
-			return;
-		}
-
-		if ( isset( $object->body ) && ! is_array( $object->body ) ) {
-			add_settings_error( 'shorthand_regex_list', 'INVALID_REGEX_LIST', 'The post processing `body` rule should be an array.' );
-			return;
-		}
-
-		if ( ( isset( $object->head ) && ! array_reduce( $object->head, array( self::class, 'check_regex_query' ), true ) ) ) {
-			add_settings_error( 'shorthand_regex_list', 'INVALID_REGEX_LIST', 'The post processing `head` rules should be an array of `query` and `replace` strings.' );
-			return;
-		}
-
-		if ( isset( $object->body ) && ! array_reduce( $object->body, array( self::class, 'check_regex_query' ), true ) ) {
-			add_settings_error( 'shorthand_regex_list', 'INVALID_REGEX_LIST', 'The post processing `body` rules should be an array of `query` and `replace` strings.' );
+		$error = RegexRuleSet::get_validation_error( $regex_list );
+		if ( null !== $error ) {
+			add_settings_error( 'shorthand_regex_list', 'INVALID_REGEX_LIST', $error );
 			return;
 		}
 
 		return $regex_list;
-	}
-
-	public static function check_regex_query( bool $carry, object $query ): bool {
-		if ( ! $carry ) {
-			return false;
-		}
-
-		if ( ! is_object( $query ) ) {
-			return false;
-		}
-		if (
-			! isset( $query->query ) ||
-			! is_string( $query->query ) ||
-			! isset( $query->replace ) ||
-			! is_string( $query->replace )
-		) {
-			return false;
-		}
-
-		return ! ( @preg_match( $query->query, null ) === false );
 	}
 
 	private function get_token_info_block(): ?array {
@@ -378,5 +375,8 @@ class Options {
 			$old_css = wp_kses_no_null( get_option( 'sh_css', $this->get_default_css() ) );
 			add_option( 'shorthand_css', $old_css, '', true );
 		}
+
+		/* Clean up legacy notice dismissal meta from earlier plugin versions. */
+		delete_metadata( 'user', 0, 'shorthand_connect_notice_dismissed', '', true );
 	}
 }

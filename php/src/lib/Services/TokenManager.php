@@ -10,7 +10,10 @@ use Shorthand\Core\Loader;
 use Shorthand\Services\Options;
 
 /**
- * Manages token operations and coordinates between Options and Shorthand services
+ * Manages token operations and coordinates between Options and Shorthand services.
+ *
+ * When a token is added or updated, this class fetches the token info from the
+ * Shorthand API and updates the persistent authorisation state accordingly.
  */
 class TokenManager {
 
@@ -22,10 +25,15 @@ class TokenManager {
 	 * @var \Shorthand\Services\Options
 	 */
 	private $options;
+	/**
+	 * @var \Shorthand\Services\AuthStateManager
+	 */
+	private $auth_state_manager;
 
-	public function __construct( Options $options, Shorthand $shorthand ) {
-		$this->options   = $options;
-		$this->shorthand = $shorthand;
+	public function __construct( Options $options, Shorthand $shorthand, AuthStateManager $auth_state_manager ) {
+		$this->options            = $options;
+		$this->shorthand          = $shorthand;
+		$this->auth_state_manager = $auth_state_manager;
 	}
 
 	/**
@@ -56,25 +64,33 @@ class TokenManager {
 	}
 
 	/**
-	 * Fetch token info from API and store it
+	 * Fetch token info from API and store it, updating the auth state.
+	 *
+	 * When the token is empty the state becomes `disconnected` and the cached
+	 * token info is cleared.  When a non-empty token is provided the API is
+	 * queried; on success the state becomes `connected`, and on failure the
+	 * state is set by the API response interceptor in ShorthandApiClient (401
+	 * or 426).  Neither the token nor the token info are cleared on failure.
 	 */
-	private function fetch_and_store_token_info( $token ) {
-		// Clear existing token info
-		delete_option( 'shorthand_v2_token_info' );
-
+	public function fetch_and_store_token_info( $token ) {
 		if ( empty( $token ) ) {
+			delete_option( 'shorthand_v2_token_info' );
+			$this->auth_state_manager->set_state( AuthStateManager::STATE_DISCONNECTED );
 			return;
 		}
 
-		// Use Shorthand service to fetch token info
 		$token_info = $this->shorthand->fetch_token_info( $token );
 
 		if ( $token_info && ! is_wp_error( $token_info ) ) {
-			// Store the token info
 			update_option( 'shorthand_v2_token_info', $token_info );
-
-			// Clear any dismissed connect notices so they can reappear if the token is later removed.
-			delete_metadata( 'user', 0, 'shorthand_connect_notice_dismissed', '', true );
+			$this->auth_state_manager->set_state( AuthStateManager::STATE_CONNECTED );
 		}
+
+		/*
+		 * On failure the auth state is already updated by the response
+		 * interceptor in ShorthandApiClient (401 → invalid, 426 →
+		 * upgrade_required).  We intentionally do NOT clear token_info here
+		 * so the UI retains workspace context for informational purposes.
+		 */
 	}
 }

@@ -10,16 +10,24 @@ declare global {
   }
 }
 
+type AuthState =
+  | "never_connected"
+  | "disconnected"
+  | "connected"
+  | "invalid"
+  | "upgrade_required";
+
 interface IShorthandWordPressAPI {
   WordPress: {
     restApiUrl: string;
     ajaxApiUrl: string;
     pluginFilesUrl: string;
+    authState?: AuthState;
     ui: {
       createPostEditorToolBar?: (
         container: HTMLDivElement,
         postId: number,
-        editUrl: string,
+        editUrl: string | null,
         initialState: PHPStoryState,
         wpNonce: string
       ) => void;
@@ -49,7 +57,7 @@ export function initPostEditor(): void {
 function createPostEditorToolBar(
   container: HTMLDivElement,
   postId: number,
-  editUrl: string,
+  editUrl: string | null,
   initialState: PHPStoryState,
   wpNonce: string
 ): void {

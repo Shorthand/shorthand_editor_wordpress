@@ -61,6 +61,13 @@ function theshed_class_autoloader( $class ) {
 }
 
 function theshed_run() {
-	$plugin = new Shorthand\Plugin();
+	$dependencies = new Shorthand\Plugin\Dependencies(
+		new Shorthand\Core\Version(),
+		new Shorthand\Services\Permissions()
+	);
+	$plugin       = new Shorthand\Plugin(
+		$dependencies,
+		new Shorthand\Services\StoryKses()
+	);
 	$plugin->init();
 }

@@ -36,11 +36,22 @@ class PostAPI {
 	 * @var string
 	 */
 	private $post_type;
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type ) {
-		$this->shorthand   = $shorthand;
-		$this->options     = $options;
-		$this->permissions = $permissions;
-		$this->post_type   = $post_type;
+	/**
+	 * @var \Shorthand\Services\StoryContentTransformer
+	 */
+	private $content_transformer;
+	/**
+	 * @var \Shorthand\Services\AuthStateManager
+	 */
+	private $auth_state_manager;
+
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer ) {
+		$this->shorthand           = $shorthand;
+		$this->options             = $options;
+		$this->permissions         = $permissions;
+		$this->post_type           = $post_type;
+		$this->content_transformer = $content_transformer;
+		$this->auth_state_manager  = $auth_state_manager;
 	}
 
 	/**
@@ -123,23 +134,15 @@ class PostAPI {
 		}
 	}
 
-	public function get_story_update_progress( int $post_id ): ?array {
-		$progress = get_post_meta( $post_id, 'story_update_state', true );
-		return is_array( $progress ) ? $progress : null;
+	public function get_story_update_progress( int $post_id ): ?StorySyncProgress {
+		return StorySyncProgress::from_meta_value( get_post_meta( $post_id, 'story_update_state', true ) );
 	}
 
-	public function set_story_update_progress( int $post_id, ?float $progress = null, ?string $status = null ) {
+	public function set_story_update_progress( int $post_id, ?StorySyncProgress $progress = null ) {
 		if ( ! isset( $progress ) ) {
 			delete_post_meta( $post_id, 'story_update_state' );
 		} else {
-			update_post_meta(
-				$post_id,
-				'story_update_state',
-				array(
-					'percent' => $progress,
-					'status'  => $status,
-				)
-			);
+			update_post_meta( $post_id, 'story_update_state', $progress->to_array() );
 		}
 	}
 
@@ -180,11 +183,15 @@ class PostAPI {
 	 * @return \Shorthand\Services\StoryUpdateTask|\WP_Error
 	 */
 	public function pull_story_begin( int $post_id ) {
+		if ( ! $this->auth_state_manager->is_connected() ) {
+			return new WP_Error( 'auth', __( 'Cannot publish: the Shorthand connection is not active.', 'the-shorthand-editor' ) );
+		}
+
 		/* abort any outstanding requests by updating the nonce */
 		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
 
 		$this->set_story_update_error( $post_id );
-		$this->set_story_update_progress( $post_id, 0, 'Requesting story from Shorthand' );
+		$this->set_story_update_progress( $post_id, new StorySyncProgress( 0, 'Requesting story from Shorthand' ) );
 
 		$story_id = get_post_meta( $post_id, 'story_id', true );
 		if ( ! $story_id ) {
@@ -340,11 +347,9 @@ class PostAPI {
 			return $res;
 		}
 
-		if ( $args->end === 0 ) {
-			$args->end = 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
-		}
+		$args->ensure_chunk_window();
 
-		if ( $args->start && $args->start >= $args->size ) {
+		if ( $args->is_download_complete() ) {
 			/* this request has been completed */
 			return $this->pull_story_completed( $args );
 		}
@@ -383,15 +388,11 @@ class PostAPI {
 			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
 		}
 
-		++$args->files;
+		$args->mark_chunk_downloaded();
 
-		$chunk_size  = $args->end - $args->start;
-		$args->start = $args->end;
-		$args->end   = $args->start + $chunk_size;
+		$progress = $args->get_progress_percent( 90 );
 
-		$progress = min( 90, round( ( 90 * $args->start ) / max( $args->size, 1 ) ) );
-
-		$this->set_story_update_progress( $args->post_id, $progress, 'Saving story to WordPress' );
+		$this->set_story_update_progress( $args->post_id, new StorySyncProgress( $progress, 'Saving story to WordPress' ) );
 
 		return new WP_Error( 'retry', 'Request further file data', 0 );
 	}
@@ -569,17 +570,19 @@ class PostAPI {
 		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
 		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
 
-		$head    = $this->fix_content_paths( $bundle_url, $head );
-		$article = $this->fix_content_paths( $bundle_url, $article );
+		$head    = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $head );
+		$article = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $article );
 
-		$rules = json_decode( $this->options->get_post_regex_list() );
+		$head    = apply_filters( 'theshed_fix_content_paths', $head );
+		$article = apply_filters( 'theshed_fix_content_paths', $article );
 
-		if ( $rules && isset( $rules->body ) && is_array( $rules->body ) ) {
-			$article = array_reduce( $rules->body, array( $this, 'apply_processing_regex_rule' ), $article );
-		}
-		if ( $rules && isset( $rules->head ) && is_array( $rules->head ) ) {
-			$head = array_reduce( $rules->head, array( $this, 'apply_processing_regex_rule' ), $head );
-		}
+		$transformed_story = $this->content_transformer->apply_processing_rule_set(
+			$head,
+			$article,
+			$this->options->get_post_regex_list()
+		);
+		$head              = $transformed_story['head'];
+		$article           = $transformed_story['article'];
 
 		$article = apply_filters( 'theshed_post_process_body', $article, $bundle_path, "{$bundle_path}/article.html" );
 		$head    = apply_filters( 'theshed_post_process_head', $head, $bundle_path, "{$bundle_path}/head.html" );
@@ -588,11 +591,6 @@ class PostAPI {
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
 
 		return null;
-	}
-
-	private function apply_processing_regex_rule( $content, $rule ) {
-		$content = preg_replace( $rule->query, $rule->replace, $content );
-		return $content;
 	}
 
 	private function unzip_story( $zip_file, $story_path ) {
@@ -633,14 +631,6 @@ class PostAPI {
 		);
 	}
 
-	private function fix_content_paths( $assets_path, $content ) {
-		$content = str_replace( './assets/', $assets_path . '/assets/', $content );
-		$content = str_replace( './static/', $assets_path . '/static/', $content );
-		$content = preg_replace( '/.(\/theme-\w+.min.css)/', $assets_path . '$1', $content );
-		$content = apply_filters( 'theshed_fix_content_paths', $content );
-		return $content;
-	}
-
 	public function get_story_bundle_url( $post_id, $story_id ): string {
 		$destination_url = wp_upload_dir()['baseurl'] . '/shorthand/' . $post_id . '/' . $story_id;
 
@@ -674,10 +664,10 @@ class PostAPI {
 		}
 	}
 
-	public function get_preview_content( $post_id ) {
+	public function get_preview_content( $post_id ): ?StoryPreview {
 		$story_id = get_post_meta( $post_id, 'story_id', true );
 		if ( ! $story_id ) {
-			return;
+			return null;
 		}
 
 		$response = $this->shorthand->shorthand_api_authed_request(
@@ -686,22 +676,10 @@ class PostAPI {
 		);
 
 		if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
-			return;
+			return null;
 		}
 
 		$payload = json_decode( wp_remote_retrieve_body( $response ) );
-
-		$rules   = json_decode( $this->options->get_post_regex_list() );
-		$head    = $payload->head;
-		$article = $payload->article;
-
-		if ( $rules && isset( $rules->body ) && is_array( $rules->body ) ) {
-			$article = array_reduce( $rules->body, array( $this, 'apply_processing_regex_rule' ), $article );
-		}
-
-		if ( $rules && isset( $rules->head ) && is_array( $rules->head ) ) {
-			$head = array_reduce( $rules->head, array( $this, 'apply_processing_regex_rule' ), $head );
-		}
 
 		$content_version = wp_remote_retrieve_header( $response, 'content-version' );
 
@@ -710,11 +688,18 @@ class PostAPI {
 		}
 
 		$content_version = ! empty( $content_version ) ? (int) $content_version : null;
-		return array(
-			'head'            => $head,
-			'body'            => $article,
-			'content_version' => $content_version,
+		$preview         = StoryPreview::from_payload( $payload, $content_version );
+		if ( null === $preview ) {
+			return null;
+		}
+
+		$transformed_preview = $this->content_transformer->apply_processing_rule_set(
+			$preview->get_head(),
+			$preview->get_body(),
+			$this->options->get_post_regex_list()
 		);
+
+		return $preview->with_content( $transformed_preview['head'], $transformed_preview['article'] );
 	}
 
 	public function get_wp_error_as_array( WP_Error $error ): array {

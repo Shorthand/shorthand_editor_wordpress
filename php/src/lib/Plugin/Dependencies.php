@@ -9,11 +9,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 use Shorthand\Core\Version;
 use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
+use Shorthand\Services\ShorthandApiClient;
+use Shorthand\Services\ShorthandHttpTransport;
+use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\TokenManager;
+use Shorthand\Services\WordPressContextProvider;
 use Shorthand\Admin\AdminController;
 use Shorthand\Services\Cron;
 
@@ -35,6 +40,10 @@ class Dependencies {
 	 * @var \Shorthand\Services\Options
 	 */
 	protected $options;
+	/**
+	 * @var \Shorthand\Services\AuthStateManager
+	 */
+	protected $auth_state_manager;
 	/**
 	 * @var \Shorthand\Services\Shorthand
 	 */
@@ -60,26 +69,75 @@ class Dependencies {
 	 */
 	protected $cron;
 
-	public function __construct() {
-		$this->version     = new Version();
-		$this->permissions = new Permissions();
+	/**
+	 * @var bool
+	 */
+	private $booted = false;
 
-		$this->options = new Options( $this->version );
+	public function __construct( Version $version, Permissions $permissions ) {
+		$this->version     = $version;
+		$this->permissions = $permissions;
+	}
+
+	public function boot(): void {
+		if ( $this->booted ) {
+			return;
+		}
+
+		$this->options = $this->create_options( $this->version );
 		$this->options->init();
 
-		$this->shorthand = new Shorthand( $this->options, $this->version );
+		$this->auth_state_manager = $this->create_auth_state_manager();
 
-		$this->token_manager = new TokenManager( $this->options, $this->shorthand );
+		$api_client       = $this->create_api_client( $this->options, $this->version, $this->auth_state_manager );
+		$context_provider = new WordPressContextProvider( $this->version );
+		$this->shorthand  = $this->create_shorthand( $this->options, $this->version, $api_client, $context_provider );
+
+		$this->token_manager = $this->create_token_manager( $this->options, $this->shorthand, $this->auth_state_manager );
 		$this->token_manager->init();
 
-		$this->post_type = new PostType( $this->options->get_permalink(), $this->version );
+		$this->post_type = $this->create_post_type( $this->options->get_permalink(), $this->version );
 		$this->post_type->init();
 
-		$this->templates = new Templates( $this->post_type->post_type, $this->options, $this->version );
+		$this->templates = $this->create_templates( $this->post_type->post_type, $this->options, $this->version );
 		$this->templates->init();
 
-		$this->cron = new Cron( $this );
+		$this->cron = $this->create_cron( $this );
 		$this->cron->init();
+
+		$this->booted = true;
+	}
+
+	protected function create_options( Version $version ): Options {
+		return new Options( $version );
+	}
+
+	protected function create_auth_state_manager(): AuthStateManager {
+		return new AuthStateManager( $this->version );
+	}
+
+	protected function create_api_client( Options $options, Version $version, AuthStateManager $auth_state_manager ): ShorthandApiClient {
+		return new ShorthandApiClient( $options, $version, $auth_state_manager, new ShorthandHttpTransport() );
+	}
+
+	protected function create_shorthand( Options $options, Version $version, ShorthandApiClient $api_client, WordPressContextProvider $context_provider ): Shorthand {
+		return new Shorthand( $options, $version, $api_client, $context_provider );
+	}
+
+	protected function create_token_manager( Options $options, Shorthand $shorthand, AuthStateManager $auth_state_manager ): TokenManager {
+		return new TokenManager( $options, $shorthand, $auth_state_manager );
+	}
+
+	protected function create_post_type( string $permalink, Version $version ): PostType {
+		return new PostType( $permalink, $version );
+	}
+
+	protected function create_templates( string $post_type, Options $options, Version $version ): Templates {
+		return new Templates( $post_type, $options, $version );
+	}
+
+	protected function create_cron( Dependencies $dependencies ): Cron {
+		return new Cron( $dependencies );
 	}
 
 	public function get_version(): Version {
@@ -91,21 +149,25 @@ class Dependencies {
 	}
 
 	public function get_post_type(): PostType {
+		$this->boot();
 		return $this->post_type;
 	}
 
 	public function get_templates(): Templates {
+		$this->boot();
 		return $this->templates;
 	}
 
 	public function get_post_api(): PostAPI {
+		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type );
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer() );
 		}
 		return $this->post_api;
 	}
 
 	public function get_admin(): AdminController {
+		$this->boot();
 		if ( ! isset( $this->admin ) ) {
 			$this->admin = new AdminController(
 				$this->get_options(),
@@ -114,7 +176,8 @@ class Dependencies {
 				$this->get_post_api(),
 				$this->get_permissions(),
 				$this->version,
-				$this->get_post_type()->post_type
+				$this->get_post_type()->post_type,
+				$this->get_auth_state_manager()
 			);
 			$this->admin->init();
 		}
@@ -122,18 +185,27 @@ class Dependencies {
 	}
 
 	public function get_options(): Options {
+		$this->boot();
 		return $this->options;
 	}
 
 	public function get_shorthand(): Shorthand {
+		$this->boot();
 		return $this->shorthand;
 	}
 
-	private function get_token_manager(): TokenManager {
+	public function get_token_manager(): TokenManager {
+		$this->boot();
 		return $this->token_manager;
 	}
 
+	public function get_auth_state_manager(): AuthStateManager {
+		$this->boot();
+		return $this->auth_state_manager;
+	}
+
 	public function get_cron(): Cron {
+		$this->boot();
 		return $this->cron;
 	}
 }

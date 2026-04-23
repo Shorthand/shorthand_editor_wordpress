@@ -24,3 +24,14 @@ delete_option( 'shorthand_v2_verifying_key' );
 
 delete_option( 'shorthand_v2_next_signing_key' );
 delete_option( 'shorthand_v2_next_verifying_key' );
+
+delete_option( 'shorthand_auth_state' );
+
+/* Per-user dismissal timestamp for the auth-state admin notice. */
+delete_metadata( 'user', 0, 'shorthand_auth_notice_dismissed_at', '', true );
+
+/* Cached plugin update-check payload. */
+delete_transient( 'theshed_update_info' );
+
+/* Any in-flight story pulls scheduled via WP-Cron. */
+wp_clear_scheduled_hook( 'shorthand_pull_story_cron' );

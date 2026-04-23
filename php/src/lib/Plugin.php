@@ -50,8 +50,9 @@ class Plugin {
 	 */
 	private $version;
 
-	public function __construct() {
-		$this->dependencies = new Dependencies();
+	public function __construct( Dependencies $dependencies, StoryKses $story_kses ) {
+		$this->dependencies = $dependencies;
+		$this->story_kses   = $story_kses;
 	}
 
 	public function init() {
@@ -63,11 +64,16 @@ class Plugin {
 		register_activation_hook( THESHED_PLUGIN_FILE, array( $this, 'activate' ) );
 		register_deactivation_hook( THESHED_PLUGIN_FILE, array( $this, 'deactivate' ) );
 
+		$this->dependencies->boot();
+
 		$this->options   = $this->dependencies->get_options();
 		$this->version   = $this->dependencies->get_version();
 		$this->post_type = $this->dependencies->get_post_type();
 
-		$this->story_kses = new StoryKses();
+		$this->dependencies->get_auth_state_manager()->initialise_missing_state(
+			'' !== $this->options->get_v2_token()
+		);
+
 		$this->story_kses->init();
 
 		if ( is_admin() ) {
@@ -80,6 +86,7 @@ class Plugin {
 		$loader->add_filter( 'pre_set_site_transient_update_plugins', $this, 'check_for_updates' );
 		$loader->add_filter( 'plugins_api', $this, 'plugin_info', 10, 3 );
 		$loader->add_filter( 'delete_site_transient_update_plugins', $this, 'clear_update_cache' );
+		$loader->add_action( 'upgrader_process_complete', $this, 'handle_upgrade_complete', 10, 2 );
 		if ( defined( 'THESHED_BLOCK_UPGRADE' ) && THESHED_BLOCK_UPGRADE ) {
 			$loader->add_filter( 'upgrader_pre_install', $this, 'block_upgrade', 10, 2 );
 		}
@@ -89,6 +96,12 @@ class Plugin {
 	public function activate() {
 		$options = $this->dependencies->get_options();
 		$options->activate_plugin();
+
+		/* If a token already exists, refetch the token info to update the auth state. */
+		$token = $options->get_v2_token();
+		if ( '' !== $token ) {
+			$this->dependencies->get_token_manager()->fetch_and_store_token_info( $token );
+		}
 
 		flush_rewrite_rules();
 	}
@@ -171,6 +184,38 @@ class Plugin {
 			'banners'        => (array) ( $remote->banners ?? array() ),
 			'icons'          => (array) ( $remote->icons ?? array() ),
 		);
+	}
+
+	/**
+	 * After this plugin is upgraded, refetch token info to update the auth state.
+	 *
+	 * This allows the plugin to recover from an `upgrade_required` state after
+	 * the user has installed a newer version.
+	 *
+	 * @param \WP_Upgrader $upgrader
+	 * @param array        $hook_extra
+	 */
+	public function handle_upgrade_complete( $upgrader, $hook_extra ) {
+		if ( ! isset( $hook_extra['plugins'] ) || ! is_array( $hook_extra['plugins'] ) ) {
+			return;
+		}
+
+		$plugin_basename = $this->version->get_plugin_base_name();
+		if ( ! in_array( $plugin_basename, $hook_extra['plugins'], true ) ) {
+			return;
+		}
+
+		/*
+		 * Note: this callback runs inside the already-loaded previous version
+		 * of the plugin, not the newly-installed one.  It is therefore only
+		 * useful for work that depends on behaviour already present in the
+		 * *outgoing* version.  One-time migrations for the incoming version
+		 * must run in init() instead.
+		 */
+		$token = $this->options->get_v2_token();
+		if ( '' !== $token ) {
+			$this->dependencies->get_token_manager()->fetch_and_store_token_info( $token );
+		}
 	}
 
 	public function block_upgrade( $response, $hook_extra ) {

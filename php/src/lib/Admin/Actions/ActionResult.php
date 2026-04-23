@@ -1,0 +1,105 @@
+<?php
+
+namespace Shorthand\Admin\Actions;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class ActionResult {
+
+	/**
+	 * @var string
+	 */
+	private $type;
+
+	/**
+	 * @var string|null
+	 */
+	private $redirect_url;
+
+	/**
+	 * @var string|null
+	 */
+	private $message;
+
+	/**
+	 * @var string|null
+	 */
+	private $title;
+
+	/**
+	 * @var string|null
+	 */
+	private $link_url;
+
+	/**
+	 * @var string|null
+	 */
+	private $link_text;
+
+	/**
+	 * @var string|null
+	 */
+	private $secondary_link_url;
+
+	/**
+	 * @var string|null
+	 */
+	private $secondary_link_text;
+
+	private function __construct( string $type, ?string $redirect_url = null, ?string $message = null, ?string $title = null, ?string $link_url = null, ?string $link_text = null, ?string $secondary_link_url = null, ?string $secondary_link_text = null ) {
+		$this->type                = $type;
+		$this->redirect_url        = $redirect_url;
+		$this->message             = $message;
+		$this->title               = $title;
+		$this->link_url            = $link_url;
+		$this->link_text           = $link_text;
+		$this->secondary_link_url  = $secondary_link_url;
+		$this->secondary_link_text = $secondary_link_text;
+	}
+
+	public static function redirect( string $redirect_url ): self {
+		return new self( 'redirect', $redirect_url );
+	}
+
+	public static function error( string $message, string $title, ?string $link_url = null, ?string $link_text = null, ?string $secondary_link_url = null, ?string $secondary_link_text = null ): self {
+		return new self( 'error', null, $message, $title, $link_url, $link_text, $secondary_link_url, $secondary_link_text );
+	}
+
+	public function is_redirect(): bool {
+		return 'redirect' === $this->type;
+	}
+
+	public function is_error(): bool {
+		return 'error' === $this->type;
+	}
+
+	public function get_redirect_url(): ?string {
+		return $this->redirect_url;
+	}
+
+	public function get_message(): ?string {
+		return $this->message;
+	}
+
+	public function get_title(): ?string {
+		return $this->title;
+	}
+
+	public function get_link_url(): ?string {
+		return $this->link_url;
+	}
+
+	public function get_link_text(): ?string {
+		return $this->link_text;
+	}
+
+	public function get_secondary_link_url(): ?string {
+		return $this->secondary_link_url;
+	}
+
+	public function get_secondary_link_text(): ?string {
+		return $this->secondary_link_text;
+	}
+}
