@@ -15,7 +15,7 @@ class Version {
 	/**
 	 * @var string
 	 */
-	const PLUGIN_VERSION = '1.0.2';
+	const PLUGIN_VERSION = '1.0.3';
 	/**
 	 * @var string
 	 */
