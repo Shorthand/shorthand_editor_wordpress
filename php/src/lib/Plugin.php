@@ -202,6 +202,10 @@ class Plugin {
 		}
 
 		$token = $this->options->get_v2_token();
+
+		/* Seed the auth state for installs upgrading from a version that did not persist one. */
+		$this->dependencies->get_auth_state_manager()->initialise_missing_state( '' !== $token );
+
 		if ( '' !== $token ) {
 			$this->dependencies->get_token_manager()->fetch_and_store_token_info( $token );
 		}

@@ -93,6 +93,29 @@ class AuthStateManager {
 	}
 
 	/**
+	 * Seed the auth state when upgrading from a plugin version that did not
+	 * persist one.
+	 *
+	 * No-op if an auth state is already stored.  When no state is stored,
+	 * the presence of a v2 token is taken as evidence that the site was
+	 * connected under a previous version, so the state becomes `connected`;
+	 * otherwise it becomes `disconnected`.  (Fresh installs never invoke
+	 * this path, so `never_connected` remains the default for them.)
+	 *
+	 * If the carried-over token turns out to be invalid, the API response
+	 * interceptor will demote the state to `invalid` or `upgrade_required`
+	 * on the next request.
+	 *
+	 * @param bool $has_token Whether a non-empty v2 token is currently stored.
+	 */
+	public function initialise_missing_state( bool $has_token ): void {
+		if ( false !== get_option( self::OPTION_KEY ) ) {
+			return;
+		}
+		$this->set_state( $has_token ? self::STATE_CONNECTED : self::STATE_DISCONNECTED );
+	}
+
+	/**
 	 * Transition to a new state.
 	 *
 	 * The write is skipped when the state has not actually changed, so this

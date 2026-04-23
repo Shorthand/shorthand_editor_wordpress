@@ -761,4 +761,62 @@ final class AuthStateManagerTest extends WordPressTestCase {
 
 		$this->assertSame( AuthStateManager::STATE_INVALID, $manager->get_state() );
 	}
+
+	/**
+	 * On upgrade with no stored state and a token present, seed to connected.
+	 *
+	 * @group initialise-missing-state
+	 */
+	public function test_initialise_missing_state_with_token_sets_connected(): void {
+		$manager = $this->make_manager();
+
+		$manager->initialise_missing_state( true );
+
+		$this->assertSame( AuthStateManager::STATE_CONNECTED, $manager->get_state() );
+	}
+
+	/**
+	 * On upgrade with no stored state and no token, seed to disconnected.
+	 *
+	 * @group initialise-missing-state
+	 */
+	public function test_initialise_missing_state_without_token_sets_disconnected(): void {
+		$manager = $this->make_manager();
+
+		$manager->initialise_missing_state( false );
+
+		$this->assertSame( AuthStateManager::STATE_DISCONNECTED, $manager->get_state() );
+	}
+
+	/**
+	 * When an auth state is already stored, initialise_missing_state is a no-op.
+	 *
+	 * @group initialise-missing-state
+	 */
+	public function test_initialise_missing_state_preserves_existing_state(): void {
+		$manager = $this->make_manager();
+		$this->set_state_option( AuthStateManager::STATE_INVALID, 42 );
+
+		$manager->initialise_missing_state( true );
+
+		$stored = $this->get_stored_option();
+		$this->assertSame( AuthStateManager::STATE_INVALID, $stored['state'] );
+		$this->assertSame( 42, $stored['changed_at'] );
+	}
+
+	/**
+	 * Idempotent: an existing never_connected state is not overwritten.
+	 *
+	 * @group initialise-missing-state
+	 */
+	public function test_initialise_missing_state_preserves_never_connected(): void {
+		$manager = $this->make_manager();
+		$this->set_state_option( AuthStateManager::STATE_NEVER_CONNECTED, 42 );
+
+		$manager->initialise_missing_state( false );
+
+		$stored = $this->get_stored_option();
+		$this->assertSame( AuthStateManager::STATE_NEVER_CONNECTED, $stored['state'] );
+		$this->assertSame( 42, $stored['changed_at'] );
+	}
 }
