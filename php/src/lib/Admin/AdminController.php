@@ -284,8 +284,15 @@ class AdminController {
 			return;
 		}
 
-		$dismissed_at = (int) get_user_meta( get_current_user_id(), 'shorthand_auth_notice_dismissed_at', true );
-		if ( $dismissed_at > 0 && $dismissed_at >= $this->auth_state_manager->get_changed_at() ) {
+		/*
+		 * A `never_connected` state has `changed_at = 0`, and dismissal
+		 * stores that value verbatim — so a meta value of `0` is a
+		 * legitimate "dismissed" record.  `get_user_meta` returns `''` (not
+		 * `null`) when the key is absent, so compare the raw value before
+		 * casting to int.
+		 */
+		$dismissed_at = get_user_meta( get_current_user_id(), 'shorthand_auth_notice_dismissed_at', true );
+		if ( '' !== $dismissed_at && (int) $dismissed_at >= $this->auth_state_manager->get_changed_at() ) {
 			return;
 		}
 
