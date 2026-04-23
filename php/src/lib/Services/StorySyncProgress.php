@@ -18,7 +18,7 @@ class StorySyncProgress {
 	 */
 	private $status;
 
-	public function __construct( float $percent, ?string $status = null ) {
+	public function __construct( float $percent, ?string $status ) {
 		$this->percent = $percent;
 		$this->status  = $status;
 	}

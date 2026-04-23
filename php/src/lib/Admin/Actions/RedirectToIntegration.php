@@ -33,11 +33,11 @@ class RedirectToIntegration {
 	protected $failure_url;
 
 	/**
-	 * @var \Shorthand\Services\AuthStateManager|null
+	 * @var \Shorthand\Services\AuthStateManager
 	 */
 	private $auth_state_manager;
 
-	public function __construct( Shorthand $shorthand, ReturnToConnect $return_to_connect, string $failure_url, ?AuthStateManager $auth_state_manager = null ) {
+	public function __construct( Shorthand $shorthand, ReturnToConnect $return_to_connect, string $failure_url, AuthStateManager $auth_state_manager ) {
 		$this->shorthand          = $shorthand;
 		$this->return_to_connect  = $return_to_connect;
 		$this->failure_url        = $failure_url;
@@ -68,7 +68,7 @@ class RedirectToIntegration {
 			);
 		}
 
-		if ( $this->auth_state_manager && $this->auth_state_manager->requires_upgrade() ) {
+		if ( $this->auth_state_manager->requires_upgrade() ) {
 			wp_die(
 				esc_html__( 'This version of the Shorthand plugin is no longer compatible with Shorthand. Please update the plugin before connecting.', 'the-shorthand-editor' ),
 				esc_html__( 'Plugin Update Required', 'the-shorthand-editor' ),

@@ -45,7 +45,7 @@ final class StorySyncStateTest extends WordPressTestCase {
 	}
 
 	public function test_to_array_omits_progress_when_none_is_available(): void {
-		$state = new StorySyncState( 4 );
+		$state = new StorySyncState( 4, null, null );
 
 		$this->assertSame(
 			array(

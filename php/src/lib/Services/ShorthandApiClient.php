@@ -27,15 +27,15 @@ class ShorthandApiClient {
 	private $transport;
 
 	/**
-	 * @var \Shorthand\Services\AuthStateManager|null
+	 * @var \Shorthand\Services\AuthStateManager
 	 */
 	private $auth_state_manager;
 
-	public function __construct( Options $options, Version $version, ?ShorthandHttpTransport $transport = null, ?AuthStateManager $auth_state_manager = null ) {
+	public function __construct( Options $options, Version $version, AuthStateManager $auth_state_manager, ShorthandHttpTransport $transport ) {
 		$this->options            = $options;
 		$this->version            = $version;
-		$this->transport          = $transport ?? new ShorthandHttpTransport();
 		$this->auth_state_manager = $auth_state_manager;
+		$this->transport          = $transport;
 	}
 
 	/**
@@ -88,9 +88,7 @@ class ShorthandApiClient {
 
 		$response = $this->transport->request( $url, $request_options );
 
-		if ( $this->auth_state_manager ) {
-			$this->auth_state_manager->intercept_response( $response );
-		}
+		$this->auth_state_manager->intercept_response( $response );
 
 		return $response;
 	}

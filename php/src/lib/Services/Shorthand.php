@@ -35,13 +35,13 @@ class Shorthand {
 	public function __construct(
 		Options $options,
 		Version $version,
-		?ShorthandApiClient $api_client = null,
-		?WordPressContextProvider $context_provider = null
+		ShorthandApiClient $api_client,
+		WordPressContextProvider $context_provider
 	) {
 		$this->options          = $options;
 		$this->version          = $version;
-		$this->api_client       = $api_client ?? new ShorthandApiClient( $options, $version );
-		$this->context_provider = $context_provider ?? new WordPressContextProvider( $version );
+		$this->api_client       = $api_client;
+		$this->context_provider = $context_provider;
 	}
 
 	/**

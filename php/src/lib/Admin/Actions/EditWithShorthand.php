@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 
+use Shorthand\Admin\AdminGateway;
 use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\Options;
@@ -52,18 +53,24 @@ class EditWithShorthand {
 	private $link_builder;
 
 	/**
-	 * @var \Shorthand\Services\AuthStateManager|null
+	 * @var \Shorthand\Services\AuthStateManager
 	 */
 	private $auth_state_manager;
 
-	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, ?StoryEditorLinkBuilder $link_builder = null, ?AuthStateManager $auth_state_manager = null ) {
+	/**
+	 * @var \Shorthand\Admin\AdminGateway
+	 */
+	private $admin_gateway;
+
+	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, AuthStateManager $auth_state_manager, AdminGateway $admin_gateway, StoryEditorLinkBuilder $link_builder ) {
 		$this->shorthand            = $shorthand;
 		$this->options              = $options;
 		$this->post_api             = $post_api;
 		$this->post_type            = $post_type;
-		$this->link_builder         = $link_builder ? $link_builder : new StoryEditorLinkBuilder();
+		$this->link_builder         = $link_builder;
 		$this->story_return_handler = $story_return_handler;
 		$this->auth_state_manager   = $auth_state_manager;
+		$this->admin_gateway        = $admin_gateway;
 	}
 
 	public function define_redirect_and_return_pages( Loader $loader ): void {
@@ -244,13 +251,13 @@ class EditWithShorthand {
 
 
 	private function check_auth_state(): void {
-		if ( $this->auth_state_manager && ! $this->auth_state_manager->is_connected() ) {
+		if ( ! $this->auth_state_manager->is_connected() ) {
 			if ( current_user_can( 'manage_options' ) ) {
 				wp_die(
 					esc_html__( 'The Shorthand connection is not active. Please reconnect from the settings page to continue.', 'the-shorthand-editor' ),
 					esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
 					array(
-						'link_url'  => esc_url( admin_url( 'options-general.php?page=theshed-settings' ) ),
+						'link_url'  => esc_url( $this->admin_gateway->get_settings_page_url() ),
 						'link_text' => esc_html__( 'Go to Shorthand Settings', 'the-shorthand-editor' ),
 					)
 				);

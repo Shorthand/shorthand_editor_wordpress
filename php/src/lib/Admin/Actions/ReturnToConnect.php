@@ -5,6 +5,7 @@ namespace Shorthand\Admin\Actions;
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+use Shorthand\Admin\AdminGateway;
 use Shorthand\Core\Loader;
 use Shorthand\Services\Shorthand;
 
@@ -20,9 +21,15 @@ class ReturnToConnect {
 	 */
 	private $connection_completion_service;
 
-	public function __construct( Shorthand $shorthand, ConnectionCompletionService $connection_completion_service ) {
+	/**
+	 * @var \Shorthand\Admin\AdminGateway
+	 */
+	private $admin_gateway;
+
+	public function __construct( Shorthand $shorthand, ConnectionCompletionService $connection_completion_service, AdminGateway $admin_gateway ) {
 		$this->shorthand                     = $shorthand;
 		$this->connection_completion_service = $connection_completion_service;
+		$this->admin_gateway                 = $admin_gateway;
 	}
 
 	/**
@@ -98,7 +105,7 @@ class ReturnToConnect {
 				esc_html__( 'The connection to Shorthand was not completed. You can try again from the settings page when you are ready.', 'the-shorthand-editor' ),
 				esc_html__( 'Connection Canceled', 'the-shorthand-editor' ),
 				array(
-					'link_url'  => esc_url( admin_url( 'options-general.php?page=theshed-settings' ) ),
+					'link_url'  => esc_url( $this->admin_gateway->get_settings_page_url() ),
 					'link_text' => esc_html__( 'Go to Shorthand Settings', 'the-shorthand-editor' ),
 				)
 			);

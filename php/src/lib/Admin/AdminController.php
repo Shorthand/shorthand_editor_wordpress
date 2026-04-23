@@ -66,6 +66,10 @@ class AdminController {
 	 * @var \Shorthand\Services\AuthStateManager
 	 */
 	private $auth_state_manager;
+	/**
+	 * @var \Shorthand\Admin\AdminGateway
+	 */
+	private $admin_gateway;
 
 	public function __construct(
 		Options $options,
@@ -87,6 +91,7 @@ class AdminController {
 		$this->permissions        = $permissions;
 		$this->post_type          = $post_type;
 		$this->auth_state_manager = $auth_state_manager;
+		$this->admin_gateway      = new AdminGateway( $this->settings_page_slug );
 	}
 
 	public function init(): void {
@@ -112,10 +117,10 @@ class AdminController {
 		 * emit wp_die('', 400), producing a blank error screen on return
 		 * from the Shorthand connect flow.
 		 */
-		$admin_gateway     = new AdminGateway( $this->settings_page_slug );
 		$return_to_connect = new ReturnToConnect(
 			$this->shorthand,
-			new ConnectionCompletionService( $this->shorthand, $admin_gateway )
+			new ConnectionCompletionService( $this->shorthand, $this->admin_gateway ),
+			$this->admin_gateway
 		);
 		$return_to_connect->define_return_page( $loader );
 
@@ -140,14 +145,13 @@ class AdminController {
 	}
 
 	public function admin_init(): void {
-		$loader        = new Loader();
-		$admin_gateway = new AdminGateway( $this->settings_page_slug );
+		$loader = new Loader();
 
 		$story_editor_link_builder = new StoryEditorLinkBuilder();
 		$story_return_handler      = new StoryReturnHandler(
 			$this->post_api,
 			$this->shorthand,
-			$admin_gateway,
+			$this->admin_gateway,
 			$story_editor_link_builder,
 			$this->post_type
 		);
@@ -158,8 +162,9 @@ class AdminController {
 			$this->post_api,
 			$this->post_type,
 			$story_return_handler,
-			$story_editor_link_builder,
-			$this->auth_state_manager
+			$this->auth_state_manager,
+			$this->admin_gateway,
+			$story_editor_link_builder
 		);
 
 		$post_preview = new PostPreview( $this->options, $this->post_api, $this->permissions, $this->version, $this->auth_state_manager );
@@ -196,7 +201,7 @@ class AdminController {
 		$story_count = wp_count_posts( $this->post_type )->publish;
 
 		if ( $story_count > 0 ) {
-			$url   = admin_url( 'edit.php?post_type=' . $this->post_type );
+			$url   = $this->admin_gateway->get_all_stories_url( $this->post_type );
 			$label = esc_html(
 				sprintf(
 				/* translators: One (a single) story; Multiple (more than one) stories */
@@ -233,10 +238,7 @@ class AdminController {
 	}
 
 	public function get_settings_page_url(): string {
-		return add_query_arg(
-			array( 'page' => $this->settings_page_slug ),
-			admin_url( 'options-general.php' )
-		);
+		return $this->admin_gateway->get_settings_page_url();
 	}
 
 	/**

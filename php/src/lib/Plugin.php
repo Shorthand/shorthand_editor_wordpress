@@ -50,9 +50,9 @@ class Plugin {
 	 */
 	private $version;
 
-	public function __construct( ?Dependencies $dependencies = null, ?StoryKses $story_kses = null ) {
-		$this->dependencies = $dependencies ? $dependencies : new Dependencies();
-		$this->story_kses   = $story_kses ? $story_kses : new StoryKses();
+	public function __construct( Dependencies $dependencies, StoryKses $story_kses ) {
+		$this->dependencies = $dependencies;
+		$this->story_kses   = $story_kses;
 	}
 
 	public function init() {

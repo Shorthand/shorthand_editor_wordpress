@@ -26,7 +26,7 @@ class StorySyncState {
 	/**
 	 * @param array<int, array<string, mixed>>|null $publishing_error
 	 */
-	public function __construct( ?int $live_version, ?array $publishing_error = null, ?StorySyncProgress $progress = null ) {
+	public function __construct( ?int $live_version, ?array $publishing_error, ?StorySyncProgress $progress ) {
 		$this->live_version     = $live_version;
 		$this->publishing_error = $publishing_error;
 		$this->progress         = $progress;

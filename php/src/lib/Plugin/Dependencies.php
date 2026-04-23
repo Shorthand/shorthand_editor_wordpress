@@ -15,7 +15,10 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\ShorthandApiClient;
+use Shorthand\Services\ShorthandHttpTransport;
+use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\TokenManager;
+use Shorthand\Services\WordPressContextProvider;
 use Shorthand\Admin\AdminController;
 use Shorthand\Services\Cron;
 
@@ -71,9 +74,9 @@ class Dependencies {
 	 */
 	private $booted = false;
 
-	public function __construct( ?Version $version = null, ?Permissions $permissions = null ) {
-		$this->version     = $version ? $version : new Version();
-		$this->permissions = $permissions ? $permissions : new Permissions();
+	public function __construct( Version $version, Permissions $permissions ) {
+		$this->version     = $version;
+		$this->permissions = $permissions;
 	}
 
 	public function boot(): void {
@@ -86,8 +89,9 @@ class Dependencies {
 
 		$this->auth_state_manager = $this->create_auth_state_manager();
 
-		$api_client      = $this->create_api_client( $this->options, $this->version, $this->auth_state_manager );
-		$this->shorthand = $this->create_shorthand( $this->options, $this->version, $api_client );
+		$api_client       = $this->create_api_client( $this->options, $this->version, $this->auth_state_manager );
+		$context_provider = new WordPressContextProvider( $this->version );
+		$this->shorthand  = $this->create_shorthand( $this->options, $this->version, $api_client, $context_provider );
 
 		$this->token_manager = $this->create_token_manager( $this->options, $this->shorthand, $this->auth_state_manager );
 		$this->token_manager->init();
@@ -113,11 +117,11 @@ class Dependencies {
 	}
 
 	protected function create_api_client( Options $options, Version $version, AuthStateManager $auth_state_manager ): ShorthandApiClient {
-		return new ShorthandApiClient( $options, $version, null, $auth_state_manager );
+		return new ShorthandApiClient( $options, $version, $auth_state_manager, new ShorthandHttpTransport() );
 	}
 
-	protected function create_shorthand( Options $options, Version $version, ?ShorthandApiClient $api_client = null ): Shorthand {
-		return new Shorthand( $options, $version, $api_client );
+	protected function create_shorthand( Options $options, Version $version, ShorthandApiClient $api_client, WordPressContextProvider $context_provider ): Shorthand {
+		return new Shorthand( $options, $version, $api_client, $context_provider );
 	}
 
 	protected function create_token_manager( Options $options, Shorthand $shorthand, AuthStateManager $auth_state_manager ): TokenManager {
@@ -157,7 +161,7 @@ class Dependencies {
 	public function get_post_api(): PostAPI {
 		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, null, $this->get_auth_state_manager() );
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer() );
 		}
 		return $this->post_api;
 	}

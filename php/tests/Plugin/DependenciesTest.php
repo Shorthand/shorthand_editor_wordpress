@@ -17,6 +17,7 @@ use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\TokenManager;
+use Shorthand\Services\WordPressContextProvider;
 use Shorthand\Tests\WordPressTestCase;
 
 final class DependenciesTest extends WordPressTestCase {
@@ -63,13 +64,17 @@ final class TestDependencies extends Dependencies {
 	public $test_templates;
 	public $test_cron;
 
+	public function __construct() {
+		parent::__construct( new Version(), new Permissions() );
+	}
+
 	protected function create_options( Version $version ): Options {
 		++$this->options_created;
 		$this->test_options = new TestOptions();
 		return $this->test_options;
 	}
 
-	protected function create_shorthand( Options $options, Version $version, ?ShorthandApiClient $api_client = null ): Shorthand {
+	protected function create_shorthand( Options $options, Version $version, ShorthandApiClient $api_client, WordPressContextProvider $context_provider ): Shorthand {
 		return new TestShorthand();
 	}
 

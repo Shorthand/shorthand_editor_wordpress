@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Shorthand\Tests\Services;
 
 use Shorthand\Core\Version;
+use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Options;
 use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\ShorthandHttpTransport;
@@ -13,16 +14,17 @@ use Shorthand\Tests\WordPressTestCase;
 final class ShorthandApiClientTest extends WordPressTestCase {
 
 	public function test_authed_request_requires_a_linked_workspace_token(): void {
-		$options   = $this->createMock( Options::class );
-		$version   = $this->createMock( Version::class );
-		$transport = $this->createMock( ShorthandHttpTransport::class );
+		$options            = $this->createMock( Options::class );
+		$version            = $this->createMock( Version::class );
+		$transport          = $this->createMock( ShorthandHttpTransport::class );
+		$auth_state_manager = $this->createMock( AuthStateManager::class );
 
 		$options
 			->expects( $this->once() )
 			->method( 'get_v2_token' )
 			->willReturn( '' );
 
-		$client = new ShorthandApiClient( $options, $version, $transport );
+		$client = new ShorthandApiClient( $options, $version, $auth_state_manager, $transport );
 
 		$result = $client->authed_request( 'https://example.test/api' );
 
@@ -33,9 +35,10 @@ final class ShorthandApiClientTest extends WordPressTestCase {
 	public function test_authed_request_adds_auth_headers_and_json_body(): void {
 		$GLOBALS['wp_version'] = '6.8.0';
 
-		$options   = $this->createMock( Options::class );
-		$version   = $this->createMock( Version::class );
-		$transport = $this->createMock( ShorthandHttpTransport::class );
+		$options            = $this->createMock( Options::class );
+		$version            = $this->createMock( Version::class );
+		$transport          = $this->createMock( ShorthandHttpTransport::class );
+		$auth_state_manager = $this->createMock( AuthStateManager::class );
 
 		$options
 			->expects( $this->once() )
@@ -77,7 +80,7 @@ final class ShorthandApiClientTest extends WordPressTestCase {
 				)
 			);
 
-		$client = new ShorthandApiClient( $options, $version, $transport );
+		$client = new ShorthandApiClient( $options, $version, $auth_state_manager, $transport );
 
 		$result = $client->authed_request(
 			'https://example.test/api',
@@ -90,9 +93,10 @@ final class ShorthandApiClientTest extends WordPressTestCase {
 	}
 
 	public function test_fetch_token_info_decodes_the_successful_response_body(): void {
-		$options   = $this->createMock( Options::class );
-		$version   = $this->createMock( Version::class );
-		$transport = $this->createMock( ShorthandHttpTransport::class );
+		$options            = $this->createMock( Options::class );
+		$version            = $this->createMock( Version::class );
+		$transport          = $this->createMock( ShorthandHttpTransport::class );
+		$auth_state_manager = $this->createMock( AuthStateManager::class );
 
 		$options
 			->expects( $this->once() )
@@ -129,7 +133,7 @@ final class ShorthandApiClientTest extends WordPressTestCase {
 				)
 			);
 
-		$client = new ShorthandApiClient( $options, $version, $transport );
+		$client = new ShorthandApiClient( $options, $version, $auth_state_manager, $transport );
 
 		$this->assertSame(
 			array( 'team' => 'newsroom' ),

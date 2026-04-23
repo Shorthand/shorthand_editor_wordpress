@@ -50,7 +50,7 @@ class PostPreview {
 	private $version;
 
 	/**
-	 * @var \Shorthand\Services\AuthStateManager|null
+	 * @var \Shorthand\Services\AuthStateManager
 	 */
 	private $auth_state_manager;
 
@@ -59,7 +59,7 @@ class PostPreview {
 		PostAPI $post_api,
 		Permissions $permissions,
 		Version $version,
-		?AuthStateManager $auth_state_manager = null
+		AuthStateManager $auth_state_manager
 	) {
 		$this->options            = $options;
 		$this->post_api           = $post_api;
@@ -105,7 +105,7 @@ class PostPreview {
 			$this->die_with_error( __( 'You do not have permission to view this page.', 'the-shorthand-editor' ), 403 );
 		}
 
-		if ( $this->auth_state_manager && ! $this->auth_state_manager->is_connected() ) {
+		if ( ! $this->auth_state_manager->is_connected() ) {
 			$this->die_with_error( __( 'The preview is unavailable because the Shorthand connection is not active.', 'the-shorthand-editor' ), 503 );
 		}
 
