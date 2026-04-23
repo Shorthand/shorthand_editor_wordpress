@@ -96,11 +96,12 @@ class AuthStateManager {
 	 * Seed the auth state when upgrading from a plugin version that did not
 	 * persist one.
 	 *
-	 * No-op if an auth state is already stored.  When no state is stored,
-	 * the presence of a v2 token is taken as evidence that the site was
-	 * connected under a previous version, so the state becomes `connected`;
-	 * otherwise it becomes `disconnected`.  (Fresh installs never invoke
-	 * this path, so `never_connected` remains the default for them.)
+	 * An unset state option is semantically equivalent to a fresh install —
+	 * `get_state()` returns `never_connected` in that case via the default
+	 * fallback.  This method therefore only takes action when a v2 token is
+	 * present and no state is stored, promoting the install to `connected`
+	 * to reflect the pre-upgrade reality.  Missing state with no token is
+	 * indistinguishable from a fresh install and is left untouched.
 	 *
 	 * If the carried-over token turns out to be invalid, the API response
 	 * interceptor will demote the state to `invalid` or `upgrade_required`
@@ -112,7 +113,9 @@ class AuthStateManager {
 		if ( false !== get_option( self::OPTION_KEY ) ) {
 			return;
 		}
-		$this->set_state( $has_token ? self::STATE_CONNECTED : self::STATE_DISCONNECTED );
+		if ( $has_token ) {
+			$this->set_state( self::STATE_CONNECTED );
+		}
 	}
 
 	/**

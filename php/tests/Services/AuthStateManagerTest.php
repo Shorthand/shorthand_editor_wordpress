@@ -776,16 +776,19 @@ final class AuthStateManagerTest extends WordPressTestCase {
 	}
 
 	/**
-	 * On upgrade with no stored state and no token, seed to disconnected.
+	 * An unset state with no token is indistinguishable from a fresh install,
+	 * so initialise_missing_state does not persist anything and get_state()
+	 * keeps returning the never_connected default.
 	 *
 	 * @group initialise-missing-state
 	 */
-	public function test_initialise_missing_state_without_token_sets_disconnected(): void {
+	public function test_initialise_missing_state_without_token_is_no_op(): void {
 		$manager = $this->make_manager();
 
 		$manager->initialise_missing_state( false );
 
-		$this->assertSame( AuthStateManager::STATE_DISCONNECTED, $manager->get_state() );
+		$this->assertFalse( \get_option( AuthStateManager::OPTION_KEY ) );
+		$this->assertSame( AuthStateManager::STATE_NEVER_CONNECTED, $manager->get_state() );
 	}
 
 	/**

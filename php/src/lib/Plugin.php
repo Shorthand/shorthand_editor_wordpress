@@ -70,6 +70,10 @@ class Plugin {
 		$this->version   = $this->dependencies->get_version();
 		$this->post_type = $this->dependencies->get_post_type();
 
+		$this->dependencies->get_auth_state_manager()->initialise_missing_state(
+			'' !== $this->options->get_v2_token()
+		);
+
 		$this->story_kses->init();
 
 		if ( is_admin() ) {
@@ -201,11 +205,14 @@ class Plugin {
 			return;
 		}
 
+		/*
+		 * Note: this callback runs inside the already-loaded previous version
+		 * of the plugin, not the newly-installed one.  It is therefore only
+		 * useful for work that depends on behaviour already present in the
+		 * *outgoing* version.  One-time migrations for the incoming version
+		 * must run in init() instead.
+		 */
 		$token = $this->options->get_v2_token();
-
-		/* Seed the auth state for installs upgrading from a version that did not persist one. */
-		$this->dependencies->get_auth_state_manager()->initialise_missing_state( '' !== $token );
-
 		if ( '' !== $token ) {
 			$this->dependencies->get_token_manager()->fetch_and_store_token_info( $token );
 		}
