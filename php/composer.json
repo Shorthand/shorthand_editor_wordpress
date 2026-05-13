@@ -3,11 +3,12 @@
     "rector/rector": "^2.0",
     "magento/php-compatibility-fork": "^0.1.0",
     "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
-    "humbug/php-scoper": "^0.18.17",
+    "humbug/php-scoper": "^0.18.19",
     "wp-coding-standards/wpcs": "^3.0",
     "automattic/vipwpcs": "^3.0",
     "symplify/rule-doc-generator": "^12.2",
-    "phpunit/phpunit": "^8.5 || ^9.6 || ^10.5 || ^11.5"
+    "phpunit/phpunit": "^8.5 || ^9.6 || ^10.5 || ^11.5",
+    "jetbrains/phpstorm-stubs": "@dev"
   },
   "require": {
     "php": "^7.2 || ^8.0",
