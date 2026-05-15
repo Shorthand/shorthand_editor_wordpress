@@ -18,6 +18,8 @@ class GeneralSettingsPage extends SettingsPage {
 	private $auth_state_manager;
 
 	public static function register( Options $options, Version $version, AuthStateManager $auth_state_manager, string $slug ): void {
+		$menu_title = __( 'Shorthand Editor', 'the-shorthand-editor' );
+
 		$instance = new self(
 			$options,
 			$version,
@@ -29,7 +31,7 @@ class GeneralSettingsPage extends SettingsPage {
 
 		add_options_page(
 			'Shorthand Options',
-			'Shorthand',
+			$menu_title,
 			'manage_options',
 			$instance->settings_page_slug,
 			array( $instance, 'display_options_page' )
@@ -157,14 +159,14 @@ class GeneralSettingsPage extends SettingsPage {
 			);
 			?>
 			<a href="<?php echo esc_url( $disconnect_url ); ?>"
-			   class="button"
-			   onclick="return confirm('<?php echo esc_js( __( 'Are you sure you want to disconnect from Shorthand? You will no longer be able to create or publish stories until you reconnect.', 'the-shorthand-editor' ) ); ?>');"
+				class="button"
+				onclick="return confirm('<?php echo esc_js( __( 'Are you sure you want to disconnect from Shorthand? You will no longer be able to create or publish stories until you reconnect.', 'the-shorthand-editor' ) ); ?>');"
 			><?php esc_html_e( 'Disconnect from Shorthand', 'the-shorthand-editor' ); ?></a>
 			<?php
 		} elseif ( $state === AuthStateManager::STATE_UPGRADE_REQUIRED ) {
 			?>
 			<a href="<?php echo esc_url( self_admin_url( 'plugins.php' ) ); ?>"
-			   class="button button-primary"
+				class="button button-primary"
 			><?php esc_html_e( 'Update Plugin', 'the-shorthand-editor' ); ?></a>
 			<p class="description">
 				<?php esc_html_e( 'This version of the Shorthand plugin is no longer compatible. Please update to restore connectivity.', 'the-shorthand-editor' ); ?>
@@ -175,7 +177,7 @@ class GeneralSettingsPage extends SettingsPage {
 			$connect_url = admin_url( 'admin-post.php?action=shorthand_connect_start' );
 			?>
 			<a href="<?php echo esc_url( $connect_url ); ?>"
-			   class="button button-primary"
+				class="button button-primary"
 			><?php esc_html_e( 'Connect to Shorthand', 'the-shorthand-editor' ); ?></a>
 			<?php
 			if ( $state === AuthStateManager::STATE_INVALID ) {
