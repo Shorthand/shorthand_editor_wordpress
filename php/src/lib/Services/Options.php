@@ -28,7 +28,7 @@ class Options {
 
 	public function register() {
 		register_setting(
-			'theshed-general-options-group',
+			'theshed-internal-options-group',
 			'shorthand_v2_token',
 			array(
 				'type'              => 'string',
