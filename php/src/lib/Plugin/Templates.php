@@ -43,6 +43,7 @@ class Templates {
 		$loader = new Loader();
 
 		$loader->add_filter( 'single_template', $this, 'single_template' );
+		$loader->add_filter( 'template_include', $this, 'front_page_template', 99 );
 		$loader->add_action( 'wp_head', $this, 'single_head' );
 
 		$loader->add_action( 'wp_enqueue_scripts', $this, 'enqueue_scripts' );
@@ -118,6 +119,43 @@ class Templates {
 	}
 
 	/**
+	 * Use the plugin's story template when a tse_story is the static front page.
+	 *
+	 * WordPress's single_template filter does not fire for the front page, so a
+	 * tse_story set as the home page renders with the theme's front-page template
+	 * which only outputs the title. This filter ensures the plugin's story
+	 * template is used instead.
+	 *
+	 * @param string $template The resolved template path.
+	 * @return string
+	 */
+	public function front_page_template( $template ) {
+		if ( is_admin() ) {
+			return $template;
+		}
+
+		if ( ! is_front_page() ) {
+			return $template;
+		}
+
+		$front_page_id = (int) get_option( 'page_on_front' );
+		if ( ! $front_page_id ) {
+			return $template;
+		}
+
+		if ( get_post_type( $front_page_id ) !== $this->post_type ) {
+			return $template;
+		}
+
+		$plugin_template = $this->version->get_plugin_path( 'templates/single-tse-story.php' );
+		if ( file_exists( $plugin_template ) ) {
+			return $plugin_template;
+		}
+
+		return $template;
+	}
+
+	/**
 	 * Prints meta tags from story head content.
 	 *
 	 * Scripts and stylesheets are enqueued separately in enqueue_scripts().
@@ -125,7 +163,7 @@ class Templates {
 	public function single_head() {
 		global $post;
 
-		if ( ! is_single() || $post->post_type !== $this->post_type ) {
+		if ( ! is_singular( $this->post_type ) ) {
 			return;
 		}
 
