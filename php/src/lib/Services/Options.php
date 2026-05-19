@@ -242,15 +242,15 @@ class Options {
 
 	public function get_token_org_name() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( false == $token_info ) {
 			return '';
 		}
-		return isset( $token_info['workspace'] ) ? ( $token_info['workspace'] ) : '';
+		return isset( $token_info['workspace'] ) ? wp_specialchars_decode( $token_info['workspace'] ) : '';
 	}
 
 	public function get_token_team_id() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( false == $token_info ) {
 			return '';
 		}
 		return isset( $token_info['team_id'] ) ? ( $token_info['team_id'] ) : '';
@@ -258,7 +258,7 @@ class Options {
 
 	public function get_token_type() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( false == $token_info ) {
 			return '';
 		}
 		return isset( $token_info['token_type'] ) ? ( $token_info['token_type'] ) : '';
@@ -266,10 +266,10 @@ class Options {
 
 	public function get_token_name() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( false == $token_info ) {
 			return '';
 		}
-		return isset( $token_info['name'] ) ? ( $token_info['name'] ) : '';
+		return isset( $token_info['name'] ) ? wp_specialchars_decode( $token_info['name'] ) : '';
 	}
 
 	public function get_permalink(): string {
