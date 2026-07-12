@@ -74,7 +74,7 @@ class GeneralSettingsPage extends SettingsPage {
 					$this->settings_page_slug,
 					'shorthand_workspace_section',
 					array(
-						'label_for' => 'shorthand_v2_token_org',
+						'label_for' => 'shorthand_v2_token_team',
 						'value'     => $this->options->get_token_name(),
 						'partial'   => 'partials/option-token.php',
 						'readonly'  => true,
