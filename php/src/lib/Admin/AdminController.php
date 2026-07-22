@@ -14,6 +14,8 @@ use Shorthand\Services\PostApi;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\Cron;
 use Shorthand\Services\Shorthand;
+use Shorthand\Services\StoryAttachmentResolver;
+use Shorthand\Services\StoryLocalLookup;
 
 use Shorthand\Admin\Actions\ReturnToConnect;
 use Shorthand\Admin\Actions\EditWithShorthand;
@@ -22,6 +24,8 @@ use Shorthand\Admin\Actions\PostPreview;
 use Shorthand\Admin\Actions\ConnectionCompletionService;
 use Shorthand\Admin\Actions\StoryEditorLinkBuilder;
 use Shorthand\Admin\Actions\StoryReturnHandler;
+use Shorthand\Admin\Actions\CreateDraftFromStory;
+use Shorthand\Admin\Actions\CreateDraftFromStoryHandler;
 
 use WP_Post;
 
@@ -142,10 +146,47 @@ class AdminController {
 
 	public function add_admin_menu(): void {
 		GeneralSettingsPage::register( $this->options, $this->version, $this->auth_state_manager, $this->settings_page_slug );
+
+		$this->get_stories_page()->add_menu_page();
+	}
+
+	/**
+	 * Build a `StoryAttachmentResolver` bound to this plugin's story post
+	 * type. Constructed fresh where needed rather than via `Dependencies`,
+	 * matching the existing convention for admin sub-objects in this class.
+	 */
+	private function get_story_attachment_resolver(): StoryAttachmentResolver {
+		return new StoryAttachmentResolver( new StoryLocalLookup( $this->post_type ) );
+	}
+
+	/**
+	 * Build the Shorthand Stories admin page object.
+	 */
+	private function get_stories_page(): StoriesPage {
+		return new StoriesPage(
+			$this->shorthand,
+			$this->get_story_attachment_resolver(),
+			$this->auth_state_manager,
+			$this->post_type
+		);
 	}
 
 	public function admin_init(): void {
 		$loader = new Loader();
+
+		$stories_page = $this->get_stories_page();
+		$stories_page->define_hooks( $loader );
+
+		$create_draft_handler = new CreateDraftFromStoryHandler(
+			$this->shorthand,
+			$this->post_api,
+			$this->get_story_attachment_resolver()
+		);
+		$create_draft_action  = new CreateDraftFromStory(
+			$create_draft_handler,
+			StoriesPage::get_url( $this->post_type )
+		);
+		$create_draft_action->define_hooks( $loader );
 
 		$story_editor_link_builder = new StoryEditorLinkBuilder();
 		$story_return_handler      = new StoryReturnHandler(
