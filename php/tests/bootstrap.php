@@ -84,6 +84,12 @@ function tests_wp_reset_state(): void {
 		'registered_styles'    => array(),
 		'inline_styles'        => array(),
 		'environment_type'     => 'production',
+		'posts_queries'        => array(),
+		'posts_query_result'   => array(),
+		'inserted_posts'       => array(),
+		'insert_post_result'   => 0,
+		'stub_posts'           => array(),
+		'updated_post_meta'    => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -447,6 +453,135 @@ function get_rest_url(): string {
 
 function trailingslashit( string $value ): string {
 	return rtrim( $value, '/' ) . '/';
+}
+
+/**
+ * Minimal stand-in for WordPress's `add_query_arg()`, supporting only the
+ * `add_query_arg( array $args, string $url )` call form used in this
+ * codebase (not the 3-arg `key, value, url` form).
+ *
+ * @param array<string, mixed> $args
+ */
+function add_query_arg( array $args, string $url ): string {
+	if ( empty( $args ) ) {
+		return $url;
+	}
+
+	$pairs = array();
+	foreach ( $args as $key => $value ) {
+		$pairs[] = $key . '=' . $value;
+	}
+
+	$separator = false === strpos( $url, '?' ) ? '?' : '&';
+
+	return $url . $separator . implode( '&', $pairs );
+}
+
+/**
+ * @param mixed $value
+ */
+function absint( $value ): int {
+	return abs( (int) $value );
+}
+
+function sanitize_key( string $value ): string {
+	return strtolower( preg_replace( '/[^a-z0-9_\-]/', '', $value ) ?? '' );
+}
+
+/**
+ * @param mixed $value
+ * @return mixed
+ */
+function wp_unslash( $value ) {
+	return is_string( $value ) ? stripslashes( $value ) : $value;
+}
+
+function sanitize_textarea_field( string $value ): string {
+	return trim( wp_strip_all_tags( $value ) );
+}
+
+function wp_strip_all_tags( string $value ): string {
+	return trim( strip_tags( $value ) );
+}
+
+/**
+ * @return array<int, mixed>
+ */
+function tests_wp_posts_queries(): array {
+	return $GLOBALS['tests_wp_state']['posts_queries'];
+}
+
+/**
+ * @param array<int, mixed> $result
+ */
+function tests_wp_set_posts_query_result( array $result ): void {
+	$GLOBALS['tests_wp_state']['posts_query_result'] = $result;
+}
+
+/**
+ * @param array<string, mixed> $args
+ * @return array<int, mixed>
+ */
+function get_posts( array $args = array() ): array {
+	$GLOBALS['tests_wp_state']['posts_queries'][] = $args;
+	return $GLOBALS['tests_wp_state']['posts_query_result'];
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_inserted_posts(): array {
+	return $GLOBALS['tests_wp_state']['inserted_posts'];
+}
+
+/**
+ * @param mixed $result
+ */
+function tests_wp_set_insert_post_result( $result ): void {
+	$GLOBALS['tests_wp_state']['insert_post_result'] = $result;
+}
+
+/**
+ * @param array<string, mixed> $postarr
+ * @param mixed                $wp_error
+ * @return mixed
+ */
+function wp_insert_post( array $postarr, $wp_error = false ) {
+	$GLOBALS['tests_wp_state']['inserted_posts'][] = $postarr;
+	return $GLOBALS['tests_wp_state']['insert_post_result'];
+}
+
+/**
+ * @param mixed $post
+ */
+function tests_wp_set_post( int $post_id, $post ): void {
+	$GLOBALS['tests_wp_state']['stub_posts'][ $post_id ] = $post;
+}
+
+/**
+ * @return mixed
+ */
+function get_post( int $post_id ) {
+	return $GLOBALS['tests_wp_state']['stub_posts'][ $post_id ] ?? null;
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_updated_post_meta(): array {
+	return $GLOBALS['tests_wp_state']['updated_post_meta'];
+}
+
+/**
+ * @param mixed $meta_value
+ */
+function update_post_meta( int $post_id, string $meta_key, $meta_value ): bool {
+	$GLOBALS['tests_wp_state']['updated_post_meta'][] = array(
+		'post_id'    => $post_id,
+		'meta_key'   => $meta_key,
+		'meta_value' => $meta_value,
+	);
+	return true;
 }
 
 require_once __DIR__ . '/../vendor/autoload.php';
