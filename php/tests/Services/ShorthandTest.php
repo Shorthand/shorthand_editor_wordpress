@@ -68,4 +68,124 @@ final class ShorthandTest extends WordPressTestCase {
 			$service->fetch_token_info( 'token-123' )
 		);
 	}
+
+	public function test_list_stories_builds_request_with_cursor_limit_and_keyword(): void {
+		$options          = $this->createMock( Options::class );
+		$version          = $this->createMock( Version::class );
+		$api_client       = $this->createMock( ShorthandApiClient::class );
+		$context_provider = $this->createMock( WordPressContextProvider::class );
+
+		$options->expects( $this->once() )->method( 'get_api_url' )->willReturn( 'https://api.example.test' );
+
+		$api_client
+			->expects( $this->once() )
+			->method( 'authed_request' )
+			->with(
+				$this->callback(
+					function ( string $url ): bool {
+						return 0 === strpos( $url, 'https://api.example.test/v2/stories' )
+							&& false !== strpos( $url, 'limit=20' )
+							&& false !== strpos( $url, 'keyword=hello' )
+							&& false !== strpos( $url, 'cursor=abc' );
+					}
+				),
+				'GET',
+				array( 'timeout' => '10' ),
+				null
+			)
+			->willReturn(
+				array(
+					'response' => array( 'code' => 200 ),
+					'body'     => wp_json_encode(
+						array(
+							array(
+								'id'    => 's1',
+								'title' => 'A story',
+							),
+						)
+					),
+				)
+			);
+
+		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+
+		$result = $service->list_stories(
+			array(
+				'cursor'  => 'abc',
+				'limit'   => 20,
+				'keyword' => 'hello',
+			)
+		);
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 's1', $result[0]['id'] );
+	}
+
+	public function test_list_stories_with_no_args_omits_optional_params(): void {
+		$options          = $this->createMock( Options::class );
+		$version          = $this->createMock( Version::class );
+		$api_client       = $this->createMock( ShorthandApiClient::class );
+		$context_provider = $this->createMock( WordPressContextProvider::class );
+
+		$options->method( 'get_api_url' )->willReturn( 'https://api.example.test' );
+
+		$api_client
+			->expects( $this->once() )
+			->method( 'authed_request' )
+			->with(
+				'https://api.example.test/v2/stories',
+				'GET',
+				array( 'timeout' => '10' ),
+				null
+			)
+			->willReturn(
+				array(
+					'response' => array( 'code' => 200 ),
+					'body'     => wp_json_encode( array() ),
+				)
+			);
+
+		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+
+		$this->assertSame( array(), $service->list_stories() );
+	}
+
+	public function test_list_stories_returns_wp_error_on_non_200_status(): void {
+		$options          = $this->createMock( Options::class );
+		$version          = $this->createMock( Version::class );
+		$api_client       = $this->createMock( ShorthandApiClient::class );
+		$context_provider = $this->createMock( WordPressContextProvider::class );
+
+		$options->method( 'get_api_url' )->willReturn( 'https://api.example.test' );
+
+		$api_client->method( 'authed_request' )->willReturn(
+			array(
+				'response' => array( 'code' => 500 ),
+				'body'     => '',
+			)
+		);
+
+		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+
+		$result = $service->list_stories();
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+	}
+
+	public function test_list_stories_returns_wp_error_when_the_api_client_fails(): void {
+		$options          = $this->createMock( Options::class );
+		$version          = $this->createMock( Version::class );
+		$api_client       = $this->createMock( ShorthandApiClient::class );
+		$context_provider = $this->createMock( WordPressContextProvider::class );
+
+		$options->method( 'get_api_url' )->willReturn( 'https://api.example.test' );
+
+		$api_client->method( 'authed_request' )->willReturn( new \WP_Error( 'http_request_failed', 'timeout' ) );
+
+		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+
+		$result = $service->list_stories();
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+	}
 }

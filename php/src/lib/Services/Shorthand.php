@@ -344,6 +344,65 @@ class Shorthand {
 	}
 
 	/**
+	 * List stories in the connected Shorthand site.
+	 *
+	 * Wraps `GET /v2/stories`, which returns a page of story objects ordered
+	 * by `updatedAt` descending. Supports keyword filtering and opaque
+	 * cursor-based pagination via the `cursor` param.
+	 *
+	 * @param array{cursor?: string, limit?: int, keyword?: string} $args Optional request parameters.
+	 * @return mixed[]|\WP_Error List of story objects, or WP_Error on failure.
+	 */
+	public function list_stories( array $args = array() ) {
+		$query_args = array();
+
+		if ( ! empty( $args['cursor'] ) ) {
+			$query_args['cursor'] = rawurlencode( (string) $args['cursor'] );
+		}
+
+		if ( isset( $args['limit'] ) ) {
+			$query_args['limit'] = absint( $args['limit'] );
+		}
+
+		if ( ! empty( $args['keyword'] ) ) {
+			$query_args['keyword'] = rawurlencode( (string) $args['keyword'] );
+		}
+
+		$url = add_query_arg( $query_args, $this->options->get_api_url() . '/v2/stories' );
+
+		$response = $this->shorthand_api_authed_request(
+			$url,
+			'GET',
+			array(
+				'timeout' => '10',
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+		$body        = wp_remote_retrieve_body( $response );
+
+		$stories  = 200 === $status_code ? json_decode( $body, true ) : null;
+		$json_err = 200 === $status_code ? json_last_error() : JSON_ERROR_NONE;
+
+		if ( ! is_array( $stories ) || 200 !== $status_code || JSON_ERROR_NONE !== $json_err ) {
+			$error = new WP_Error( 'stories', __( 'Could not list Shorthand stories.', 'the-shorthand-editor' ) );
+			if ( JSON_ERROR_NONE !== $json_err ) {
+				$msg = json_last_error_msg();
+				$error->add( 'json', "JSON decoding error message: {$msg}.", $json_err );
+			} else {
+				$error->add( 'status', "Received HTTP status {$status_code}.", $status_code );
+			}
+			return $error;
+		}
+
+		return $stories;
+	}
+
+	/**
 	 * @return mixed[]|\WP_Error
 	 */
 	public function shorthand_api_authed_request( $url, $method = 'GET', $options = array(), $body = null ) {
