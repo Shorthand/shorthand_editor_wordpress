@@ -32,6 +32,13 @@ class StoriesPage {
 	const STORIES_PER_PAGE = 20;
 
 	/**
+	 * Capability required to view the page and create draft posts from it.
+	 *
+	 * `edit_others_posts` restricts access to editors and administrators.
+	 */
+	const CAPABILITY = 'edit_others_posts';
+
+	/**
 	 * Used to fetch the paginated list of stories from the Shorthand API.
 	 *
 	 * @readonly
@@ -98,7 +105,7 @@ class StoriesPage {
 			'edit.php?post_type=' . $this->post_type,
 			esc_html__( 'Shorthand Stories', 'the-shorthand-editor' ),
 			esc_html__( 'Shorthand Stories', 'the-shorthand-editor' ),
-			'edit_posts',
+			self::CAPABILITY,
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
 		);
@@ -108,7 +115,7 @@ class StoriesPage {
 	 * Render the Shorthand Stories admin page.
 	 */
 	public function render_page(): void {
-		if ( ! current_user_can( 'edit_posts' ) ) {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
 			wp_die( esc_html__( 'You do not have permission to access this page.', 'the-shorthand-editor' ), '', array( 'response' => 403 ) );
 		}
 

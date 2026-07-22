@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Shorthand\Admin\StoriesPage;
 use Shorthand\Core\Loader;
 
 /**
@@ -83,7 +84,7 @@ class CreateDraftFromStory {
 	 * the Shorthand Stories page with an outcome notice.
 	 */
 	public function handle_request(): void {
-		if ( ! current_user_can( 'edit_posts' ) ) {
+		if ( ! current_user_can( StoriesPage::CAPABILITY ) ) {
 			wp_die(
 				esc_html__( 'You do not have permission to perform this action.', 'the-shorthand-editor' ),
 				'',
