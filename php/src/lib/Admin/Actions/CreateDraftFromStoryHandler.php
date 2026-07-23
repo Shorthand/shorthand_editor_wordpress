@@ -104,6 +104,10 @@ class CreateDraftFromStoryHandler {
 	 * @param mixed[] $settings Story settings, as returned by `Shorthand::get_story_settings()`.
 	 */
 	private function extract_external_id( array $settings ): ?string {
+		if ( ! isset( $settings['external'] ) || ! is_array( $settings['external'] ) ) {
+			return null;
+		}
+
 		$external_id = isset( $settings['external']['externalId'] ) ? $settings['external']['externalId'] : null;
 
 		if ( null === $external_id || '' === $external_id ) {
