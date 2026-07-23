@@ -17,7 +17,7 @@ if ( ! class_exists( '\WP_List_Table' ) ) {
 
 /**
  * List table of stories in the connected Shorthand site, rendered on the
- * "Manage Stories" admin page (see `StoriesPage`).
+ * "Recover Stories" admin page (see `StoriesPage`).
  *
  * Pagination is cursor-based (the Shorthand API does not expose a total
  * count or numbered pages), so the core numbered pagination is replaced by
@@ -189,11 +189,11 @@ class StoriesListTable extends \WP_List_Table {
 		$attachment = $this->resolve_attachment( $story );
 
 		if ( $attachment->is_attached() ) {
-			return '';
+			return esc_html__( 'Attached', 'the-shorthand-editor' );
 		}
 
 		if ( $attachment->is_attached_elsewhere() ) {
-			return '⚠️ ' . esc_html__( 'Attached to a different WordPress site', 'the-shorthand-editor' );
+			return '<span class="dashicons dashicons-warning" aria-hidden="true"></span><span class="screen-reader-text">' . esc_html__( 'Warning:', 'the-shorthand-editor' ) . '</span> ' . esc_html__( 'Attached (linked WordPress post not found)', 'the-shorthand-editor' );
 		}
 
 		return esc_html__( 'Unattached', 'the-shorthand-editor' );
