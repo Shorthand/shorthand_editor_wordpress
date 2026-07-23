@@ -103,8 +103,8 @@ class StoriesPage {
 	public function add_menu_page(): void {
 		add_submenu_page(
 			'edit.php?post_type=' . $this->post_type,
-			esc_html__( 'Shorthand Stories', 'the-shorthand-editor' ),
-			esc_html__( 'Shorthand Stories', 'the-shorthand-editor' ),
+			esc_html__( 'Manage Stories', 'the-shorthand-editor' ),
+			esc_html__( 'Manage Stories', 'the-shorthand-editor' ),
 			self::CAPABILITY,
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
@@ -251,8 +251,8 @@ class StoriesPage {
 			return esc_html__( 'Attached', 'the-shorthand-editor' );
 		}
 
-		if ( $attachment->has_stale_external_id() ) {
-			return '<span class="dashicons dashicons-warning"></span> ' . esc_html__( 'Attached (linked WordPress post not found)', 'the-shorthand-editor' );
+		if ( $attachment->is_attached_elsewhere() ) {
+			return '<span class="dashicons dashicons-warning"></span> ' . esc_html__( 'Attached elsewhere (no matching post on this site)', 'the-shorthand-editor' );
 		}
 
 		return esc_html__( 'Not attached', 'the-shorthand-editor' );
@@ -335,7 +335,7 @@ class StoriesPage {
 				break;
 
 			case 'already_attached':
-				echo '<div class="notice notice-warning is-dismissible"><p>' . esc_html__( 'This story is already attached to a WordPress post, so no draft was created.', 'the-shorthand-editor' ) . '</p></div>';
+				echo '<div class="notice notice-warning is-dismissible"><p>' . esc_html__( 'This story is already attached to a post on this site, so no draft was created.', 'the-shorthand-editor' ) . '</p></div>';
 				break;
 
 			case 'error':

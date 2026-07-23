@@ -11,13 +11,15 @@ use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryAttachmentResolver;
 
 /**
- * Creates a draft WordPress post for a Shorthand story that is not yet
- * attached to any post.
+ * Creates a draft WordPress post for a Shorthand story that is not attached
+ * to a post in this WordPress instance.
  *
- * Re-verifies unattachment immediately before creating the post, guarding
- * against a race where the story became attached (in Shorthand, or locally
- * in WordPress) between the admin page being rendered and this action
- * running.
+ * Re-verifies local unattachment immediately before creating the post,
+ * guarding against a race where the story became attached here between the
+ * admin page being rendered and this action running. A story attached only
+ * outside this instance (its `externalId` matches no local post) may be
+ * attached to a fresh draft — doing so overwrites the story's `externalId`
+ * with the new post's ID.
  */
 class CreateDraftFromStoryHandler {
 

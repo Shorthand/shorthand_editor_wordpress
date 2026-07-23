@@ -31,7 +31,7 @@ final class CreateDraftFromStoryHandlerTest extends WordPressTestCase {
 		$this->assertNull( $result['post_id'] );
 	}
 
-	public function test_refuses_to_create_a_draft_when_remote_external_id_is_set(): void {
+	public function test_creates_a_draft_when_the_story_is_attached_only_outside_this_instance(): void {
 		$shorthand = $this->createMock( Shorthand::class );
 		$post_api  = $this->createMock( PostAPI::class );
 		$resolver  = $this->createMock( StoryAttachmentResolver::class );
@@ -48,13 +48,19 @@ final class CreateDraftFromStoryHandlerTest extends WordPressTestCase {
 			->with( 'story-1', '7' )
 			->willReturn( new StoryAttachment( null, true ) );
 
-		$post_api->expects( $this->never() )->method( 'connect_story' );
+		$post = (object) array( 'ID' => 123 );
+
+		$post_api
+			->expects( $this->once() )
+			->method( 'connect_story' )
+			->with( 'story-1', null, 'draft' )
+			->willReturn( $post );
 
 		$handler = new CreateDraftFromStoryHandler( $shorthand, $post_api, $resolver );
 		$result  = $handler->handle( 'story-1' );
 
-		$this->assertSame( CreateDraftFromStoryHandler::STATUS_ALREADY_ATTACHED, $result['status'] );
-		$this->assertNull( $result['post_id'] );
+		$this->assertSame( CreateDraftFromStoryHandler::STATUS_CREATED, $result['status'] );
+		$this->assertSame( 123, $result['post_id'] );
 	}
 
 	public function test_refuses_to_create_a_draft_when_a_local_post_already_carries_the_story_id(): void {

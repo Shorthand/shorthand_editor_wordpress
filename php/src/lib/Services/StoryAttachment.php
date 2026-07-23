@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * The resolved attachment state of a Shorthand story with respect to
- * WordPress.
+ * this WordPress instance.
  */
 class StoryAttachment {
 
@@ -21,26 +21,29 @@ class StoryAttachment {
 	private $local_post_id;
 
 	/**
-	 * Whether the story's `externalId` points at a WordPress post that no
-	 * longer exists locally.
+	 * Whether the story's `externalId` points at a post that does not exist
+	 * in this WordPress instance — either a post on another instance, or a
+	 * stale link to a post that was later deleted here.
 	 *
 	 * @readonly
 	 * @var bool
 	 */
-	private $stale_external_id;
+	private $attached_elsewhere;
 
-	public function __construct( ?int $local_post_id, bool $stale_external_id ) {
-		$this->local_post_id     = $local_post_id;
-		$this->stale_external_id = $stale_external_id;
+	public function __construct( ?int $local_post_id, bool $attached_elsewhere ) {
+		$this->local_post_id      = $local_post_id;
+		$this->attached_elsewhere = $attached_elsewhere;
 	}
 
 	/**
-	 * Whether the story is already associated with a WordPress post, either
-	 * via a live local post or a stale `externalId` referencing a post that
-	 * no longer exists locally.
+	 * Whether the story is associated with a post in this WordPress instance.
+	 *
+	 * Only a local post blocks attaching the story to a fresh draft; an
+	 * `externalId` pointing outside this instance does not (see
+	 * `is_attached_elsewhere()`).
 	 */
 	public function is_attached(): bool {
-		return null !== $this->local_post_id || $this->stale_external_id;
+		return null !== $this->local_post_id;
 	}
 
 	/**
@@ -51,10 +54,10 @@ class StoryAttachment {
 	}
 
 	/**
-	 * Whether the story's `externalId` points at a WordPress post that no
-	 * longer exists locally.
+	 * Whether the story's `externalId` points at a post that does not exist
+	 * in this WordPress instance.
 	 */
-	public function has_stale_external_id(): bool {
-		return $this->stale_external_id;
+	public function is_attached_elsewhere(): bool {
+		return $this->attached_elsewhere;
 	}
 }

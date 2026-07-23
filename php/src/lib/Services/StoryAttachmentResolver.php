@@ -7,14 +7,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Resolves whether a Shorthand story is already attached to a WordPress post.
+ * Resolves whether a Shorthand story is attached to a post in this
+ * WordPress instance.
  *
- * Attachment is resolved two ways: the API-reported `externalId` on the
- * story, and a local lookup for a `tse_story` post (in any status) carrying
- * the story's ID in its `story_id` meta. Either signal is sufficient to
- * treat the story as attached. A local post takes precedence when both are
- * available, since the `externalId` may be stale — for example if the local
- * post was later deleted.
+ * A story is attached here when a local `tse_story` post (in any status)
+ * carries the story's ID in its `story_id` meta. The API-reported
+ * `externalId` is only informational: when it is set but no local post
+ * matches, the story is attached elsewhere (another WordPress instance, or
+ * a stale link to a since-deleted local post) — which does not prevent
+ * attaching it to a fresh draft here.
  */
 class StoryAttachmentResolver {
 
@@ -43,8 +44,8 @@ class StoryAttachmentResolver {
 			return new StoryAttachment( $local_post_id, false );
 		}
 
-		$stale_external_id = null !== $external_id && '' !== $external_id;
+		$attached_elsewhere = null !== $external_id && '' !== $external_id;
 
-		return new StoryAttachment( null, $stale_external_id );
+		return new StoryAttachment( null, $attached_elsewhere );
 	}
 }
