@@ -55,9 +55,20 @@ class PostAPI {
 	}
 
 	/**
-	 * @return \WP_Post|\WP_Error
+	 * Create or link a local WordPress post for a Shorthand story.
+	 *
+	 * When `$post_id` is null, a new post of the configured post type is
+	 * created with the story's title, in the given `$post_status` (`draft`
+	 * by default, matching `wp_insert_post()`'s own default). The new post
+	 * is then linked to the story via the `story_id` meta and the story's
+	 * `externalId` is pushed back to Shorthand.
+	 *
+	 * @param string   $story_id    Shorthand story ID to connect.
+	 * @param int|null $post_id     Existing post ID. Currently unsupported; passing a value terminates the request.
+	 * @param string   $post_status Status to create the new post with when `$post_id` is null.
+	 * @return \WP_Post|\WP_Error The linked post, or a WP_Error should linking to Shorthand fail after creation.
 	 */
-	public function connect_story( string $story_id, ?int $post_id ) {
+	public function connect_story( string $story_id, ?int $post_id, string $post_status = 'draft' ) {
 		if ( ! $post_id ) {
 			$title = 'Add your title';
 
@@ -78,8 +89,9 @@ class PostAPI {
 
 			$post_id = wp_insert_post(
 				array(
-					'post_title' => $title,
-					'post_type'  => $this->post_type,
+					'post_title'  => $title,
+					'post_type'   => $this->post_type,
+					'post_status' => $post_status,
 				),
 				true
 			);
