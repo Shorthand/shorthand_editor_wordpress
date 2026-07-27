@@ -45,6 +45,51 @@ final class StoryTemplateTest extends WordPressTestCase {
 		);
 	}
 
+	public function test_password_protected_story_prints_the_password_form(): void {
+		\tests_wp_set_password_required( true );
+
+		$output = $this->render_template();
+
+		$this->assertStringContainsString( '<form class="post-password-form"></form>', $output );
+	}
+
+	public function test_password_protected_story_still_renders_the_footer(): void {
+		\tests_wp_set_is_block_theme( true );
+		\tests_wp_set_password_required( true );
+
+		$output = $this->render_template();
+
+		/* The password form must not short-circuit the closing markup. */
+		$this->assertStringContainsString( '</body>', $output );
+		$this->assertStringContainsString( '</html>', $output );
+		$this->assertSame(
+			array(
+				'block_template_part:header',
+				'block_template_part:footer',
+				'wp_head',
+				'wp_body_open',
+				'get_the_password_form',
+				'wp_footer',
+			),
+			\tests_wp_template_calls()
+		);
+	}
+
+	public function test_password_protected_story_renders_the_classic_footer(): void {
+		\tests_wp_set_password_required( true );
+
+		$this->render_template();
+
+		$this->assertSame(
+			array(
+				'get_header',
+				'get_the_password_form',
+				'get_footer',
+			),
+			\tests_wp_template_calls()
+		);
+	}
+
 	public function test_classic_theme_continues_to_render_php_header_and_footer(): void {
 		$output = $this->render_template();
 

@@ -47,7 +47,8 @@ if ( $theshed_is_block_theme ) {
 }
 
 if ( post_password_required( $post->ID ) ) {
-	return get_the_password_form();
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup rendered by core's get_the_password_form().
+	echo get_the_password_form( $post );
 } else {
 	while ( have_posts() ) :
 		the_post();

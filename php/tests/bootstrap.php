@@ -92,6 +92,7 @@ function tests_wp_reset_state(): void {
 		'updated_post_meta'    => array(),
 		'is_block_theme'       => false,
 		'template_calls'       => array(),
+		'password_required'    => false,
 		'rewrite_flushes'      => 0,
 	);
 	$GLOBALS['wp_version']   = '6.0';
@@ -622,6 +623,10 @@ function tests_wp_set_is_block_theme( bool $is_block_theme ): void {
 	$GLOBALS['tests_wp_state']['is_block_theme'] = $is_block_theme;
 }
 
+function tests_wp_set_password_required( bool $password_required ): void {
+	$GLOBALS['tests_wp_state']['password_required'] = $password_required;
+}
+
 /**
  * @return array<int, string>
  */
@@ -665,7 +670,15 @@ function get_header(): void {
 }
 
 function post_password_required( int $post_id ): bool {
-	return false;
+	return $GLOBALS['tests_wp_state']['password_required'];
+}
+
+/**
+ * @param mixed $post
+ */
+function get_the_password_form( $post = 0 ): string {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'get_the_password_form';
+	return '<form class="post-password-form"></form>';
 }
 
 function have_posts(): bool {
