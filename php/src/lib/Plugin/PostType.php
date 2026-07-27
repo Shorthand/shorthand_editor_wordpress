@@ -36,7 +36,20 @@ class PostType {
 	public function init() {
 		$loader = new Loader();
 		$loader->add_action( 'init', $this, 'register_post_type' );
+		$loader->add_action( 'init', $this, 'maybe_flush_rewrite_rules', 20 );
 		$loader->register();
+	}
+
+	/**
+	 * Flushes rewrite rules after a permalink setting change.
+	 */
+	public function maybe_flush_rewrite_rules(): void {
+		if ( ! get_option( 'shorthand_flush_rewrite_rules', false ) ) {
+			return;
+		}
+
+		flush_rewrite_rules();
+		delete_option( 'shorthand_flush_rewrite_rules' );
 	}
 
 	public function register_post_type() {

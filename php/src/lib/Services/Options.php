@@ -165,11 +165,11 @@ class Options {
 	}
 
 	public function handle_permalink_added( $option, $value ): void {
-		flush_rewrite_rules();
+		update_option( 'shorthand_flush_rewrite_rules', true );
 	}
 
 	public function handle_permalink_updated( $option, $old_value, $value ): void {
-		flush_rewrite_rules();
+		update_option( 'shorthand_flush_rewrite_rules', true );
 	}
 
 	/**
@@ -361,8 +361,9 @@ class Options {
 	public function activate_plugin() {
 		if ( ! get_option( 'shorthand_permalink', '' ) ) {
 			/* fall back to the old permalink setting */
-			$old_permalink = get_option( 'sh_permalink' );
-			add_option( 'shorthand_permalink', $old_permalink, '', true );
+			$old_permalink = get_option( 'sh_permalink', 'story' );
+			$permalink     = $old_permalink ? $old_permalink : 'story';
+			add_option( 'shorthand_permalink', $permalink, '', true );
 		}
 
 		if ( ! get_option( 'shorthand_regex_list', '' ) ) {

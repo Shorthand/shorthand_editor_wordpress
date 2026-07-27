@@ -90,6 +90,9 @@ function tests_wp_reset_state(): void {
 		'insert_post_result'   => 0,
 		'stub_posts'           => array(),
 		'updated_post_meta'    => array(),
+		'is_block_theme'       => false,
+		'template_calls'       => array(),
+		'rewrite_flushes'      => 0,
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -203,7 +206,13 @@ function is_admin(): bool {
 	return false;
 }
 
-function flush_rewrite_rules(): void {}
+function flush_rewrite_rules(): void {
+	++$GLOBALS['tests_wp_state']['rewrite_flushes'];
+}
+
+function tests_wp_rewrite_flushes(): int {
+	return $GLOBALS['tests_wp_state']['rewrite_flushes'];
+}
 
 function wp_allowed_protocols(): array {
 	return array( 'http', 'https' );
@@ -324,6 +333,31 @@ function get_option( string $option, $default = false ) {
  */
 function update_option( string $option, $value ): bool {
 	$GLOBALS['tests_wp_state']['options'][ $option ] = $value;
+	return true;
+}
+
+/**
+ * @param mixed $value
+ * @param mixed $deprecated
+ */
+function add_option( string $option, $value = '', $deprecated = '', bool $autoload = true ): bool {
+	if ( isset( $GLOBALS['tests_wp_state']['options'][ $option ] ) ) {
+		return false;
+	}
+
+	$GLOBALS['tests_wp_state']['options'][ $option ] = $value;
+	return true;
+}
+
+function delete_option( string $option ): bool {
+	unset( $GLOBALS['tests_wp_state']['options'][ $option ] );
+	return true;
+}
+
+/**
+ * @param mixed $meta_value
+ */
+function delete_metadata( string $meta_type, int $object_id, string $meta_key, $meta_value = '', bool $delete_all = false ): bool {
 	return true;
 }
 
@@ -582,6 +616,67 @@ function update_post_meta( int $post_id, string $meta_key, $meta_value ): bool {
 		'meta_value' => $meta_value,
 	);
 	return true;
+}
+
+function tests_wp_set_is_block_theme( bool $is_block_theme ): void {
+	$GLOBALS['tests_wp_state']['is_block_theme'] = $is_block_theme;
+}
+
+/**
+ * @return array<int, string>
+ */
+function tests_wp_template_calls(): array {
+	return $GLOBALS['tests_wp_state']['template_calls'];
+}
+
+function wp_is_block_theme(): bool {
+	return $GLOBALS['tests_wp_state']['is_block_theme'];
+}
+
+function language_attributes(): void {
+	echo 'lang="en-US"';
+}
+
+function bloginfo( string $show ): void {
+	if ( 'charset' === $show ) {
+		echo 'UTF-8';
+	}
+}
+
+function wp_head(): void {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'wp_head';
+}
+
+function body_class(): void {
+	echo 'class="test-body"';
+}
+
+function wp_body_open(): void {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'wp_body_open';
+}
+
+function block_template_part( string $part ): void {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'block_template_part:' . $part;
+}
+
+function get_header(): void {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'get_header';
+}
+
+function post_password_required( int $post_id ): bool {
+	return false;
+}
+
+function have_posts(): bool {
+	return false;
+}
+
+function wp_footer(): void {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'wp_footer';
+}
+
+function get_footer(): void {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'get_footer';
 }
 
 require_once __DIR__ . '/../vendor/autoload.php';

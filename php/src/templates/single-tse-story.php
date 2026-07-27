@@ -21,6 +21,12 @@ if ( wp_is_block_theme() ) {
 	<body <?php body_class(); ?>>
 	<?php
 	wp_body_open();
+	?>
+	<div class="wp-site-blocks">
+		<header class="wp-block-template-part">
+			<?php block_template_part( 'header' ); ?>
+		</header>
+	<?php
 } else {
 	get_header();
 }
@@ -46,6 +52,12 @@ if ( post_password_required( $post->ID ) ) {
 }
 
 if ( wp_is_block_theme() ) {
+	?>
+		<footer class="wp-block-template-part">
+			<?php block_template_part( 'footer' ); ?>
+		</footer>
+	</div>
+	<?php
 	wp_footer();
 	?>
 	</body>
