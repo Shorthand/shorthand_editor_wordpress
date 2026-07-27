@@ -16,15 +16,32 @@ final class StoryTemplateTest extends WordPressTestCase {
 		$this->assertStringContainsString( '<div class="wp-site-blocks">', $output );
 		$this->assertStringContainsString( '<header class="wp-block-template-part">', $output );
 		$this->assertStringContainsString( '<footer class="wp-block-template-part">', $output );
+
+		/* The parts must render before wp_head() so their block assets are enqueued in time. */
 		$this->assertSame(
 			array(
-				'wp_head',
-				'wp_body_open',
 				'block_template_part:header',
 				'block_template_part:footer',
+				'wp_head',
+				'wp_body_open',
 				'wp_footer',
 			),
 			\tests_wp_template_calls()
+		);
+	}
+
+	public function test_block_theme_prints_template_part_markup_inside_its_wrapper(): void {
+		\tests_wp_set_is_block_theme( true );
+
+		$output = $this->render_template();
+
+		$this->assertMatchesRegularExpression(
+			'#<header class="wp-block-template-part">\s*<!--part:header-->\s*</header>#',
+			$output
+		);
+		$this->assertMatchesRegularExpression(
+			'#<footer class="wp-block-template-part">\s*<!--part:footer-->\s*</footer>#',
+			$output
 		);
 	}
 

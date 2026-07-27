@@ -10,7 +10,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @package Shorthand Connect
  */
 
-if ( wp_is_block_theme() ) {
+$theshed_is_block_theme = wp_is_block_theme();
+$theshed_header_part    = '';
+$theshed_footer_part    = '';
+
+if ( $theshed_is_block_theme ) {
+	/*
+	 * Render the header and footer parts before `<head>` is written. Block themes
+	 * enqueue their block styles and scripts while the blocks render, so anything
+	 * rendered after wp_head() has already run would go unstyled.
+	 */
+	$theshed_header_part = \Shorthand\Plugin\Templates::render_block_template_part( 'header' );
+	$theshed_footer_part = \Shorthand\Plugin\Templates::render_block_template_part( 'footer' );
+
 	?>
 	<!DOCTYPE html>
 	<html <?php language_attributes(); ?>>
@@ -24,7 +36,10 @@ if ( wp_is_block_theme() ) {
 	?>
 	<div class="wp-site-blocks">
 		<header class="wp-block-template-part">
-			<?php block_template_part( 'header' ); ?>
+			<?php
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup rendered by core's block_template_part().
+			echo $theshed_header_part;
+			?>
 		</header>
 	<?php
 } else {
@@ -51,10 +66,13 @@ if ( post_password_required( $post->ID ) ) {
 	endwhile;
 }
 
-if ( wp_is_block_theme() ) {
+if ( $theshed_is_block_theme ) {
 	?>
 		<footer class="wp-block-template-part">
-			<?php block_template_part( 'footer' ); ?>
+			<?php
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup rendered by core's block_template_part().
+			echo $theshed_footer_part;
+			?>
 		</footer>
 	</div>
 	<?php

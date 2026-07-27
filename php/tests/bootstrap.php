@@ -657,6 +657,7 @@ function wp_body_open(): void {
 
 function block_template_part( string $part ): void {
 	$GLOBALS['tests_wp_state']['template_calls'][] = 'block_template_part:' . $part;
+	echo '<!--part:' . $part . '-->';
 }
 
 function get_header(): void {

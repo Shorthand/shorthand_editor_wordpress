@@ -95,6 +95,29 @@ class Templates {
 	}
 
 	/**
+	 * Renders a block template part and returns its markup.
+	 *
+	 * Block themes register their block styles and scripts as the blocks render,
+	 * so a template part must be rendered before `<head>` is written for those
+	 * assets to be picked up by `wp_head()`. Returning the markup instead of
+	 * echoing it lets a template render the part up front and print it later,
+	 * which is how core's template canvas handles the same problem.
+	 *
+	 * @param string $part The template part area, such as 'header' or 'footer'.
+	 * @return string The rendered markup, or an empty string when unavailable.
+	 */
+	public static function render_block_template_part( string $part ): string {
+		if ( ! function_exists( 'block_template_part' ) ) {
+			return '';
+		}
+
+		ob_start();
+		block_template_part( $part );
+
+		return (string) ob_get_clean();
+	}
+
+	/**
 	 * Prints meta tags from story head content.
 	 *
 	 * Scripts and stylesheets are enqueued separately in enqueue_scripts().
