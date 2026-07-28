@@ -94,6 +94,7 @@ function tests_wp_reset_state(): void {
 		'template_calls'       => array(),
 		'password_required'    => false,
 		'rewrite_flushes'      => 0,
+		'post_types'           => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -213,6 +214,14 @@ function flush_rewrite_rules(): void {
 
 function tests_wp_rewrite_flushes(): int {
 	return $GLOBALS['tests_wp_state']['rewrite_flushes'];
+}
+
+function post_type_exists( string $post_type ): bool {
+	return isset( $GLOBALS['tests_wp_state']['post_types'][ $post_type ] );
+}
+
+function tests_wp_register_post_type( string $post_type ): void {
+	$GLOBALS['tests_wp_state']['post_types'][ $post_type ] = true;
 }
 
 function wp_allowed_protocols(): array {
