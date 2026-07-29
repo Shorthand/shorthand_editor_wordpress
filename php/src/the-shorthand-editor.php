@@ -2,7 +2,7 @@
 /**
  * Plugin Name: The Shorthand Editor
  * Plugin URI: https://shorthand.com/products/shorthand-for-wordpress
- * Version: 1.0.6
+ * Version: 1.0.7
  * Description: Build rich, compelling content with Shorthand, the premier story-telling experience.
  * Repository URI: https://github.com/Shorthand/shorthand_editor_wordpress
  * License: GPLv3 or later
@@ -22,6 +22,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'THESHED_PLUGIN_FILE', __FILE__ );
 
 spl_autoload_register( 'theshed_class_autoloader' );
+
+register_activation_hook( __FILE__, 'theshed_activate' );
+register_deactivation_hook( __FILE__, 'theshed_deactivate' );
 
 add_action( 'plugins_loaded', 'theshed_run' );
 
@@ -60,14 +63,40 @@ function theshed_class_autoloader( $class ) {
 	require_once $file;
 }
 
+/**
+ * Creates the plugin and runs its activation routine.
+ */
+function theshed_activate() {
+	theshed_create_plugin()->activate();
+}
+
+/**
+ * Creates the plugin and runs its deactivation routine.
+ */
+function theshed_deactivate() {
+	theshed_create_plugin()->deactivate();
+}
+
+/**
+ * Creates the plugin and initialises its runtime hooks.
+ */
 function theshed_run() {
+	theshed_create_plugin()->init();
+}
+
+/**
+ * Creates the plugin instance.
+ *
+ * @return Shorthand\Plugin
+ */
+function theshed_create_plugin() {
 	$dependencies = new Shorthand\Plugin\Dependencies(
 		new Shorthand\Core\Version(),
 		new Shorthand\Services\Permissions()
 	);
-	$plugin       = new Shorthand\Plugin(
+
+	return new Shorthand\Plugin(
 		$dependencies,
 		new Shorthand\Services\StoryKses()
 	);
-	$plugin->init();
 }

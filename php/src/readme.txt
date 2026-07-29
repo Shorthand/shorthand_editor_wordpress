@@ -3,7 +3,7 @@ Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
 Tested up to: 6.9.4
-Stable tag: 1.0.6
+Stable tag: 1.0.7
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -366,6 +366,11 @@ page.
 For further support and feedback, contact help@shorthand.com.
 
 == Changelog ==
+
+= 1.0.7 =
+
+- Render site headers and footers for Shorthand stories using block themes.
+- Fix story permalinks returning 404 after activation or a permalink change.
 
 = 1.0.6 =
 

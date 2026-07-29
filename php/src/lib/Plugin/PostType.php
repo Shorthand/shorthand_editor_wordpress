@@ -36,7 +36,29 @@ class PostType {
 	public function init() {
 		$loader = new Loader();
 		$loader->add_action( 'init', $this, 'register_post_type' );
+		$loader->add_action( 'init', $this, 'maybe_flush_rewrite_rules', 20 );
 		$loader->register();
+	}
+
+	/**
+	 * Flushes rewrite rules after a permalink setting change.
+	 *
+	 * Flushing regenerates the rules from the post types registered in this
+	 * request, so doing so before the story post type is registered would
+	 * drop the story rules entirely. The pending flag is left in place when
+	 * that happens, so the flush is retried on a later request.
+	 */
+	public function maybe_flush_rewrite_rules(): void {
+		if ( ! get_option( 'shorthand_flush_rewrite_rules', false ) ) {
+			return;
+		}
+
+		if ( ! post_type_exists( $this->post_type ) ) {
+			return;
+		}
+
+		flush_rewrite_rules();
+		delete_option( 'shorthand_flush_rewrite_rules' );
 	}
 
 	public function register_post_type() {

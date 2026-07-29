@@ -6,8 +6,41 @@ namespace Shorthand\Tests;
 
 use Shorthand\Core\Version;
 use Shorthand\Plugin;
+use Shorthand\Plugin\Dependencies;
+use Shorthand\Plugin\PostType;
+use Shorthand\Services\Options;
+use Shorthand\Services\StoryKses;
 
 final class PluginTest extends WordPressTestCase {
+
+	public function test_activation_registers_the_post_type_before_flushing_rewrite_rules(): void {
+		$options = $this->createMock( Options::class );
+		$options
+			->expects( $this->once() )
+			->method( 'activate_plugin' );
+		$options
+			->expects( $this->once() )
+			->method( 'get_v2_token' )
+			->willReturn( '' );
+
+		$post_type = $this->createMock( PostType::class );
+		$post_type
+			->expects( $this->once() )
+			->method( 'register_post_type' );
+
+		$dependencies = $this->createMock( Dependencies::class );
+		$dependencies
+			->method( 'get_options' )
+			->willReturn( $options );
+		$dependencies
+			->method( 'get_post_type' )
+			->willReturn( $post_type );
+
+		$plugin = new Plugin( $dependencies, $this->createMock( StoryKses::class ) );
+		$plugin->activate();
+
+		$this->assertSame( 1, \tests_wp_rewrite_flushes() );
+	}
 
 	public function test_check_for_updates_returns_original_value_when_transient_is_not_an_object(): void {
 		$plugin = $this->make_plugin();

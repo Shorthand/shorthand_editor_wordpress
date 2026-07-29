@@ -10,6 +10,28 @@ use Shorthand\Tests\WordPressTestCase;
 
 final class OptionsTest extends WordPressTestCase {
 
+	public function test_activation_persists_story_as_the_default_permalink(): void {
+		\tests_wp_set_option( 'shorthand_regex_list', '[]' );
+		\tests_wp_set_option( 'shorthand_css', 'body {}' );
+
+		$options = new Options( new Version() );
+		$options->activate_plugin();
+
+		$this->assertSame( 'story', \get_option( 'shorthand_permalink' ) );
+	}
+
+	public function test_permalink_changes_schedule_a_rewrite_flush(): void {
+		$options = new Options( new Version() );
+
+		$options->handle_permalink_added( 'shorthand_permalink', 'features' );
+		$this->assertTrue( \get_option( 'shorthand_flush_rewrite_rules' ) );
+
+		\delete_option( 'shorthand_flush_rewrite_rules' );
+
+		$options->handle_permalink_updated( 'shorthand_permalink', 'story', 'features' );
+		$this->assertTrue( \get_option( 'shorthand_flush_rewrite_rules' ) );
+	}
+
 	public function test_sanitize_regex_list_accepts_valid_rule_sets(): void {
 		$options = new Options( new Version() );
 		$rules   = '{"head":[{"query":"/<title>/","replace":"<title data-test=\\"true\\">"}],"body":[{"query":"/story/","replace":"article"}]}';

@@ -10,6 +10,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
  */
 
 delete_option( 'shorthand_permalink' );
+delete_option( 'shorthand_flush_rewrite_rules' );
 delete_option( 'shorthand_regex_list' );
 delete_option( 'shorthand_css' );
 delete_option( 'shorthand_disable_cron' );

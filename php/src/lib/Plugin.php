@@ -61,9 +61,6 @@ class Plugin {
 			include $config_path;
 		}
 
-		register_activation_hook( THESHED_PLUGIN_FILE, array( $this, 'activate' ) );
-		register_deactivation_hook( THESHED_PLUGIN_FILE, array( $this, 'deactivate' ) );
-
 		$this->dependencies->boot();
 
 		$this->options   = $this->dependencies->get_options();
@@ -96,6 +93,9 @@ class Plugin {
 	public function activate() {
 		$options = $this->dependencies->get_options();
 		$options->activate_plugin();
+
+		$post_type = $this->dependencies->get_post_type();
+		$post_type->register_post_type();
 
 		/* If a token already exists, refetch the token info to update the auth state. */
 		$token = $options->get_v2_token();
