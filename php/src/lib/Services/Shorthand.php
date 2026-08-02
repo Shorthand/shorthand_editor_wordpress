@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Shorthand\Admin\ConnectionErrorPage;
 use Shorthand\Core\Version;
 use Shorthand\Services\Options;
 use WP_Error;
@@ -32,16 +33,30 @@ class Shorthand {
 	 */
 	private $context_provider;
 
+	/**
+	 * @var \Shorthand\Admin\ConnectionErrorPage
+	 */
+	private $connection_error_page;
+
+	/**
+	 * @var \Shorthand\Services\ConnectionFailureClassifier
+	 */
+	private $failure_classifier;
+
 	public function __construct(
 		Options $options,
 		Version $version,
 		ShorthandApiClient $api_client,
-		WordPressContextProvider $context_provider
+		WordPressContextProvider $context_provider,
+		?ConnectionErrorPage $connection_error_page = null,
+		?ConnectionFailureClassifier $failure_classifier = null
 	) {
-		$this->options          = $options;
-		$this->version          = $version;
-		$this->api_client       = $api_client;
-		$this->context_provider = $context_provider;
+		$this->options               = $options;
+		$this->version               = $version;
+		$this->api_client            = $api_client;
+		$this->context_provider      = $context_provider;
+		$this->connection_error_page = $connection_error_page ? $connection_error_page : new ConnectionErrorPage();
+		$this->failure_classifier    = $failure_classifier ? $failure_classifier : new ConnectionFailureClassifier();
 	}
 
 	/**
@@ -92,19 +107,29 @@ class Shorthand {
 	}
 
 	public function connect( $token ): void {
-		$tks                             = explode( '.', $token );
-		[$headb64, $bodyb64, $cryptob64] = $tks;
-		$payload                         = JWT::jsonDecode( JWT::urlsafeB64Decode( $bodyb64 ) );
-
-		if ( null === $payload->nonce ) {
-			wp_die(
-				esc_html__( 'Could not connect to Shorthand because the credentials provided were invalid. Please try connecting again. If this problem persists, contact Shorthand support.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
-				array(
-					'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
-					'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
+		try {
+			$tks = explode( '.', (string) $token );
+			if ( 3 !== count( $tks ) ) {
+				throw new Exception( 'The return token does not have three segments.' );
+			}
+			[$headb64, $bodyb64, $cryptob64] = $tks;
+			$payload                         = JWT::jsonDecode( JWT::urlsafeB64Decode( $bodyb64 ) );
+		} catch ( \Throwable $parse_error ) {
+			$this->connection_error_page->render(
+				ConnectionFailure::return_token_malformed()->with_diagnostics(
+					array( 'parse_error' => get_class( $parse_error ) )
 				)
 			);
+			return;
+		}
+
+		if ( empty( $payload->nonce ) ) {
+			$this->connection_error_page->render(
+				ConnectionFailure::return_token_malformed()->with_diagnostics(
+					array( 'parse_error' => 'missing-nonce' )
+				)
+			);
+			return;
 		}
 
 		// https://darutk.medium.com/illustrated-dpop-oauth-access-token-security-enhancement-801680d761ff
@@ -119,20 +144,13 @@ class Shorthand {
 		);
 
 		$response = $this->api_client->request( $url, 'POST', null, array(), $body );
-		if ( is_wp_error( $response ) ) {
-			wp_die(
-				esc_html__( 'Could not reach the Shorthand server. Please check your network connection and try again. If this problem persists, contact your site administrator.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
-				array(
-					'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
-					'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
-				)
-			);
-		}
 
-		$status_code = wp_remote_retrieve_response_code( $response );
-		if ( 200 !== $status_code ) {
-			$this->die_on_connect_error( $status_code );
+		$failure = $this->failure_classifier->classify( $response );
+		if ( null !== $failure ) {
+			$this->connection_error_page->render(
+				$failure->with_diagnostics( array( 'request_url' => $url ) )
+			);
+			return;
 		}
 
 		$body      = json_decode( wp_remote_retrieve_body( $response ), true );
@@ -142,74 +160,6 @@ class Shorthand {
 		update_option( 'shorthand_v2_token', $api_token );
 	}
 
-
-	/**
-	 * Terminate the connect flow with a status-code-aware wp_die screen.
-	 *
-	 * Translates the HTTP status returned by the Shorthand API into a
-	 * user-friendly message with an appropriate recovery action:
-	 * reauthorise on 401/403, update the plugin on 426, retry on 5xx,
-	 * or a generic retry screen for any other non-success response.
-	 *
-	 * @param int $status_code HTTP status code returned by the Shorthand API.
-	 */
-	private function die_on_connect_error( int $status_code ): void {
-		$retry_link = array(
-			'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
-			'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
-		);
-
-		$status_detail = array(
-			'message' => sprintf(
-				/* translators: %d: HTTP status code returned by the Shorthand API. */
-				esc_html__( 'The request returned HTTP status code %d.', 'the-shorthand-editor' ),
-				$status_code
-			),
-		);
-
-		if ( 401 === $status_code || 403 === $status_code ) {
-			wp_die(
-				esc_html__( 'Shorthand rejected the connection request. The authorization may have expired or been revoked. Please try connecting again.', 'the-shorthand-editor' ),
-				esc_html__( 'Authorization Failed', 'the-shorthand-editor' ),
-				$retry_link
-			);
-		}
-
-		if ( 426 === $status_code ) {
-			wp_die(
-				esc_html__( 'This version of the Shorthand plugin is no longer compatible with Shorthand. Please update the plugin to continue.', 'the-shorthand-editor' ),
-				esc_html__( 'Plugin Update Required', 'the-shorthand-editor' ),
-				array(
-					'link_url'  => esc_url( self_admin_url( 'plugins.php' ) ),
-					'link_text' => esc_html__( 'Go to Plugins', 'the-shorthand-editor' ),
-				)
-			);
-		}
-
-		if ( $status_code >= 500 && $status_code < 600 ) {
-			wp_die(
-				esc_html__( 'The Shorthand server encountered an error. Please try again in a few minutes. If this problem persists, contact Shorthand support.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
-				array_merge(
-					$retry_link,
-					array(
-						'additional_errors' => array( $status_detail ),
-					)
-				)
-			);
-		}
-
-		wp_die(
-			esc_html__( 'An unexpected error occurred while connecting to Shorthand. Please try again or contact Shorthand support.', 'the-shorthand-editor' ),
-			esc_html__( 'Connection Failed', 'the-shorthand-editor' ),
-			array_merge(
-				$retry_link,
-				array(
-					'additional_errors' => array( $status_detail ),
-				)
-			)
-		);
-	}
 
 	public function get_story_creation_url( string $return_url ): string {
 		return $this->get_authorised_resource_url( $return_url, 'stories', 'create' );
@@ -426,11 +376,8 @@ class Shorthand {
 			$alg        = $jwk_secret['alg'];
 			$key        = $jwk_secret['d'];
 		} catch ( Exception $e ) {
-			wp_die(
-				esc_html__( 'WordPress is no longer connected to a Shorthand workspace. Please contact your administrator.', 'the-shorthand-editor' ),
-				'',
-				array( 'back_link' => true )
-			);
+			$this->connection_error_page->render( ConnectionFailure::signing_keys_missing() );
+			return '';
 		}
 
 		$user    = wp_get_current_user();
@@ -465,11 +412,8 @@ class Shorthand {
 			$alg        = $jwk_secret['alg'];
 			$key        = $jwk_secret['d'];
 		} catch ( Exception $e ) {
-			wp_die(
-				esc_html__( 'WordPress is no longer connected to a Shorthand workspace. Please contact your administrator.', 'the-shorthand-editor' ),
-				'',
-				array( 'back_link' => true )
-			);
+			$this->connection_error_page->render( ConnectionFailure::signing_keys_missing() );
+			return '';
 		}
 
 		$user    = wp_get_current_user();
@@ -507,11 +451,8 @@ class Shorthand {
 			$alg        = $jwk_secret['alg'];
 			$key        = $jwk_secret['d'];
 		} catch ( Exception $e ) {
-			wp_die(
-				esc_html__( 'WordPress is no longer connected to a Shorthand workspace. Please contact your administrator.', 'the-shorthand-editor' ),
-				'',
-				array( 'back_link' => true )
-			);
+			$this->connection_error_page->render( ConnectionFailure::signing_keys_missing() );
+			return '';
 		}
 
 		$user    = wp_get_current_user();

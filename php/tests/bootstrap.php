@@ -95,6 +95,11 @@ function tests_wp_reset_state(): void {
 		'password_required'    => false,
 		'rewrite_flushes'      => 0,
 		'post_types'           => array(),
+		'status_headers'       => array(),
+		'nocache_calls'        => 0,
+		'current_user_can'     => true,
+		'verify_nonce'         => true,
+		'safe_redirects'       => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -314,6 +319,85 @@ function wp_remote_retrieve_response_code( array $response ): int {
  */
 function wp_remote_retrieve_body( array $response ): string {
 	return (string) ( $response['body'] ?? '' );
+}
+
+function current_user_can( string $capability, ...$args ): bool {
+	return (bool) $GLOBALS['tests_wp_state']['current_user_can'];
+}
+
+function tests_wp_set_current_user_can( bool $can ): void {
+	$GLOBALS['tests_wp_state']['current_user_can'] = $can;
+}
+
+/**
+ * @param mixed $nonce
+ */
+function wp_verify_nonce( $nonce, string $action = '' ): bool {
+	return (bool) $GLOBALS['tests_wp_state']['verify_nonce'];
+}
+
+function tests_wp_set_verify_nonce( bool $valid ): void {
+	$GLOBALS['tests_wp_state']['verify_nonce'] = $valid;
+}
+
+function wp_create_nonce( string $action = '' ): string {
+	return 'test-nonce';
+}
+
+function wp_safe_redirect( string $location, int $status = 302 ): bool {
+	$GLOBALS['tests_wp_state']['safe_redirects'][] = array(
+		'location' => $location,
+		'status'   => $status,
+	);
+	return true;
+}
+
+/**
+ * @return array<int, array{location: string, status: int}>
+ */
+function tests_wp_safe_redirects(): array {
+	return $GLOBALS['tests_wp_state']['safe_redirects'];
+}
+
+function wp_remote_retrieve_header( array $response, string $header ) {
+	$headers = isset( $response['headers'] ) ? $response['headers'] : array();
+	foreach ( (array) $headers as $name => $value ) {
+		if ( strtolower( (string) $name ) === strtolower( $header ) ) {
+			return $value;
+		}
+	}
+	return '';
+}
+
+function esc_html( string $text ): string {
+	return htmlspecialchars( $text, ENT_QUOTES );
+}
+
+function esc_html__( string $text, string $domain = '' ): string {
+	return esc_html( __( $text, $domain ) );
+}
+
+function esc_attr( string $text ): string {
+	return htmlspecialchars( $text, ENT_QUOTES );
+}
+
+function esc_url( string $url ): string {
+	return $url;
+}
+
+function status_header( int $code ): void {
+	$GLOBALS['tests_wp_state']['status_headers'][] = $code;
+}
+
+/**
+ * @return int[]
+ */
+function tests_wp_status_headers(): array {
+	return $GLOBALS['tests_wp_state']['status_headers'];
+}
+
+function nocache_headers(): void {
+	$GLOBALS['tests_wp_state']['nocache_calls']++;
 }
 
 function __( string $text, string $domain = '' ): string {

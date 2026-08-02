@@ -7,7 +7,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 
 use Shorthand\Admin\AdminGateway;
+use Shorthand\Admin\ConnectionErrorPage;
 use Shorthand\Services\AuthStateManager;
+use Shorthand\Services\ConnectionFailure;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\Options;
 use Shorthand\Services\PostAPI;
@@ -62,15 +64,21 @@ class EditWithShorthand {
 	 */
 	private $admin_gateway;
 
-	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, AuthStateManager $auth_state_manager, AdminGateway $admin_gateway, StoryEditorLinkBuilder $link_builder ) {
-		$this->shorthand            = $shorthand;
-		$this->options              = $options;
-		$this->post_api             = $post_api;
-		$this->post_type            = $post_type;
-		$this->link_builder         = $link_builder;
-		$this->story_return_handler = $story_return_handler;
-		$this->auth_state_manager   = $auth_state_manager;
-		$this->admin_gateway        = $admin_gateway;
+	/**
+	 * @var \Shorthand\Admin\ConnectionErrorPage
+	 */
+	private $connection_error_page;
+
+	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, AuthStateManager $auth_state_manager, AdminGateway $admin_gateway, StoryEditorLinkBuilder $link_builder, ?ConnectionErrorPage $connection_error_page = null ) {
+		$this->shorthand             = $shorthand;
+		$this->options               = $options;
+		$this->post_api              = $post_api;
+		$this->post_type             = $post_type;
+		$this->link_builder          = $link_builder;
+		$this->story_return_handler  = $story_return_handler;
+		$this->auth_state_manager    = $auth_state_manager;
+		$this->admin_gateway         = $admin_gateway;
+		$this->connection_error_page = $connection_error_page ? $connection_error_page : new ConnectionErrorPage();
 	}
 
 	public function define_redirect_and_return_pages( Loader $loader ): void {
@@ -252,24 +260,10 @@ class EditWithShorthand {
 
 	private function check_auth_state(): void {
 		if ( ! $this->auth_state_manager->is_connected() ) {
-			if ( current_user_can( 'manage_options' ) ) {
-				wp_die(
-					esc_html__( 'The Shorthand connection is not active. Please reconnect from the settings page to continue.', 'the-shorthand-editor' ),
-					esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
-					array(
-						'link_url'  => esc_url( $this->admin_gateway->get_settings_page_url() ),
-						'link_text' => esc_html__( 'Go to Shorthand Settings', 'the-shorthand-editor' ),
-					)
-				);
-			} else {
-				wp_die(
-					esc_html__( 'The Shorthand connection is not active. Please ask your administrator to reconnect the plugin.', 'the-shorthand-editor' ),
-					esc_html__( 'Shorthand Unavailable', 'the-shorthand-editor' ),
-					array(
-						'back_link' => true,
-					)
-				);
-			}
+			$failure = current_user_can( 'manage_options' )
+				? ConnectionFailure::connection_inactive_admin()
+				: ConnectionFailure::connection_inactive();
+			$this->connection_error_page->render( $failure );
 		}
 	}
 
