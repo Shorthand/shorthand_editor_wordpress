@@ -22,11 +22,19 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		public $errors = array();
 
 		/**
+		 * @var array<string, mixed>
+		 */
+		public $error_data = array();
+
+		/**
 		 * @param mixed $data
 		 */
 		public function __construct( string $code = '', string $message = '', $data = null ) {
 			if ( $code !== '' ) {
 				$this->errors[ $code ] = array( $message );
+				if ( null !== $data ) {
+					$this->error_data[ $code ] = $data;
+				}
 			}
 		}
 
@@ -37,14 +45,34 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			return '';
 		}
 
-		public function get_error_message(): string {
-			$code = $this->get_error_code();
+		/**
+		 * @return array<int, string>
+		 */
+		public function get_error_codes(): array {
+			return array_keys( $this->errors );
+		}
+
+		public function get_error_message( string $code = '' ): string {
+			if ( '' === $code ) {
+				$code = $this->get_error_code();
+			}
 
 			if ( $code === '' || empty( $this->errors[ $code ] ) ) {
 				return '';
 			}
 
 			return $this->errors[ $code ][0];
+		}
+
+		/**
+		 * @return mixed
+		 */
+		public function get_error_data( string $code = '' ) {
+			if ( '' === $code ) {
+				$code = $this->get_error_code();
+			}
+
+			return $this->error_data[ $code ] ?? null;
 		}
 
 		/**
@@ -56,6 +84,10 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			}
 
 			$this->errors[ $code ][] = $message;
+
+			if ( null !== $data ) {
+				$this->error_data[ $code ] = $data;
+			}
 		}
 	}
 }
@@ -90,6 +122,7 @@ function tests_wp_reset_state(): void {
 		'insert_post_result'   => 0,
 		'stub_posts'           => array(),
 		'updated_post_meta'    => array(),
+		'post_meta'            => array(),
 		'is_block_theme'       => false,
 		'template_calls'       => array(),
 		'password_required'    => false,
@@ -625,7 +658,32 @@ function update_post_meta( int $post_id, string $meta_key, $meta_value ): bool {
 		'meta_key'   => $meta_key,
 		'meta_value' => $meta_value,
 	);
+
+	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = $meta_value;
 	return true;
+}
+
+/**
+ * @param mixed $meta_value
+ */
+function tests_wp_set_post_meta( int $post_id, string $meta_key, $meta_value ): void {
+	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = $meta_value;
+}
+
+/**
+ * @return mixed
+ */
+function get_post_meta( int $post_id, string $meta_key = '', bool $single = false ) {
+	return $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] ?? '';
+}
+
+function delete_post_meta( int $post_id, string $meta_key ): bool {
+	unset( $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] );
+	return true;
+}
+
+function wp_rand( int $min = 0, int $max = 0 ): int {
+	return $min;
 }
 
 function tests_wp_set_is_block_theme( bool $is_block_theme ): void {
