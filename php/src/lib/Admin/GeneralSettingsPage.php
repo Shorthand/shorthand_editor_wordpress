@@ -52,7 +52,7 @@ class GeneralSettingsPage extends SettingsPage {
 		if ( $this->options->is_verified() ) {
 			add_settings_field(
 				'shorthand_v2_token_org',
-				esc_html__( 'Workspace', 'the-shorthand-editor' ),
+				esc_html__( 'Shorthand Workspace', 'the-shorthand-editor' ),
 				array( $this, 'render_partial' ),
 				$this->settings_page_slug,
 				'shorthand_workspace_section',
@@ -69,7 +69,7 @@ class GeneralSettingsPage extends SettingsPage {
 			if ( $this->options->get_token_type() != 'Organisation' ) {
 				add_settings_field(
 					'shorthand_v2_token_team',
-					esc_html__( 'Site Name', 'the-shorthand-editor' ),
+					esc_html__( 'Site name on Shorthand', 'the-shorthand-editor' ),
 					array( $this, 'render_partial' ),
 					$this->settings_page_slug,
 					'shorthand_workspace_section',

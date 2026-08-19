@@ -353,7 +353,7 @@ In general, we recommend the following:
 If you are experiencing issues when navigating between Shorthand and WordPress, try
 
 - ensuring that your WordPress site is configured to use HTTPS; and
-- following the process to [reconnect to your existing Shorthand site](#connect-to-shorthand).
+- following the process to [reconnect your site to Shorthand](#connect-to-shorthand).
 
 If you are experiencing publishing issues, ensure that your Shorthand workspace has been
 activated, and has sufficient story credit.
