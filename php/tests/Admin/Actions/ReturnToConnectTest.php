@@ -110,7 +110,8 @@ final class ReturnToConnectTest extends WordPressTestCase {
 					function ( ConnectionFailure $failure ) {
 						$diagnostics = $failure->get_diagnostics();
 						return 'connect.unexpected-error' === $failure->get_slug()
-							&& Exception::class === $diagnostics['exception'];
+							&& Exception::class === $diagnostics['exception']
+							&& ! isset( $diagnostics['message'] );
 					}
 				)
 			);

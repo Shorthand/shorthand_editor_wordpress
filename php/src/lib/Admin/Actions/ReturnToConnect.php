@@ -109,12 +109,10 @@ class ReturnToConnect {
 		try {
 			$redirect_url = $this->connection_completion_service->complete( $token, $post_id );
 		} catch ( \Throwable $unexpected ) {
+			// Class only: exception messages can echo secrets (option values, SQL).
 			$this->connection_error_page->render(
 				ConnectionFailure::unexpected_error()->with_diagnostics(
-					array(
-						'exception' => get_class( $unexpected ),
-						'message'   => $unexpected->getMessage(),
-					)
+					array( 'exception' => get_class( $unexpected ) )
 				)
 			);
 			return;
