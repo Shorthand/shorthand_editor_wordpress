@@ -67,6 +67,17 @@ final class ConnectionErrorPageTest extends WordPressTestCase {
 		$this->assertSame( array( 200 ), \tests_wp_status_headers() );
 	}
 
+	public function test_a_diagnostic_value_cannot_break_out_of_the_script_block(): void {
+		$failure = ConnectionFailure::server_error()->with_diagnostics(
+			array( 'server' => '</script><script>alert(1)</script>' )
+		);
+
+		$html = ( new ConnectionErrorPage() )->build_html( $failure );
+
+		$this->assertStringNotContainsString( '</script><script>alert(1)', $html );
+		$this->assertStringContainsString( '\u003C/script\u003E\u003Cscript\u003Ealert(1)', $html );
+	}
+
 	public function test_the_page_never_contains_a_token_like_diagnostic(): void {
 		$failure = ConnectionFailure::rejected_by_api()->with_diagnostics(
 			array( 'request_url' => 'https://api.shorthand.com/v2/connect?type=wordpress' )

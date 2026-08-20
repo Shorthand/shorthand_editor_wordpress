@@ -531,9 +531,10 @@ function wp_add_inline_style( string $handle, string $data ): bool {
 
 /**
  * @param mixed $value
+ * @param int   $flags json_encode flags, honoured as in core.
  */
-function wp_json_encode( $value ): string {
-	return (string) json_encode( $value );
+function wp_json_encode( $value, $flags = 0 ): string {
+	return (string) json_encode( $value, $flags );
 }
 
 function sanitize_text_field( string $value ): string {
