@@ -10,6 +10,7 @@ use Shorthand\Core\Version;
 use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
+use Shorthand\Services\ConnectionFailureClassifier;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
@@ -20,6 +21,7 @@ use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\TokenManager;
 use Shorthand\Services\WordPressContextProvider;
 use Shorthand\Admin\AdminController;
+use Shorthand\Admin\ConnectionErrorPage;
 use Shorthand\Services\Cron;
 
 class Dependencies {
@@ -121,7 +123,7 @@ class Dependencies {
 	}
 
 	protected function create_shorthand( Options $options, Version $version, ShorthandApiClient $api_client, WordPressContextProvider $context_provider ): Shorthand {
-		return new Shorthand( $options, $version, $api_client, $context_provider );
+		return new Shorthand( $options, $version, $api_client, $context_provider, new ConnectionErrorPage(), new ConnectionFailureClassifier() );
 	}
 
 	protected function create_token_manager( Options $options, Shorthand $shorthand, AuthStateManager $auth_state_manager ): TokenManager {

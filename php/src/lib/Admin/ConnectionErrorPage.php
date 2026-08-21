@@ -66,7 +66,7 @@ class ConnectionErrorPage {
 		}
 
 		return '<!DOCTYPE html>' .
-			'<html lang="' . esc_attr( function_exists( 'get_bloginfo' ) ? get_bloginfo( 'language' ) : 'en' ) . '">' .
+			'<html lang="' . esc_attr( get_bloginfo( 'language' ) ) . '">' .
 			'<head>' .
 			'<meta charset="utf-8" />' .
 			'<meta name="viewport" content="width=device-width, initial-scale=1.0" />' .

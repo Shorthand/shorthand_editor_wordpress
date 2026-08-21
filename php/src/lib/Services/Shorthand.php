@@ -48,15 +48,15 @@ class Shorthand {
 		Version $version,
 		ShorthandApiClient $api_client,
 		WordPressContextProvider $context_provider,
-		?ConnectionErrorPage $connection_error_page = null,
-		?ConnectionFailureClassifier $failure_classifier = null
+		ConnectionErrorPage $connection_error_page,
+		ConnectionFailureClassifier $failure_classifier
 	) {
 		$this->options               = $options;
 		$this->version               = $version;
 		$this->api_client            = $api_client;
 		$this->context_provider      = $context_provider;
-		$this->connection_error_page = $connection_error_page ? $connection_error_page : new ConnectionErrorPage();
-		$this->failure_classifier    = $failure_classifier ? $failure_classifier : new ConnectionFailureClassifier();
+		$this->connection_error_page = $connection_error_page;
+		$this->failure_classifier    = $failure_classifier;
 	}
 
 	/**

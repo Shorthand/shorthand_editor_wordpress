@@ -44,12 +44,12 @@ class RedirectToIntegration {
 	 */
 	private $connection_error_page;
 
-	public function __construct( Shorthand $shorthand, ReturnToConnect $return_to_connect, string $failure_url, AuthStateManager $auth_state_manager, ?ConnectionErrorPage $connection_error_page = null ) {
+	public function __construct( Shorthand $shorthand, ReturnToConnect $return_to_connect, string $failure_url, AuthStateManager $auth_state_manager, ConnectionErrorPage $connection_error_page ) {
 		$this->shorthand             = $shorthand;
 		$this->return_to_connect     = $return_to_connect;
 		$this->failure_url           = $failure_url;
 		$this->auth_state_manager    = $auth_state_manager;
-		$this->connection_error_page = $connection_error_page ? $connection_error_page : new ConnectionErrorPage();
+		$this->connection_error_page = $connection_error_page;
 	}
 
 	public function define_redirect_page( Loader $loader ): void {

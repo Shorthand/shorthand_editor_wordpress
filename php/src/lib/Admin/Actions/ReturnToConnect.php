@@ -33,11 +33,11 @@ class ReturnToConnect {
 	 */
 	private $connection_error_page;
 
-	public function __construct( Shorthand $shorthand, ConnectionCompletionService $connection_completion_service, AdminGateway $admin_gateway, ?ConnectionErrorPage $connection_error_page = null ) {
+	public function __construct( Shorthand $shorthand, ConnectionCompletionService $connection_completion_service, AdminGateway $admin_gateway, ConnectionErrorPage $connection_error_page ) {
 		$this->shorthand                     = $shorthand;
 		$this->connection_completion_service = $connection_completion_service;
 		$this->admin_gateway                 = $admin_gateway;
-		$this->connection_error_page         = $connection_error_page ? $connection_error_page : new ConnectionErrorPage();
+		$this->connection_error_page         = $connection_error_page;
 	}
 
 	/**

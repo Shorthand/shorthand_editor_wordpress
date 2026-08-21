@@ -69,7 +69,7 @@ class EditWithShorthand {
 	 */
 	private $connection_error_page;
 
-	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, AuthStateManager $auth_state_manager, AdminGateway $admin_gateway, StoryEditorLinkBuilder $link_builder, ?ConnectionErrorPage $connection_error_page = null ) {
+	public function __construct( Shorthand $shorthand, Options $options, PostAPI $post_api, string $post_type, StoryReturnHandler $story_return_handler, AuthStateManager $auth_state_manager, AdminGateway $admin_gateway, StoryEditorLinkBuilder $link_builder, ConnectionErrorPage $connection_error_page ) {
 		$this->shorthand             = $shorthand;
 		$this->options               = $options;
 		$this->post_api              = $post_api;
@@ -78,7 +78,7 @@ class EditWithShorthand {
 		$this->story_return_handler  = $story_return_handler;
 		$this->auth_state_manager    = $auth_state_manager;
 		$this->admin_gateway         = $admin_gateway;
-		$this->connection_error_page = $connection_error_page ? $connection_error_page : new ConnectionErrorPage();
+		$this->connection_error_page = $connection_error_page;
 	}
 
 	public function define_redirect_and_return_pages( Loader $loader ): void {

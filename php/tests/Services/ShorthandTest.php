@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Shorthand\Tests\Services;
 
+use Shorthand\Admin\ConnectionErrorPage;
 use Shorthand\Core\Version;
+use Shorthand\Services\ConnectionFailureClassifier;
 use Shorthand\Services\Options;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\ShorthandApiClient;
@@ -36,7 +38,7 @@ final class ShorthandTest extends WordPressTestCase {
 				)
 			);
 
-		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+		$service = new Shorthand( $options, $version, $api_client, $context_provider, new ConnectionErrorPage(), new ConnectionFailureClassifier() );
 
 		$this->assertSame(
 			200,
@@ -61,7 +63,7 @@ final class ShorthandTest extends WordPressTestCase {
 			->with( 'token-123' )
 			->willReturn( array( 'team' => 'newsroom' ) );
 
-		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+		$service = new Shorthand( $options, $version, $api_client, $context_provider, new ConnectionErrorPage(), new ConnectionFailureClassifier() );
 
 		$this->assertSame(
 			array( 'team' => 'newsroom' ),
@@ -107,7 +109,7 @@ final class ShorthandTest extends WordPressTestCase {
 				)
 			);
 
-		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+		$service = new Shorthand( $options, $version, $api_client, $context_provider, new ConnectionErrorPage(), new ConnectionFailureClassifier() );
 
 		$result = $service->list_stories(
 			array(
@@ -145,7 +147,7 @@ final class ShorthandTest extends WordPressTestCase {
 				)
 			);
 
-		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+		$service = new Shorthand( $options, $version, $api_client, $context_provider, new ConnectionErrorPage(), new ConnectionFailureClassifier() );
 
 		$this->assertSame( array(), $service->list_stories() );
 	}
@@ -165,7 +167,7 @@ final class ShorthandTest extends WordPressTestCase {
 			)
 		);
 
-		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+		$service = new Shorthand( $options, $version, $api_client, $context_provider, new ConnectionErrorPage(), new ConnectionFailureClassifier() );
 
 		$result = $service->list_stories();
 
@@ -182,7 +184,7 @@ final class ShorthandTest extends WordPressTestCase {
 
 		$api_client->method( 'authed_request' )->willReturn( new \WP_Error( 'http_request_failed', 'timeout' ) );
 
-		$service = new Shorthand( $options, $version, $api_client, $context_provider );
+		$service = new Shorthand( $options, $version, $api_client, $context_provider, new ConnectionErrorPage(), new ConnectionFailureClassifier() );
 
 		$result = $service->list_stories();
 
