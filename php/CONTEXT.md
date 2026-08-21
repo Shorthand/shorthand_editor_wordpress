@@ -92,6 +92,43 @@ diff in place, only these accrue modifications:
 
 The two documents therefore set the ceiling, at 2000 republishes of one story.
 
+## FileSystem service
+
+Every file system call in the publish path goes through
+`Shorthand\Services\FileSystemService`. `Shorthand\Services\PostAPI` holds one,
+receives it as a constructor argument, and calls no file system function
+directly.
+
+| Class | Role |
+| --- | --- |
+| `FileSystemService` | The interface. Staging directories, directory creation, chunk joining, tree copy, file and manifest deletion |
+| `BaseFileSystem` | Everything that does not depend on the uploads host, including the copy diff |
+| `LocalFileSystem` | Uploads are a plain path. Trees can be enumerated and removed |
+| `RemoteFileSystem` | Uploads are an object store. `delete_dir()` succeeds without acting, `delete_tree()` is refused |
+| `FileSystem` | Boots `WP_Filesystem`, and picks the implementation with `create()` |
+
+`FileSystem::create()` chooses by URL scheme, never by vendor identity. See
+`docs/adr/0001-detect-remote-uploads-by-scheme.md`.
+
+The staging directory is local on every host, so `BaseFileSystem` enumerates it
+freely. Nothing enumerates the bundle directory.
+
+### Testing without VIP
+
+`Shorthand\Tests\Support\FileSystemContractTestCase` states the contract, and
+runs against both implementations:
+
+- `Shorthand\Tests\Services\LocalFileSystemTest` uses
+  `CountingLocalFileSystem`, a `LocalFileSystem` writing to a real temp tree,
+  with counters added.
+- `Shorthand\Tests\Services\RemoteFileSystemTest` uses `FakeRemoteFileSystem`,
+  a `RemoteFileSystem` whose uploads directory is an in-memory object store.
+  `make_dir()` reports success without creating anything, and every write and
+  delete is counted.
+
+The counts are the assertion that matters: a republish with no edits performs
+zero writes and zero deletes on both.
+
 ## Post meta keys
 
 | Key | Holds |

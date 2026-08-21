@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 if ( ! defined( 'ABSPATH' ) ) {
-	define( 'ABSPATH', '/var/www/html/' );
+	define( 'ABSPATH', __DIR__ . '/fixtures/wp/' );
 }
 
 if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
@@ -103,6 +103,7 @@ function tests_wp_reset_state(): void {
 			'basedir' => '/var/www/html/wp-content/uploads',
 			'baseurl' => 'https://example.test/wp-content/uploads',
 		),
+		'temp_dir'             => sys_get_temp_dir() . '/',
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -829,12 +830,149 @@ function tests_wp_registered_post_meta( string $post_type, string $meta_key ): a
 		? $GLOBALS['tests_wp_state']['registered_post_meta'][ $post_type ][ $meta_key ]
 		: array();
 }
+
+/**
+ * The subset of `WP_Filesystem_Direct` the plugin uses, acting on the real
+ * file system. Only the local temp directory and PHPUnit's own scratch space
+ * are ever passed to it under test.
+ */
+class WP_Filesystem_Base {}
+
+class Tests_WP_Filesystem extends WP_Filesystem_Base {
+
+	public function exists( string $path ): bool {
+		return file_exists( $path );
+	}
+
+	public function is_dir( string $path ): bool {
+		return is_dir( $path );
+	}
+
+	public function mkdir( string $path ): bool {
+		return is_dir( $path ) || mkdir( $path, 0777, true );
+	}
+
+	public function rmdir( string $path, bool $recursive = false ): bool {
+		if ( ! is_dir( $path ) ) {
+			return false;
+		}
+
+		if ( ! $recursive ) {
+			return rmdir( $path );
+		}
+
+		return $this->delete( $path, true );
+	}
+
+	/**
+	 * @param string|false $type
+	 */
+	public function delete( string $path, bool $recursive = false, $type = false ): bool {
+		if ( is_file( $path ) ) {
+			return unlink( $path );
+		}
+
+		if ( ! is_dir( $path ) ) {
+			return false;
+		}
+
+		if ( ! $recursive ) {
+			return rmdir( $path );
+		}
+
+		foreach ( array_diff( scandir( $path ), array( '.', '..' ) ) as $entry ) {
+			$this->delete( $path . '/' . $entry, true );
+		}
+
+		return rmdir( $path );
+	}
+
+	public function copy( string $source, string $destination, bool $overwrite = false ): bool {
+		if ( ! $overwrite && file_exists( $destination ) ) {
+			return false;
+		}
+
+		return copy( $source, $destination );
+	}
+}
+
+function WP_Filesystem(): bool {
+	if ( ! isset( $GLOBALS['wp_filesystem'] ) || ! is_a( $GLOBALS['wp_filesystem'], 'WP_Filesystem_Base' ) ) {
+		$GLOBALS['wp_filesystem'] = new Tests_WP_Filesystem();
+	}
+
+	return true;
+}
+
+function wp_raise_memory_limit( string $context = 'admin' ): bool {
+	return true;
+}
+
+/**
+ * @return array|false
+ */
+function request_filesystem_credentials( string $form_post ) {
+	return array();
+}
+
+function site_url( string $path = '' ): string {
+	return 'https://example.test' . $path;
+}
+
+function get_temp_dir(): string {
+	return $GLOBALS['tests_wp_state']['temp_dir'];
+}
+
+function tests_wp_set_temp_dir( string $path ): void {
+	$GLOBALS['tests_wp_state']['temp_dir'] = trailingslashit( $path );
+}
+
+function wp_mkdir_p( string $target ): bool {
+	return is_dir( $target ) || mkdir( $target, 0777, true );
+}
+
+function untrailingslashit( string $value ): string {
+	return rtrim( $value, '/\\' );
+}
+
+function wp_rand( int $min = 0, int $max = 0 ): int {
+	return random_int( $min, $max );
+}
+
+/**
+ * @return int|false
+ */
+function wp_filesize( string $path ) {
+	return file_exists( $path ) ? filesize( $path ) : 0;
+}
+
+/**
+ * @param mixed $value
+ * @return mixed
+ */
+function wp_slash( $value ) {
+	return $value;
+}
+
 require_once __DIR__ . '/../vendor/autoload.php';
 spl_autoload_register(
 	function ( string $class ): void {
 		$prefix = 'Shorthand\\';
 
 		if ( strncmp( $class, $prefix, strlen( $prefix ) ) !== 0 ) {
+			return;
+		}
+
+		$test_prefix = 'Shorthand\\Tests\\';
+
+		if ( strncmp( $class, $test_prefix, strlen( $test_prefix ) ) === 0 ) {
+			$relative_test = substr( $class, strlen( $test_prefix ) );
+			$test_file     = __DIR__ . '/' . str_replace( '\\', '/', $relative_test ) . '.php';
+
+			if ( is_readable( $test_file ) ) {
+				require_once $test_file;
+			}
+
 			return;
 		}
 

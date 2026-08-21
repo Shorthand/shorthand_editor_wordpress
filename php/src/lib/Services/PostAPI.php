@@ -44,14 +44,19 @@ class PostAPI {
 	 * @var \Shorthand\Services\AuthStateManager
 	 */
 	private $auth_state_manager;
+	/**
+	 * @var \Shorthand\Services\FileSystemService
+	 */
+	private $file_system;
 
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer ) {
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, FileSystemService $file_system ) {
 		$this->shorthand           = $shorthand;
 		$this->options             = $options;
 		$this->permissions         = $permissions;
 		$this->post_type           = $post_type;
 		$this->content_transformer = $content_transformer;
 		$this->auth_state_manager  = $auth_state_manager;
+		$this->file_system         = $file_system;
 	}
 
 	/**
@@ -229,8 +234,7 @@ class PostAPI {
 
 		$storage_path = "{$destination_path}_{$request_nonce}";
 
-		FileSystem::init();
-		wp_mkdir_p( $storage_path );
+		$this->file_system->make_dir( $storage_path );
 
 		return new StoryUpdateTask(
 			$post_id,
@@ -290,13 +294,6 @@ class PostAPI {
 		if ( ! empty( $payload->message ) ) {
 			$error->add( 'pretty', $payload->message );
 		}
-	}
-
-	private function get_temp_download_file_path( string $post_id ): string {
-		FileSystem::init();
-
-		$temp_file = wp_tempnam( "sh_download_{$post_id}", get_temp_dir() );
-		return $temp_file;
 	}
 
 	private function check_pull_story_status( StoryUpdateTask $args ): bool {
@@ -447,31 +444,31 @@ class PostAPI {
 	}
 
 	private function pull_story_cleanup( StoryUpdateTask $args ): void {
-		FileSystem::init();
-		global $wp_filesystem;
-
 		for ( $idx = 0; $idx < $args->files; $idx++ ) {
-			$file_path = $this->get_download_chunk_file_path( $idx, $args );
-			wp_delete_file( $file_path );
+			$this->file_system->delete_file( $this->get_download_chunk_file_path( $idx, $args ) );
 		}
 
-		$wp_filesystem->rmdir( $args->storage_path );
+		$this->file_system->delete_dir( $args->storage_path );
 	}
 
 	public function pull_story_completed( StoryUpdateTask $args ): ?\WP_Error {
-		FileSystem::init();
+		$staging_path  = $this->file_system->make_temp_dir( "sh_pull_{$args->request_nonce}_" );
+		$zip_file_path = "{$staging_path}/archive.zip";
 
-		$zip_file_path = $this->get_temp_download_file_path( $args->post_id );
-
+		$chunk_paths = array();
 		for ( $idx = 0; $idx < $args->files; $idx++ ) {
-			$file_path = $this->get_download_chunk_file_path( $idx, $args );
-			if ( ! FileSystem::concat_file( $file_path, $zip_file_path ) ) {
-				$error = new WP_Error( 'file', 'Failed to assemble story download.', $zip_file_path );
-				return $error;
-			}
+			$chunk_paths[] = $this->get_download_chunk_file_path( $idx, $args );
+		}
+
+		if ( ! $this->file_system->join_pieces( $chunk_paths, $zip_file_path ) ) {
+			$this->file_system->delete_temp_dir( $staging_path );
+			return new WP_Error( 'file', 'Failed to assemble story download.', $zip_file_path );
 		}
 
 		$story = $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id );
+
+		$this->file_system->delete_temp_dir( $staging_path );
+
 		if ( is_wp_error( $story ) ) {
 			return $story;
 		}
@@ -513,8 +510,6 @@ class PostAPI {
 			return $error;
 		}
 
-		wp_delete_file( $zip_file );
-
 		$head    = $story['head'];
 		$article = $story['article'];
 
@@ -552,7 +547,7 @@ class PostAPI {
 			return $err;
 		}
 
-		wp_mkdir_p( $story_path );
+		$this->file_system->make_dir( $story_path );
 
 		$head    = $zip->getFromName( 'head.html' );
 		$article = $zip->getFromName( 'article.html' );
@@ -640,17 +635,8 @@ class PostAPI {
 			return;
 		}
 
-		FileSystem::init();
-		global $wp_filesystem;
-
-		if ( $wp_filesystem->exists( $bundle_path ) ) {
-			$wp_filesystem->delete( $bundle_path, true );
-		}
-
-		$post_path = dirname( $bundle_path );
-		if ( $wp_filesystem->exists( $post_path ) && $wp_filesystem->is_dir( $post_path ) ) {
-			$wp_filesystem->delete( $post_path, true );
-		}
+		$this->file_system->delete_tree( $bundle_path );
+		$this->file_system->delete_tree( dirname( $bundle_path ) );
 	}
 
 	public function get_preview_content( $post_id ): ?StoryPreview {

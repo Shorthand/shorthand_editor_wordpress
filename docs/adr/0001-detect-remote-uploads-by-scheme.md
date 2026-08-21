@@ -1,6 +1,6 @@
 # ADR 0001: Detect remote uploads by URL scheme
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-21
 
 ## Decision
@@ -14,6 +14,9 @@ $is_remote = (bool) preg_match( '#^[a-z][a-z0-9+.\-]*://#i', $basedir );
 
 A match selects the remote `FileSystem` implementation, forces the staging
 directory on, and disables the staging checkbox in the settings page.
+
+Implemented as `Shorthand\Services\FileSystem::is_remote_uploads()`, used by
+`Shorthand\Services\FileSystem::create()`.
 
 Do not test for `VIP_GO_APP_ENVIRONMENT`, for the presence of the WP Stateless
 plugin, or for any other host or plugin identity, when deciding behaviour.

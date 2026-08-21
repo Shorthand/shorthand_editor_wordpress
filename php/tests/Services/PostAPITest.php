@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Shorthand\Tests\Services;
 
 use Shorthand\Services\AuthStateManager;
+use Shorthand\Services\FileSystemService;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
@@ -14,14 +15,15 @@ use Shorthand\Tests\WordPressTestCase;
 
 final class PostAPITest extends WordPressTestCase {
 
-	private function make_post_api( Shorthand $shorthand ): PostAPI {
+	private function make_post_api( Shorthand $shorthand, ?FileSystemService $file_system = null ): PostAPI {
 		return new PostAPI(
 			$shorthand,
 			$this->createMock( Options::class ),
 			$this->createMock( Permissions::class ),
 			'tse_story',
 			$this->createMock( AuthStateManager::class ),
-			$this->createMock( StoryContentTransformer::class )
+			$this->createMock( StoryContentTransformer::class ),
+			$file_system ?? $this->createMock( FileSystemService::class )
 		);
 	}
 
@@ -128,15 +130,12 @@ final class PostAPITest extends WordPressTestCase {
 	 * @dataProvider path_shaped_story_ids
 	 */
 	public function test_delete_story_bundle_does_nothing_for_a_story_id_that_is_not_a_path_segment( string $story_id ): void {
-		$this->assertFalse(
-			function_exists( 'wp_raise_memory_limit' ),
-			'FileSystem::init() is unavailable under test, so reaching it would raise an Error.'
-		);
+		$file_system = $this->createMock( FileSystemService::class );
+		$file_system->expects( $this->never() )->method( 'delete_tree' );
+		$file_system->expects( $this->never() )->method( 'delete_dir' );
 
-		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ), $file_system );
 		$post_api->delete_story_bundle( 7, $story_id );
-
-		$this->assertSame( array(), tests_wp_deleted_files() );
 	}
 
 	public function test_connect_story_respects_an_explicit_post_status(): void {
