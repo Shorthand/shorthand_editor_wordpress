@@ -20,6 +20,22 @@ final class OptionsTest extends WordPressTestCase {
 		$this->assertSame( 'story', \get_option( 'shorthand_permalink' ) );
 	}
 
+	public function test_legacy_synchronous_publish_option_is_dropped(): void {
+		\tests_wp_set_option( 'shorthand_disable_cron', true );
+
+		$options = new Options( new Version() );
+		$options->remove_legacy_options();
+
+		$this->assertFalse( \get_option( 'shorthand_disable_cron', false ) );
+	}
+
+	public function test_legacy_option_cleanup_is_a_no_op_on_a_clean_install(): void {
+		$options = new Options( new Version() );
+		$options->remove_legacy_options();
+
+		$this->assertFalse( \get_option( 'shorthand_disable_cron', false ) );
+	}
+
 	public function test_permalink_changes_schedule_a_rewrite_flush(): void {
 		$options = new Options( new Version() );
 

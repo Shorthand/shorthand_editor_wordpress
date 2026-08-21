@@ -71,18 +71,6 @@ class Options {
 			)
 		);
 
-		register_setting(
-			'theshed-general-options-group',
-			'shorthand_disable_cron',
-			array(
-				'type'              => 'string',
-				'sanitize_callback' => function ( $value ) {
-					return (bool) $value;
-				},
-				'default'           => false,
-			)
-		);
-
 		/* Internal settings, used to persist token information and auth state */
 		register_setting(
 			'theshed-internal-options-group',
@@ -351,10 +339,6 @@ class Options {
 		);
 	}
 
-	public function is_publishing_async(): bool {
-		return ! (bool) get_option( 'shorthand_disable_cron' );
-	}
-
 	/**
 	 * On plugin activation, copy over any config from the old plugin, unless newer values exist.
 	 */
@@ -379,5 +363,19 @@ class Options {
 
 		/* Clean up legacy notice dismissal meta from earlier plugin versions. */
 		delete_metadata( 'user', 0, 'shorthand_connect_notice_dismissed', '', true );
+	}
+
+	/**
+	 * Drops options left behind by earlier plugin versions.
+	 *
+	 * Runs on every request, because upgrading a plugin does not re-run its
+	 * activation hook. Each option named here is autoloaded, so the check is
+	 * free once the option has been dropped.
+	 */
+	public function remove_legacy_options(): void {
+		/* Publishing is always asynchronous; the synchronous debug override is gone. */
+		if ( false !== get_option( 'shorthand_disable_cron', false ) ) {
+			delete_option( 'shorthand_disable_cron' );
+		}
 	}
 }
