@@ -126,6 +126,24 @@ diff in place, only these accrue modifications:
 
 The two documents therefore set the ceiling, at 2000 republishes of one story.
 
+Measured on the unit suite, a republish of an unedited story performs zero
+writes, and a republish that changes one document performs one. See
+`Shorthand\Tests\Services\PostAPIUnpackTest`.
+
+### Reporting a refused write
+
+`Shorthand\Services\RemoteFileSystem::write_file()` turns a refusal into a
+`WP_Error` carrying a `pretty` message for the author, which
+`PostAPI::set_story_update_error()` stores in `story_update_error` like any
+other publish failure.
+
+The status code does not reach the plugin. The uploads host's API client has no
+branch for HTTP 405: it returns a generic failure with the status embedded in
+the message as `(response code: 405)`, and the stream wrapper raises that
+message as a PHP warning. `RemoteFileSystem::is_write_cap_refusal()` reads it
+from `error_get_last()`, and is the only place in this codebase that depends on
+that text. When the match fails, the plain write failure surfaces unchanged.
+
 ## FileSystem service
 
 Every file system call in the publish path goes through

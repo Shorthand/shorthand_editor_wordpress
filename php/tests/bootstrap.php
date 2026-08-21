@@ -124,6 +124,7 @@ function tests_wp_reset_state(): void {
 			'baseurl' => 'https://example.test/wp-content/uploads',
 		),
 		'temp_dir'             => sys_get_temp_dir() . '/',
+		'copy_warning'         => null,
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -936,12 +937,34 @@ class Tests_WP_Filesystem extends WP_Filesystem_Base {
 	}
 
 	public function copy( string $source, string $destination, bool $overwrite = false ): bool {
+		$warning = $GLOBALS['tests_wp_state']['copy_warning'];
+
+		if ( null !== $warning ) {
+			/*
+			 * The VIP stream wrapper reports a refused write as a PHP warning
+			 * and returns false. Suppressed here so that PHPUnit does not
+			 * convert it: the code under test reads `error_get_last()`, which
+			 * is populated either way.
+			 */
+			@trigger_error( $warning, E_USER_WARNING ); // phpcs:ignore
+			return false;
+		}
+
 		if ( ! $overwrite && file_exists( $destination ) ) {
 			return false;
 		}
 
 		return copy( $source, $destination );
 	}
+}
+
+/**
+ * Makes the next `WP_Filesystem::copy()` fail, reporting `$warning`.
+ *
+ * @param string|null $warning Warning text, or null to copy normally again.
+ */
+function tests_wp_set_copy_warning( ?string $warning ): void {
+	$GLOBALS['tests_wp_state']['copy_warning'] = $warning;
 }
 
 function WP_Filesystem(): bool {
