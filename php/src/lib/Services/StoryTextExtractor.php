@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 use DOMDocument;
 use DOMXPath;
 
+// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- The DOM API names its properties in camelCase.
+
 /**
  * Derives plain text from a story bundle's `article.html`.
  *
@@ -27,25 +29,74 @@ class StoryTextExtractor {
 		'Theme-Footer',
 		'Theme-SocialIcons',
 		'Theme-Logos',
-		'Theme-skip-content-link',
+		'skip-link',
+	);
+
+	/**
+	 * Elements holding the narrow-screen copy of text that also exists wide.
+	 *
+	 * Themes emit a caption once per screen width and show one of the two.
+	 * Dropping the narrow copy leaves the text present exactly once.
+	 */
+	private const NARROW_COPIES = array(
+		'Responsive--hide-landscape',
+		'Display--md-none',
 	);
 
 	/**
 	 * Elements carrying text that never belongs in either column.
 	 *
-	 * `wp_strip_all_tags()` drops script and style itself, but only when the
-	 * tags are balanced, and it keeps noscript text. Removing the nodes here
-	 * is exact, because the parser has already resolved the boundaries.
+	 * A `nav` holds the section list. A `video` or `audio` holds only the
+	 * message shown to a browser that cannot play it.
 	 */
-	private const DISCARDED_TAGS = array( 'script', 'style', 'noscript', 'title' );
+	private const DISCARDED_TAGS = array(
+		'script',
+		'style',
+		'noscript',
+		'title',
+		'nav',
+		'video',
+		'audio',
+	);
 
 	/**
 	 * Tags that imply a word boundary.
 	 *
-	 * `strip_tags()` inserts no separator, so `<li>One</li><li>Two</li>`
-	 * collapses to `OneTwo` without this.
+	 * The document model has no notion of block and inline, so the text either
+	 * side of a `</li>` runs together unless a separator is placed here.
 	 */
-	private const BLOCK_TAGS = '@</?(?:p|div|section|article|header|footer|aside|nav|main|h[1-6]|li|ul|ol|dl|dt|dd|table|tr|td|th|figure|figcaption|blockquote|pre|hr|br)\b[^>]*>@i';
+	private const BLOCK_TAGS = array(
+		'p',
+		'div',
+		'section',
+		'article',
+		'header',
+		'footer',
+		'aside',
+		'main',
+		'h1',
+		'h2',
+		'h3',
+		'h4',
+		'h5',
+		'h6',
+		'li',
+		'ul',
+		'ol',
+		'dl',
+		'dt',
+		'dd',
+		'table',
+		'tr',
+		'td',
+		'th',
+		'figure',
+		'figcaption',
+		'blockquote',
+		'pre',
+		'hr',
+		'br',
+	);
 
 	/**
 	 * Splits a story body into the text for each column.
@@ -78,20 +129,32 @@ class StoryTextExtractor {
 			$this->discard( $xpath, '//' . $tag );
 		}
 
-		foreach ( self::CHROME_CLASSES as $class_name ) {
+		foreach ( array_merge( self::CHROME_CLASSES, self::NARROW_COPIES ) as $class_name ) {
 			$this->discard( $xpath, '//*[' . $this->has_class( $class_name ) . ']' );
 		}
 
 		$this->discard( $xpath, '//h1[' . $this->has_class( 'Theme-StoryTitle' ) . ']' );
 
-		$content = $this->to_text( (string) $document->saveHTML() );
+		$this->space_blocks( $document, $xpath );
+
+		$content = $this->to_text( $document->textContent );
+		$prose   = $this->to_text( $this->prose_text( $xpath ) );
+
+		if ( null === $content || null === $prose ) {
+			return $empty;
+		}
 
 		return array(
 			'content' => $content,
-			'prose'   => $this->to_text( $this->prose_html( $document, $xpath ) ),
+			'prose'   => $prose,
 		);
 	}
 
+	/**
+	 * Loads the body, or null when libxml cannot make a document of it.
+	 *
+	 * @param string $article The story bundle's `article.html`.
+	 */
 	private function parse( string $article ): ?DOMDocument {
 		$document = new DOMDocument();
 		$previous = libxml_use_internal_errors( true );
@@ -112,28 +175,60 @@ class StoryTextExtractor {
 	}
 
 	/**
-	 * Concatenates the body-text containers, skipping the title section.
+	 * Joins the body-text containers, skipping the title section.
 	 *
-	 * @param DOMDocument $document The parsed story.
-	 * @param DOMXPath    $xpath    A query object over that story.
+	 * A nested container is skipped too, so its text is not counted twice.
+	 *
+	 * @param DOMXPath $xpath A query object over the cleaned story.
 	 */
-	private function prose_html( DOMDocument $document, DOMXPath $xpath ): string {
-		$query = '//*[' . $this->has_class( 'Theme-Layer-BodyText' ) . ']'
-			. '[not(ancestor::*[' . $this->has_class( 'Theme-TitleSection' ) . '])]';
+	private function prose_text( DOMXPath $xpath ): string {
+		$body_text = $this->has_class( 'Theme-Layer-BodyText' );
+
+		$query = '//*[' . $body_text . ']'
+			. '[not(ancestor::*[' . $this->has_class( 'Theme-TitleSection' ) . '])]'
+			. '[not(ancestor::*[' . $body_text . '])]';
 
 		$nodes = $xpath->query( $query );
 		if ( false === $nodes ) {
 			return '';
 		}
 
-		$html = '';
+		$text = '';
 		foreach ( $nodes as $node ) {
-			$html .= (string) $document->saveHTML( $node ) . ' ';
+			$text .= $node->textContent . ' ';
 		}
 
-		return $html;
+		return $text;
 	}
 
+	/**
+	 * Puts a space either side of every block element.
+	 *
+	 * @param DOMDocument $document The parsed story.
+	 * @param DOMXPath    $xpath    A query object over that story.
+	 */
+	private function space_blocks( DOMDocument $document, DOMXPath $xpath ): void {
+		$nodes = $xpath->query( '//' . implode( '|//', self::BLOCK_TAGS ) );
+		if ( false === $nodes ) {
+			return;
+		}
+
+		foreach ( iterator_to_array( $nodes ) as $node ) {
+			$parent = $node->parentNode;
+
+			if ( null !== $parent ) {
+				$parent->insertBefore( $document->createTextNode( ' ' ), $node );
+				$parent->insertBefore( $document->createTextNode( ' ' ), $node->nextSibling );
+			}
+		}
+	}
+
+	/**
+	 * Detaches every node the query matches.
+	 *
+	 * @param DOMXPath $xpath A query object over the story.
+	 * @param string   $query An XPath expression.
+	 */
 	private function discard( DOMXPath $xpath, string $query ): void {
 		$nodes = $xpath->query( $query );
 		if ( false === $nodes ) {
@@ -142,7 +237,6 @@ class StoryTextExtractor {
 
 		// The node list is live: detaching during iteration would skip nodes.
 		foreach ( iterator_to_array( $nodes ) as $node ) {
-			// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API property.
 			$parent = $node->parentNode;
 
 			if ( null !== $parent ) {
@@ -164,21 +258,20 @@ class StoryTextExtractor {
 		);
 	}
 
-	private function to_text( string $html ): string {
-		if ( '' === trim( $html ) ) {
-			return '';
-		}
-
-		$spaced = preg_replace( self::BLOCK_TAGS, '$0 ', $html );
-
-		$text = wp_strip_all_tags( is_string( $spaced ) ? $spaced : $html, true );
-		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-
-		// A decoded &nbsp; is not whitespace to preg_replace().
+	/**
+	 * Collapses extracted text to single-spaced words.
+	 *
+	 * Returns null rather than the uncollapsed text if PCRE ever fails, since
+	 * text still holding newlines would index but never match a phrase search.
+	 *
+	 * @param string $text Text taken from the document.
+	 */
+	private function to_text( string $text ): ?string {
+		// A non-breaking space is not whitespace to preg_replace().
 		$text = str_replace( "\xC2\xA0", ' ', $text );
 
 		$collapsed = preg_replace( '/\s+/u', ' ', $text );
 
-		return trim( is_string( $collapsed ) ? $collapsed : $text );
+		return is_string( $collapsed ) ? trim( $collapsed ) : null;
 	}
 }

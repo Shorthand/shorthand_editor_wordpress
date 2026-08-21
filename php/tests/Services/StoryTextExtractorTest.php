@@ -10,7 +10,8 @@ use Shorthand\Tests\WordPressTestCase;
 final class StoryTextExtractorTest extends WordPressTestCase {
 
 	private const STORY = '<div class="Theme-Story">
-		<a class="Theme-skip-content-link" href="#main">Skip to main content</a>
+		<a class="skip-link" href="#main">Skip to main content</a>
+		<nav class="Navigation Theme-NavigationBar"><ul><li><a href="#s1">Jump to chapter one</a></li></ul></nav>
 		<div class="Theme-SocialIcons"><a href="#">Share on X</a></div>
 		<section class="Theme-Section Theme-TitleSection Theme-Section-Position-1">
 			<h1 class="Theme-StoryTitle Theme-TextSize-small">The Long Road</h1>
@@ -21,6 +22,11 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 			<div class="Theme-Layer-BodyText">
 				<div class="Theme-Layer-BodyText--inner">
 					<p>First paragraph of the story.</p>
+					<video><p>Your browser does not support this video</p></video>
+					<div class="Responsive--hide-portrait"><p>A caption</p></div>
+					<div class="Responsive--hide-landscape"><p>A caption</p></div>
+					<div class="Display--none Display--md-block"><p>A note</p></div>
+					<div class="Display--md-none"><p>A note</p></div>
 					<ul><li>Alpha</li><li>Beta</li></ul>
 				</div>
 			</div>
@@ -58,13 +64,13 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 	public function test_prose_excludes_the_title_section(): void {
 		$text = $this->extract( self::STORY );
 
-		$this->assertSame( 'First paragraph of the story. Alpha Beta', $text['prose'] );
+		$this->assertSame( 'First paragraph of the story. A caption A note Alpha Beta', $text['prose'] );
 	}
 
 	public function test_chrome_is_dropped_from_both(): void {
 		$text = $this->extract( self::STORY );
 
-		foreach ( array( 'Skip to main content', 'Share on X', 'Built with Shorthand' ) as $chrome ) {
+		foreach ( array( 'Skip to main content', 'Jump to chapter one', 'Share on X', 'Built with Shorthand' ) as $chrome ) {
 			$this->assertStringNotContainsString( $chrome, $text['content'] );
 			$this->assertStringNotContainsString( $chrome, $text['prose'] );
 		}
@@ -74,6 +80,35 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 		$text = $this->extract( '<ul><li><a>Title</a></li><li><a>Text Light</a></li></ul>' );
 
 		$this->assertSame( 'Title Text Light', $text['content'] );
+	}
+
+	public function test_video_fallback_text_is_dropped(): void {
+		$text = $this->extract( self::STORY );
+
+		$this->assertStringNotContainsString( 'does not support this video', $text['content'] );
+	}
+
+	public function test_text_repeated_for_each_screen_width_appears_once(): void {
+		$text = $this->extract( self::STORY );
+
+		$this->assertSame( 1, substr_count( $text['content'], 'A caption' ) );
+		$this->assertSame( 1, substr_count( $text['content'], 'A note' ) );
+	}
+
+	public function test_inline_elements_stay_part_of_their_sentence(): void {
+		$text = $this->extract( '<div class="Theme-Layer-BodyText"><p>Hello <em>world</em>, and <strong>welcome</strong>!</p></div>' );
+
+		$this->assertSame( 'Hello world, and welcome!', $text['prose'] );
+	}
+
+	public function test_a_nested_body_text_container_is_not_counted_twice(): void {
+		$article = '<div class="Theme-Layer-BodyText">'
+			. '<div class="Theme-Layer-BodyText"><p>Only once.</p></div>'
+			. '</div>';
+
+		$text = $this->extract( $article );
+
+		$this->assertSame( 'Only once.', $text['prose'] );
 	}
 
 	public function test_script_style_and_noscript_text_is_dropped(): void {
