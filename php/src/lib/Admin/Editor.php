@@ -121,6 +121,15 @@ class Editor {
 			return $data;
 		}
 
+		/*
+		 * A story writing its own text back is not an editor publishing it.
+		 * Without this the write would queue another pull, and each pull would
+		 * queue the next.
+		 */
+		if ( $this->post_api->is_storing_text() ) {
+			return $data;
+		}
+
 		$post_id = $postarr['ID'];
 
 		$old_title = get_post_field( 'post_title', $postarr['ID'], 'raw' );
@@ -166,6 +175,10 @@ class Editor {
 	}
 
 	public function save_shorthand_story( $post_id, $post ) {
+		if ( $this->post_api->is_storing_text() ) {
+			return;
+		}
+
 		if ( 'publish' !== $post->post_status && 'future' !== $post->post_status ) {
 			$this->post_api->set_post_story_version( $post_id, null );
 			return;

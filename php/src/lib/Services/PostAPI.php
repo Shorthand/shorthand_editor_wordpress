@@ -44,14 +44,38 @@ class PostAPI {
 	 * @var \Shorthand\Services\AuthStateManager
 	 */
 	private $auth_state_manager;
+	/**
+	 * Derives the plain text stored on the post.
+	 *
+	 * @var \Shorthand\Services\StoryTextExtractor
+	 */
+	private $text_extractor;
+	/**
+	 * Guards the plugin's own write against the publish hooks it fires.
+	 *
+	 * @var bool
+	 */
+	private $storing_text = false;
 
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer ) {
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, StoryTextExtractor $text_extractor ) {
 		$this->shorthand           = $shorthand;
 		$this->options             = $options;
 		$this->permissions         = $permissions;
 		$this->post_type           = $post_type;
 		$this->content_transformer = $content_transformer;
 		$this->auth_state_manager  = $auth_state_manager;
+		$this->text_extractor      = $text_extractor;
+	}
+
+	/**
+	 * Whether a story's own text is being written back to its post right now.
+	 *
+	 * `store_story_text()` calls `wp_update_post()`, which fires the same save
+	 * hooks that publishing runs on. Editor checks this before acting on them,
+	 * so the write does not schedule a second publish.
+	 */
+	public function is_storing_text(): bool {
+		return $this->storing_text;
 	}
 
 	/**
@@ -602,7 +626,105 @@ class PostAPI {
 		update_post_meta( $post_id, 'story_head', wp_slash( $head ) );
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
 
+		$this->store_story_text( $post_id, $article );
+
 		return null;
+	}
+
+	/**
+	 * Mirrors the story's text into `post_content` and `post_excerpt`.
+	 *
+	 * Neither column is rendered — `single-tse-story.php` builds the page from
+	 * `story_body` — but core search reads no other columns, so this is what
+	 * makes story prose findable and gives listing views something to show.
+	 *
+	 * @param int    $post_id Post being published.
+	 * @param string $article The story bundle's `article.html`.
+	 */
+	private function store_story_text( int $post_id, string $article ): void {
+		$text = $this->text_extractor->extract( $article );
+
+		$update = array( 'ID' => $post_id );
+
+		/**
+		 * Filters the plain text stored as a story's `post_content`.
+		 *
+		 * @param string $content Text extracted from the story body.
+		 * @param int    $post_id Post being published.
+		 */
+		$content = (string) apply_filters( 'theshed_story_content', $text['content'], $post_id );
+		if ( '' !== $content ) {
+			$update['post_content'] = wp_slash( $content );
+		}
+
+		$excerpt = $this->prepare_story_excerpt( $post_id, $text['prose'] );
+		if ( null !== $excerpt ) {
+			$update['post_excerpt'] = wp_slash( $excerpt );
+		}
+
+		if ( 1 === count( $update ) ) {
+			return;
+		}
+
+		$this->storing_text = true;
+		try {
+			$result = wp_update_post( $update, true );
+		} finally {
+			$this->storing_text = false;
+		}
+
+		if ( is_wp_error( $result ) || ! isset( $update['post_excerpt'] ) ) {
+			return;
+		}
+
+		/*
+		 * Record what the column actually holds. `excerpt_save_pre` re-encodes
+		 * entities, so comparing the next publish against the value passed in
+		 * would read our own excerpt as an author's edit.
+		 */
+		update_post_meta( $post_id, 'story_excerpt', wp_slash( (string) get_post_field( 'post_excerpt', $post_id, 'raw' ) ) );
+	}
+
+	/**
+	 * Builds the excerpt, unless the post already carries one worth keeping.
+	 *
+	 * @param int    $post_id Post being published.
+	 * @param string $prose   Story body text, without the title section.
+	 * @return string|null Null when nothing should be written.
+	 */
+	private function prepare_story_excerpt( int $post_id, string $prose ): ?string {
+		if ( '' === $prose ) {
+			return null;
+		}
+
+		$current = (string) get_post_field( 'post_excerpt', $post_id, 'raw' );
+		$stored  = (string) get_post_meta( $post_id, 'story_excerpt', true );
+
+		// An excerpt the author wrote or edited is theirs; only replace ours.
+		if ( '' !== trim( $current ) && $current !== $stored ) {
+			return null;
+		}
+
+		/**
+		 * Filters the word count of a generated story excerpt.
+		 *
+		 * @param int $length  Words to keep. Defaults to the core excerpt length.
+		 * @param int $post_id Post being published.
+		 */
+		$length = (int) apply_filters( 'theshed_story_excerpt_length', 55, $post_id );
+
+		$excerpt = wp_trim_words( $prose, $length, '' );
+
+		/**
+		 * Filters the generated story excerpt before it is stored.
+		 *
+		 * @param string $excerpt Trimmed excerpt.
+		 * @param int    $post_id Post being published.
+		 * @param string $prose   Full story body text it was trimmed from.
+		 */
+		$excerpt = (string) apply_filters( 'theshed_story_excerpt', $excerpt, $post_id, $prose );
+
+		return '' === trim( $excerpt ) ? null : $excerpt;
 	}
 
 	private function unzip_story( $zip_file, $story_path ) {
