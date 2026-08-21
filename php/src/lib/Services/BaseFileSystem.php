@@ -91,7 +91,7 @@ abstract class BaseFileSystem implements FileSystemService {
 	 *
 	 * @param string     $source_dir      Staging directory to copy from.
 	 * @param string     $dest_dir        Bundle directory to copy into.
-	 * @param array      $source_manifest The tree to copy: relative path to size and CRC32.
+	 * @param array      $source_manifest The tree to copy: bundle path to size, CRC32, and the staged name to read when it differs.
 	 * @param array|null $dest_manifest   Manifest of the last successful copy, or null to copy everything.
 	 * @return array|\WP_Error The manifest of the bundle as it now stands, or an error.
 	 */
@@ -114,7 +114,9 @@ abstract class BaseFileSystem implements FileSystemService {
 				$made[ $parent_path ] = true;
 			}
 
-			$written = $this->write_file( $source_dir . '/' . $relative_path, $dest_path );
+			$source_path = $source_dir . '/' . ( isset( $entry['from'] ) ? $entry['from'] : $relative_path );
+
+			$written = $this->write_file( $source_path, $dest_path );
 			if ( is_wp_error( $written ) ) {
 				return $written;
 			}
@@ -124,7 +126,27 @@ abstract class BaseFileSystem implements FileSystemService {
 			}
 		}
 
-		return $source_manifest;
+		return $this->without_sources( $source_manifest );
+	}
+
+	/**
+	 * Drops the copy instructions, leaving a description of the bundle.
+	 *
+	 * @param array $manifest Manifest that drove the copy.
+	 * @return array<string, array{size: int, crc: int}>
+	 */
+	private function without_sources( array $manifest ): array {
+		foreach ( $manifest as $relative_path => $entry ) {
+			if ( ! isset( $entry['from'] ) ) {
+				continue;
+			}
+
+			unset( $entry['from'] );
+
+			$manifest[ $relative_path ] = $entry;
+		}
+
+		return $manifest;
 	}
 
 	/**

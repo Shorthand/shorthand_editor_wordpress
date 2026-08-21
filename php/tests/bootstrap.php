@@ -86,6 +86,7 @@ if ( ! class_exists( 'WP_Error' ) ) {
 function tests_wp_reset_state(): void {
 	$GLOBALS['tests_wp_state'] = array(
 		'options'              => array(),
+		'filter_args'          => array(),
 		'transients'           => array(),
 		'transient_ttls'       => array(),
 		'site_transients'      => array(),
@@ -794,7 +795,19 @@ function esc_attr( string $text ): string {
  * @return mixed
  */
 function apply_filters( string $hook_name, $value, ...$args ) {
+	$GLOBALS['tests_wp_state']['filter_args'][ $hook_name ][] = $args;
+
 	return $value;
+}
+
+/**
+ * Arguments passed after the filtered value, one entry per call.
+ *
+ * @param string $hook_name Filter name.
+ * @return array<int, array<int, mixed>>
+ */
+function tests_wp_get_filter_args( string $hook_name ): array {
+	return $GLOBALS['tests_wp_state']['filter_args'][ $hook_name ] ?? array();
 }
 
 function tests_wp_set_upload_dir( string $basedir, string $baseurl ): void {

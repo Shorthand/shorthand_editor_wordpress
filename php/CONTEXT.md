@@ -21,7 +21,8 @@ different meaning.
 
 - **Bundle directory** — holds the published story files. Location: uploads,
   at `shorthand/{post_id}/{story_id}/`. Lifetime: until the post is deleted.
-  One per story, overwritten in place on republish.
+  One per story, overwritten in place on republish. Media sits at the paths
+  the archive names; the two documents sit under `docs/{nonce}/`.
 
 - **Manifest** — records the name, size, and CRC32 of every file in the bundle
   directory. Stored in the `story_manifest` post meta key. One per bundle.
@@ -33,7 +34,9 @@ different meaning.
 3. On the final chunk, the chunks are concatenated into the staging directory.
 4. The archive is unpacked into the staging directory.
 5. The unpacked tree is copied into the bundle directory, skipping files whose
-   name, size, and CRC32 match the stored manifest.
+   name, size, and CRC32 match the stored manifest. `article.html` and
+   `head.html` are copied to `docs/{nonce}/`, so they land on a path no
+   previous publish used.
 6. Files present in the manifest but absent from the archive are deleted.
 7. `story_head` and `story_body` post meta are written with rewritten asset
    URLs.
@@ -73,6 +76,11 @@ it produces a message, never a behaviour.
   without extracting.
 - CRC32 with size is sufficient. This detects change between two exports of
   one story; it is not a security boundary.
+- Keyed by bundle path, not archive path. The two differ for the documents,
+  which the archive names at its root and the bundle holds under
+  `docs/{nonce}/`. `BundleManifest::relocate_documents()` re-keys them and
+  records the archive name under `from`, which `copy_tree()` reads and then
+  strips before returning. The stored manifest describes the bundle only.
 
 ## Pull tracking
 
@@ -122,12 +130,27 @@ diff in place, only these accrue modifications:
 | --- | --- |
 | `assets/*`, `static/*` | On real edits only; skipped when name, size and CRC32 match |
 | `theme-{hash}.min.css` | Never; the file name carries a hash of the file's content |
-| `article.html`, `head.html` | Every publish |
+| `docs/{nonce}/article.html`, `docs/{nonce}/head.html` | Never; the nonce is unique per publish |
 
-The two documents therefore set the ceiling, at 2000 republishes of one story.
+No bundle path therefore accrues a modification unless its content changed, and
+a changed path is written once.
 
-Measured on the unit suite, a republish of an unedited story performs zero
-writes, and a republish that changes one document performs one. See
+`{nonce}` is the pull nonce, already stored in `story_update_nonce`. It is
+always present and never repeats, unlike the content version, which is nullable
+and repeats on a forced re-sync. It is interpolated into a path, so it is
+validated with `StoryId::is_valid()`; a nonce that fails leaves the documents at
+the root of the bundle, which is where they were before they were versioned.
+
+The documents of the previous publish are removed by the manifest diff, at a
+cost of two deletes.
+
+Nothing in this plugin reads the documents back from disk — their content is
+stored in `story_head` and `story_body`. They are written because their path is
+the third argument of the `theshed_post_process_body` and
+`theshed_post_process_head` filters.
+
+Measured on the unit suite, a republish of an unedited story performs two writes
+and two deletes, both of them documents, whatever the size of the story. See
 `Shorthand\Tests\Services\PostAPIUnpackTest`.
 
 ### Reporting a refused write

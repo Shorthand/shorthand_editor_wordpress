@@ -146,6 +146,51 @@ final class BundleManifestTest extends WordPressTestCase {
 		$this->assertSame( $manifest, BundleManifest::from_meta( $manifest ) );
 	}
 
+	public function test_relocating_the_documents_moves_only_the_documents(): void {
+		$manifest = BundleManifest::relocate_documents(
+			array(
+				'article.html'           => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+				'assets/media/photo.jpg' => array(
+					'size' => 6,
+					'crc'  => 2,
+				),
+				'head.html'              => array(
+					'size' => 4,
+					'crc'  => 3,
+				),
+			),
+			'docs/pull1'
+		);
+
+		$this->assertSame(
+			array( 'assets/media/photo.jpg', 'docs/pull1/article.html', 'docs/pull1/head.html' ),
+			array_keys( $manifest )
+		);
+		$this->assertSame( 7, $manifest['docs/pull1/article.html']['size'] );
+		$this->assertSame( 'article.html', $manifest['docs/pull1/article.html']['from'] );
+		$this->assertArrayNotHasKey( 'from', $manifest['assets/media/photo.jpg'] );
+	}
+
+	/**
+	 * A story with no head material still publishes.
+	 */
+	public function test_relocating_the_documents_tolerates_an_absent_one(): void {
+		$manifest = BundleManifest::relocate_documents(
+			array(
+				'article.html' => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+			),
+			'docs/pull1'
+		);
+
+		$this->assertSame( array( 'docs/pull1/article.html' ), array_keys( $manifest ) );
+	}
+
 	/**
 	 * @param array<string, string> $entries
 	 */

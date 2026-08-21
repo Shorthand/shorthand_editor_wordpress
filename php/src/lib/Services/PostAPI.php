@@ -556,7 +556,7 @@ class PostAPI {
 			return new WP_Error( 'file', 'Failed to assemble story download.', $zip_file_path );
 		}
 
-		$story = $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id, $staging_path );
+		$story = $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id, $staging_path, $args->request_nonce );
 
 		$this->file_system->delete_temp_dir( $staging_path );
 
@@ -593,8 +593,9 @@ class PostAPI {
 	 * @param int|string $post_id      Post the story belongs to.
 	 * @param string     $story_id     Shorthand story ID.
 	 * @param string     $staging_path Staging directory for this pull.
+	 * @param string     $nonce        Request nonce of this pull, versioning the documents.
 	 */
-	public function extract_story_content( $zip_file, $post_id, $story_id, string $staging_path ): ?\WP_Error {
+	public function extract_story_content( $zip_file, $post_id, $story_id, string $staging_path, string $nonce ): ?\WP_Error {
 		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
 		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
 
@@ -604,7 +605,7 @@ class PostAPI {
 
 		$stored_manifest = $this->get_story_manifest( $post_id );
 
-		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path, $stored_manifest );
+		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path, $stored_manifest, $nonce );
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );
 			$error->merge_from( $story );
@@ -628,8 +629,8 @@ class PostAPI {
 		$head              = $transformed_story['head'];
 		$article           = $transformed_story['article'];
 
-		$article = apply_filters( 'theshed_post_process_body', $article, $bundle_path, "{$bundle_path}/article.html" );
-		$head    = apply_filters( 'theshed_post_process_head', $head, $bundle_path, "{$bundle_path}/head.html" );
+		$article = apply_filters( 'theshed_post_process_body', $article, $bundle_path, $story['article_path'] );
+		$head    = apply_filters( 'theshed_post_process_head', $head, $bundle_path, $story['head_path'] );
 
 		update_post_meta( $post_id, 'story_head', wp_slash( $head ) );
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
@@ -661,9 +662,10 @@ class PostAPI {
 	 * @param string $story_path      Bundle directory.
 	 * @param string $staging_path    Staging directory for this pull.
 	 * @param array  $stored_manifest Manifest of the last successful publish.
-	 * @return array{head: string, article: string, manifest: array}|\WP_Error
+	 * @param string $nonce           Request nonce of this pull, versioning the documents.
+	 * @return array{head: string, article: string, manifest: array, head_path: string, article_path: string}|\WP_Error
 	 */
-	private function unzip_story( $zip_file, $story_path, string $staging_path, array $stored_manifest ) {
+	private function unzip_story( $zip_file, $story_path, string $staging_path, array $stored_manifest, string $nonce ) {
 		$zip = new ZipArchive();
 		$ok  = $zip->open( $zip_file );
 		if ( $ok !== true ) {
@@ -690,12 +692,23 @@ class PostAPI {
 			return $err;
 		}
 
+		$docs_dir = $this->get_documents_dir( $nonce );
+
 		if ( $unpack_path !== $story_path ) {
+			if ( '' !== $docs_dir ) {
+				$manifest = BundleManifest::relocate_documents( $manifest, $docs_dir );
+			}
+
 			$copied = $this->file_system->copy_tree( $unpack_path, $story_path, $manifest, $stored_manifest );
 
 			if ( is_wp_error( $copied ) ) {
 				return $copied;
 			}
+
+			$manifest = $copied;
+		} else {
+			/* `extractTo()` wrote the bundle directly, so the archive layout stands. */
+			$docs_dir = '';
 		}
 
 		$stale = BundleManifest::removed( $stored_manifest, $manifest );
@@ -712,11 +725,29 @@ class PostAPI {
 			$article = '';
 		}
 
+		$docs_path = '' === $docs_dir ? $story_path : "{$story_path}/{$docs_dir}";
+
 		return array(
-			'head'     => $head,
-			'article'  => $article,
-			'manifest' => $manifest,
+			'head'         => $head,
+			'article'      => $article,
+			'manifest'     => $manifest,
+			'head_path'    => "{$docs_path}/head.html",
+			'article_path' => "{$docs_path}/article.html",
 		);
+	}
+
+	/**
+	 * Bundle-relative directory holding the documents of one publish.
+	 *
+	 * The nonce is interpolated into a path, so it is validated the same way a
+	 * story ID is. A nonce that fails leaves the documents at the root of the
+	 * bundle, which is where they were before they were versioned.
+	 *
+	 * @param string $nonce Request nonce of this pull.
+	 * @return string Directory relative to the bundle, or an empty string.
+	 */
+	private function get_documents_dir( string $nonce ): string {
+		return StoryId::is_valid( $nonce ) ? "docs/{$nonce}" : '';
 	}
 
 	/**

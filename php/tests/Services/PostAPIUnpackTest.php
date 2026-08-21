@@ -63,7 +63,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			)
 		);
 
-		$result = $this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path );
+		$result = $this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
 
 		$this->assertNull( $result );
 
@@ -71,10 +71,10 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 
 		$this->assertSame(
 			array(
-				$bundle . '/article.html'           => '<h1>Story</h1>',
-				$bundle . '/assets/media/photo.jpg' => 'binary',
-				$bundle . '/assets/theme.css'       => 'body{}',
-				$bundle . '/head.html'              => '<link rel="stylesheet" href="assets/theme.css">',
+				$bundle . '/assets/media/photo.jpg'  => 'binary',
+				$bundle . '/assets/theme.css'        => 'body{}',
+				$bundle . '/docs/pull1/article.html' => '<h1>Story</h1>',
+				$bundle . '/docs/pull1/head.html'    => '<link rel="stylesheet" href="assets/theme.css">',
 			),
 			$this->file_system->objects()
 		);
@@ -92,7 +92,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			)
 		);
 
-		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path );
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
 
 		$this->assertFileExists( $this->staging_path . '/unpacked/article.html' );
 	}
@@ -105,7 +105,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			)
 		);
 
-		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path );
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
 
 		$this->assertSame( 'head markup', get_post_meta( 7, 'story_head', true ) );
 		$this->assertSame( 'article markup', get_post_meta( 7, 'story_body', true ) );
@@ -113,21 +113,101 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 
 	/**
 	 * The whole point of the manifest: a republish costs the size of the edit.
+	 *
+	 * The two documents move to a new directory on every publish, so they are
+	 * the floor, not zero. Media is what makes a bundle large, and media that
+	 * did not change is not touched.
 	 */
-	public function test_a_republish_with_no_change_writes_nothing(): void {
+	public function test_a_republish_with_no_change_rewrites_only_the_documents(): void {
 		$entries = array(
 			'head.html'              => 'head',
 			'article.html'           => 'article',
 			'assets/media/photo.jpg' => 'binary',
 		);
 
-		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path );
+		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull1' );
 		$this->file_system->reset_counts();
 
-		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path );
+		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull2' );
 
-		$this->assertSame( 0, $this->file_system->writes() );
-		$this->assertSame( 0, $this->file_system->deletes() );
+		$this->assertSame( 2, $this->file_system->writes() );
+		$this->assertSame( 2, $this->file_system->deletes() );
+
+		$bundle = 'vip://wp-content/uploads/shorthand/7/aBc123';
+
+		$this->assertSame(
+			array(
+				$bundle . '/assets/media/photo.jpg'  => 'binary',
+				$bundle . '/docs/pull2/article.html' => 'article',
+				$bundle . '/docs/pull2/head.html'    => 'head',
+			),
+			$this->file_system->objects()
+		);
+	}
+
+	/**
+	 * A publish must not write a path it has already written with this content.
+	 */
+	public function test_the_documents_land_on_a_new_path_every_publish(): void {
+		$entries = array(
+			'head.html'    => 'head',
+			'article.html' => 'article',
+		);
+
+		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull1' );
+		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull2' );
+		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull3' );
+
+		$bundle = 'vip://wp-content/uploads/shorthand/7/aBc123';
+
+		$this->assertSame(
+			array(
+				$bundle . '/docs/pull3/article.html',
+				$bundle . '/docs/pull3/head.html',
+			),
+			array_keys( $this->file_system->objects() )
+		);
+		$this->assertSame( 6, $this->file_system->writes() );
+	}
+
+	/**
+	 * The document path is a public extension point, so it names where the
+	 * document actually is.
+	 */
+	public function test_the_post_processing_filters_receive_the_versioned_document_paths(): void {
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => 'head',
+				'article.html' => 'article',
+			)
+		);
+
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
+
+		$bundle = 'vip://wp-content/uploads/shorthand/7/aBc123';
+
+		$this->assertSame(
+			array( array( $bundle, $bundle . '/docs/pull1/article.html' ) ),
+			tests_wp_get_filter_args( 'theshed_post_process_body' )
+		);
+		$this->assertSame(
+			array( array( $bundle, $bundle . '/docs/pull1/head.html' ) ),
+			tests_wp_get_filter_args( 'theshed_post_process_head' )
+		);
+	}
+
+	/**
+	 * A nonce is interpolated into a path, so it is validated like a story ID.
+	 */
+	public function test_an_unusable_nonce_leaves_the_documents_at_the_bundle_root(): void {
+		$archive = $this->make_archive( array( 'article.html' => 'article' ) );
+
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, '../../etc' );
+
+		$this->assertSame(
+			array( 'vip://wp-content/uploads/shorthand/7/aBc123/article.html' ),
+			array_keys( $this->file_system->objects() )
+		);
 	}
 
 	public function test_a_republish_writes_only_the_files_that_changed(): void {
@@ -141,7 +221,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			),
 			7,
 			'aBc123',
-			$this->staging_path
+			$this->staging_path,
+			'pull1'
 		);
 		$this->file_system->reset_counts();
 
@@ -150,16 +231,20 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 				array(
 					'head.html'              => 'head',
 					'article.html'           => 'article, edited',
-					'assets/media/photo.jpg' => 'binary',
+					'assets/media/photo.jpg' => 'binary, edited',
 				)
 			),
 			7,
 			'aBc123',
-			$this->staging_path
+			$this->staging_path,
+			'pull2'
 		);
 
-		$this->assertSame( 1, $this->file_system->writes() );
-		$this->assertSame( 'article, edited', $this->file_system->objects()['vip://wp-content/uploads/shorthand/7/aBc123/article.html'] );
+		$objects = $this->file_system->objects();
+
+		$this->assertSame( 3, $this->file_system->writes() );
+		$this->assertSame( 'article, edited', $objects['vip://wp-content/uploads/shorthand/7/aBc123/docs/pull2/article.html'] );
+		$this->assertSame( 'binary, edited', $objects['vip://wp-content/uploads/shorthand/7/aBc123/assets/media/photo.jpg'] );
 	}
 
 	public function test_a_file_that_left_the_story_is_deleted_from_the_bundle(): void {
@@ -172,7 +257,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			),
 			7,
 			'aBc123',
-			$this->staging_path
+			$this->staging_path,
+			'pull1'
 		);
 		$this->file_system->reset_counts();
 
@@ -180,15 +266,17 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			$this->make_archive( array( 'article.html' => 'article' ) ),
 			7,
 			'aBc123',
-			$this->staging_path
+			$this->staging_path,
+			'pull2'
 		);
 
-		$this->assertSame( 1, $this->file_system->deletes() );
+		/* The departed asset, and the documents of the previous publish. */
+		$this->assertSame( 2, $this->file_system->deletes() );
 		$this->assertSame(
-			array( 'vip://wp-content/uploads/shorthand/7/aBc123/article.html' ),
+			array( 'vip://wp-content/uploads/shorthand/7/aBc123/docs/pull2/article.html' ),
 			array_keys( $this->file_system->objects() )
 		);
-		$this->assertSame( array( 'article.html' ), array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
+		$this->assertSame( array( 'docs/pull2/article.html' ), array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
 	}
 
 	/**
@@ -208,7 +296,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			),
 			7,
 			'aBc123',
-			$this->staging_path
+			$this->staging_path,
+			'pull1'
 		);
 		$this->file_system->reset_counts();
 
@@ -229,7 +318,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			$this->make_archive( array( 'article.html' => 'article' ) ),
 			7,
 			'aBc123',
-			$this->staging_path
+			$this->staging_path,
+			'pull1'
 		);
 
 		$stored = get_post_meta( 7, 'story_manifest', true );
@@ -246,7 +336,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			),
 			7,
 			'aBc123',
-			$this->staging_path
+			$this->staging_path,
+			'pull2'
 		);
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
@@ -260,7 +351,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$file_system->expects( $this->never() )->method( 'make_dir' );
 		$file_system->expects( $this->never() )->method( 'copy_tree' );
 
-		$result = $this->make_post_api( $file_system )->extract_story_content( $archive, 7, '../../etc', $this->staging_path );
+		$result = $this->make_post_api( $file_system )->extract_story_content( $archive, 7, '../../etc', $this->staging_path, 'pull1' );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertContains( 'story_id', $result->get_error_codes() );
