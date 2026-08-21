@@ -32,7 +32,7 @@ final class RemoteFileSystemTest extends FileSystemContractTestCase {
 	 */
 	public function test_delete_tree_is_refused(): void {
 		$this->stage( 'assets/media/photo.jpg', 'binary' );
-		$this->subject->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$this->copy_tree( null );
 
 		$this->assertFalse( $this->subject->delete_tree( $this->bundle_dir ) );
 		$this->assertNotSame( array(), $this->subject->objects() );
@@ -45,7 +45,7 @@ final class RemoteFileSystemTest extends FileSystemContractTestCase {
 	public function test_copy_tree_writes_files_although_no_directory_is_created(): void {
 		$this->stage( 'assets/media/photo.jpg', 'binary' );
 
-		$this->subject->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$this->copy_tree( null );
 
 		$this->assertGreaterThan( 0, $this->subject->make_dir_calls() );
 		$this->assertDirectoryDoesNotExist( $this->bundle_dir );
@@ -83,5 +83,41 @@ final class RemoteFileSystemTest extends FileSystemContractTestCase {
 
 	protected function reset_counts(): void {
 		$this->subject->reset_counts();
+	}
+
+	/**
+	 * The uploads directory cannot be listed, so nothing may try.
+	 *
+	 * `BaseFileSystem` holds the shared behaviour, so both files are read.
+	 * The recursive delete check is confined to `RemoteFileSystem`, because
+	 * `BaseFileSystem::delete_temp_dir()` targets the local temp directory,
+	 * which can be enumerated on every host.
+	 */
+	public function test_nothing_in_the_remote_path_enumerates_a_directory(): void {
+		foreach ( array( 'RemoteFileSystem', 'BaseFileSystem' ) as $class ) {
+			$this->assertDoesNotMatchRegularExpression(
+				'/\b(scandir|glob|opendir|readdir|list_files|rmdir)\s*\(/',
+				$this->source_of( $class ),
+				$class . ' enumerates or removes a directory.'
+			);
+		}
+
+		$this->assertDoesNotMatchRegularExpression(
+			'/->delete\s*\([^)]*,\s*true/',
+			$this->source_of( 'RemoteFileSystem' ),
+			'RemoteFileSystem deletes recursively.'
+		);
+	}
+
+	/**
+	 * A service class with its comments stripped.
+	 *
+	 * @param string $class Class name under `Shorthand\Services`.
+	 * @return string
+	 */
+	private function source_of( string $class ): string {
+		$source = (string) file_get_contents( __DIR__ . '/../../src/lib/Services/' . $class . '.php' );
+
+		return (string) preg_replace( '#/\*.*?\*/#s', '', $source );
 	}
 }

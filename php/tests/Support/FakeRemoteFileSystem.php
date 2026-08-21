@@ -56,6 +56,16 @@ final class FakeRemoteFileSystem extends RemoteFileSystem {
 	}
 
 	/**
+	 * Seeds the store, standing in for a write made by an earlier request.
+	 *
+	 * @param string $path     Object key.
+	 * @param string $contents Contents to store under it.
+	 */
+	public function put( string $path, string $contents ): void {
+		$this->objects[ $path ] = $contents;
+	}
+
+	/**
 	 * Object keys, and the contents stored under them.
 	 *
 	 * @return array<string, string>

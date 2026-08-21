@@ -111,6 +111,148 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( 'article markup', get_post_meta( 7, 'story_body', true ) );
 	}
 
+	/**
+	 * The whole point of the manifest: a republish costs the size of the edit.
+	 */
+	public function test_a_republish_with_no_change_writes_nothing(): void {
+		$entries = array(
+			'head.html'              => 'head',
+			'article.html'           => 'article',
+			'assets/media/photo.jpg' => 'binary',
+		);
+
+		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path );
+		$this->file_system->reset_counts();
+
+		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path );
+
+		$this->assertSame( 0, $this->file_system->writes() );
+		$this->assertSame( 0, $this->file_system->deletes() );
+	}
+
+	public function test_a_republish_writes_only_the_files_that_changed(): void {
+		$this->make_post_api()->extract_story_content(
+			$this->make_archive(
+				array(
+					'head.html'              => 'head',
+					'article.html'           => 'article',
+					'assets/media/photo.jpg' => 'binary',
+				)
+			),
+			7,
+			'aBc123',
+			$this->staging_path
+		);
+		$this->file_system->reset_counts();
+
+		$this->make_post_api()->extract_story_content(
+			$this->make_archive(
+				array(
+					'head.html'              => 'head',
+					'article.html'           => 'article, edited',
+					'assets/media/photo.jpg' => 'binary',
+				)
+			),
+			7,
+			'aBc123',
+			$this->staging_path
+		);
+
+		$this->assertSame( 1, $this->file_system->writes() );
+		$this->assertSame( 'article, edited', $this->file_system->objects()['vip://wp-content/uploads/shorthand/7/aBc123/article.html'] );
+	}
+
+	public function test_a_file_that_left_the_story_is_deleted_from_the_bundle(): void {
+		$this->make_post_api()->extract_story_content(
+			$this->make_archive(
+				array(
+					'article.html'         => 'article',
+					'assets/media/old.jpg' => 'binary',
+				)
+			),
+			7,
+			'aBc123',
+			$this->staging_path
+		);
+		$this->file_system->reset_counts();
+
+		$this->make_post_api()->extract_story_content(
+			$this->make_archive( array( 'article.html' => 'article' ) ),
+			7,
+			'aBc123',
+			$this->staging_path
+		);
+
+		$this->assertSame( 1, $this->file_system->deletes() );
+		$this->assertSame(
+			array( 'vip://wp-content/uploads/shorthand/7/aBc123/article.html' ),
+			array_keys( $this->file_system->objects() )
+		);
+		$this->assertSame( array( 'article.html' ), array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
+	}
+
+	/**
+	 * A bundle directory cannot be listed, so the manifest is the only record
+	 * of what to unlink.
+	 */
+	public function test_deleting_the_bundle_removes_every_file_the_manifest_names(): void {
+		$post_api = $this->make_post_api();
+
+		$post_api->extract_story_content(
+			$this->make_archive(
+				array(
+					'head.html'              => 'head',
+					'article.html'           => 'article',
+					'assets/media/photo.jpg' => 'binary',
+				)
+			),
+			7,
+			'aBc123',
+			$this->staging_path
+		);
+		$this->file_system->reset_counts();
+
+		$post_api->delete_story_bundle( 7, 'aBc123' );
+
+		$this->assertSame( array(), $this->file_system->objects() );
+		$this->assertSame( 3, $this->file_system->deletes() );
+		$this->assertSame( '', get_post_meta( 7, 'story_manifest', true ) );
+	}
+
+	/**
+	 * An interrupted publish must not leave a manifest claiming files were copied.
+	 */
+	public function test_a_failed_copy_leaves_the_previous_manifest_in_place(): void {
+		$post_api = $this->make_post_api();
+
+		$post_api->extract_story_content(
+			$this->make_archive( array( 'article.html' => 'article' ) ),
+			7,
+			'aBc123',
+			$this->staging_path
+		);
+
+		$stored = get_post_meta( 7, 'story_manifest', true );
+
+		$failing = $this->createMock( FileSystemService::class );
+		$failing->method( 'copy_tree' )->willReturn( new \WP_Error( 'file', 'Could not write the story file.' ) );
+
+		$result = $this->make_post_api( $failing )->extract_story_content(
+			$this->make_archive(
+				array(
+					'article.html'           => 'article, edited',
+					'assets/media/photo.jpg' => 'binary',
+				)
+			),
+			7,
+			'aBc123',
+			$this->staging_path
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $stored, get_post_meta( 7, 'story_manifest', true ) );
+	}
+
 	public function test_an_unusable_story_id_reaches_no_file_system_call(): void {
 		$archive = $this->make_archive( array( 'article.html' => 'article' ) );
 

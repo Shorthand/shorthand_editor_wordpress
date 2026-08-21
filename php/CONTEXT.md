@@ -43,6 +43,10 @@ different meaning.
 Steps 5 and 6 run through the `FileSystem` platform service, not through
 direct `ZipArchive::extractTo()` into uploads.
 
+Deleting a post runs `delete_story_bundle()`, which tries `delete_tree()` and
+falls back to `delete_manifest()` where the host refuses it. The `{post_id}`
+parent is left in place: it cannot be listed, so it cannot be known to be empty.
+
 ## Staging setting
 
 Staging is the default. The `shorthand_disable_staging` option turns it off,
@@ -69,6 +73,20 @@ it produces a message, never a behaviour.
   without extracting.
 - CRC32 with size is sufficient. This detects change between two exports of
   one story; it is not a security boundary.
+
+## Pull tracking
+
+A pull directory cannot be listed, so the `story_pulls` post meta key records
+what each pull left behind: `{path, files}` per request nonce.
+
+- `pull_story_begin()` sweeps every entry that is not its own nonce, unlinking
+  `file-0.part` … `file-{files-1}.part` by name, then records its own.
+- `pull_story_chunk()` raises the recorded count after each chunk lands.
+- `pull_story_cleanup()` unlinks the chunks and drops the entry, on both a
+  successful and a failed pull.
+
+A superseded pull returns early without cleaning up. Its entry survives until
+the next `pull_story_begin()` sweeps it.
 
 ## VIP File System constraints
 
@@ -126,8 +144,11 @@ directly.
 `FileSystem::create()` chooses by URL scheme, never by vendor identity. See
 `docs/adr/0001-detect-remote-uploads-by-scheme.md`.
 
-The staging directory is local on every host, so `BaseFileSystem` enumerates it
-freely. Nothing enumerates the bundle directory.
+Nothing enumerates any directory, on either implementation. `copy_tree()` takes
+the manifest of the incoming archive and the manifest of the last publish, and
+copies from the first, skipping every entry the second already matches.
+`Shorthand\Services\BundleManifest` builds both: `from_archive()` reads the
+archive index, `from_meta()` reads the `story_manifest` post meta key.
 
 ### Testing without VIP
 

@@ -14,6 +14,10 @@ use Shorthand\Tests\WordPressTestCase;
  * directory in every case, because it is local on every host. The bundle
  * directory is whatever the implementation under test writes to, read back
  * through `bundle_contents()`.
+ *
+ * `stage()` both writes a file and records it in the source manifest, which
+ * stands in for the archive index the caller builds with
+ * `Shorthand\Services\BundleManifest::from_archive()`.
  */
 abstract class FileSystemContractTestCase extends WordPressTestCase {
 
@@ -26,6 +30,9 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 	/** @var string */
 	protected $bundle_dir;
 
+	/** @var array<string, array{size: int, crc: int}> */
+	protected $source_manifest = array();
+
 	protected function setUp(): void {
 		parent::setUp();
 
@@ -33,8 +40,9 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		mkdir( $this->temp_root, 0777, true );
 		tests_wp_set_temp_dir( $this->temp_root );
 
-		$this->staging_dir = $this->temp_root . '/staging';
-		$this->bundle_dir  = $this->temp_root . '/bundle';
+		$this->staging_dir     = $this->temp_root . '/staging';
+		$this->bundle_dir      = $this->temp_root . '/bundle';
+		$this->source_manifest = array();
 		mkdir( $this->staging_dir, 0777, true );
 	}
 
@@ -66,7 +74,7 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		$this->stage( 'article.html', 'first' );
 		$this->stage( 'assets/media/photo.jpg', 'binary' );
 
-		$manifest = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$manifest = $this->copy_tree( null );
 
 		$this->assertIsArray( $manifest );
 		$this->assertSame( array( 'article.html', 'assets/media/photo.jpg' ), array_keys( $manifest ) );
@@ -80,20 +88,6 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		$this->assertSame( 2, $this->writes() );
 	}
 
-	public function test_copy_tree_records_the_size_and_crc_of_every_staged_file(): void {
-		$this->stage( 'article.html', 'first' );
-
-		$manifest = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, null );
-
-		$this->assertSame(
-			array(
-				'size' => 5,
-				'crc'  => (int) hexdec( hash( 'crc32b', 'first' ) ),
-			),
-			$manifest['article.html']
-		);
-	}
-
 	/**
 	 * A republish with no edits is the case that has to be cheap.
 	 */
@@ -101,10 +95,10 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		$this->stage( 'article.html', 'first' );
 		$this->stage( 'assets/media/photo.jpg', 'binary' );
 
-		$manifest = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$manifest = $this->copy_tree( null );
 		$this->reset_counts();
 
-		$republished = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, $manifest );
+		$republished = $this->copy_tree( $manifest );
 
 		$this->assertSame( $manifest, $republished );
 		$this->assertSame( 0, $this->writes() );
@@ -115,12 +109,12 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		$this->stage( 'article.html', 'first' );
 		$this->stage( 'assets/media/photo.jpg', 'binary' );
 
-		$manifest = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$manifest = $this->copy_tree( null );
 		$this->reset_counts();
 
 		$this->stage( 'article.html', 'second' );
 
-		$republished = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, $manifest );
+		$republished = $this->copy_tree( $manifest );
 
 		$this->assertSame( 1, $this->writes() );
 		$this->assertSame( 'second', $this->bundle_contents()['article.html'] );
@@ -134,26 +128,40 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 	public function test_copy_tree_writes_a_file_that_changed_without_changing_size(): void {
 		$this->stage( 'article.html', 'aaaaa' );
 
-		$manifest = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$manifest = $this->copy_tree( null );
 		$this->reset_counts();
 
 		$this->stage( 'article.html', 'bbbbb' );
 
-		$this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, $manifest );
+		$this->copy_tree( $manifest );
 
 		$this->assertSame( 1, $this->writes() );
 		$this->assertSame( 'bbbbb', $this->bundle_contents()['article.html'] );
+	}
+
+	public function test_copy_tree_writes_a_file_the_stored_manifest_does_not_name(): void {
+		$this->stage( 'article.html', 'first' );
+
+		$manifest = $this->copy_tree( null );
+		$this->reset_counts();
+
+		$this->stage( 'assets/media/new.jpg', 'binary' );
+
+		$republished = $this->copy_tree( $manifest );
+
+		$this->assertSame( 1, $this->writes() );
+		$this->assertArrayHasKey( 'assets/media/new.jpg', $republished );
 	}
 
 	public function test_copy_tree_omits_a_file_that_left_the_archive_from_the_new_manifest(): void {
 		$this->stage( 'article.html', 'first' );
 		$this->stage( 'assets/old.jpg', 'gone' );
 
-		$manifest = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$manifest = $this->copy_tree( null );
 
-		unlink( $this->staging_dir . '/assets/old.jpg' );
+		$this->unstage( 'assets/old.jpg' );
 
-		$republished = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, $manifest );
+		$republished = $this->copy_tree( $manifest );
 
 		$this->assertSame( array( 'article.html' ), array_keys( $republished ) );
 		$this->assertArrayHasKey( 'assets/old.jpg', array_diff_key( $manifest, $republished ) );
@@ -163,7 +171,7 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		$this->stage( 'article.html', 'first' );
 		$this->stage( 'assets/media/photo.jpg', 'binary' );
 
-		$manifest = $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$manifest = $this->copy_tree( null );
 		$this->reset_counts();
 
 		$this->assertTrue( $this->file_system()->delete_manifest( $this->bundle_dir, $manifest ) );
@@ -208,6 +216,16 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		$this->assertSame( 'headtail', file_get_contents( $dest ) );
 	}
 
+	/**
+	 * Copies the staged files, as the publish pipeline would.
+	 *
+	 * @param array|null $dest_manifest Manifest of the last publish, if any.
+	 * @return array|\WP_Error
+	 */
+	protected function copy_tree( ?array $dest_manifest ) {
+		return $this->file_system()->copy_tree( $this->staging_dir, $this->bundle_dir, $this->source_manifest, $dest_manifest );
+	}
+
 	protected function stage( string $relative_path, string $contents ): void {
 		$path = $this->staging_dir . '/' . $relative_path;
 
@@ -216,6 +234,19 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		}
 
 		file_put_contents( $path, $contents );
+
+		$this->source_manifest[ $relative_path ] = array(
+			'size' => strlen( $contents ),
+			'crc'  => crc32( $contents ),
+		);
+
+		ksort( $this->source_manifest );
+	}
+
+	protected function unstage( string $relative_path ): void {
+		unlink( $this->staging_dir . '/' . $relative_path );
+
+		unset( $this->source_manifest[ $relative_path ] );
 	}
 
 	protected function remove_tree( string $path ): void {

@@ -35,7 +35,7 @@ final class LocalFileSystemTest extends FileSystemContractTestCase {
 	 */
 	public function test_delete_tree_removes_the_bundle_and_its_contents(): void {
 		$this->stage( 'assets/media/photo.jpg', 'binary' );
-		$this->subject->copy_tree( $this->staging_dir, $this->bundle_dir, null );
+		$this->copy_tree( null );
 
 		$this->assertTrue( $this->subject->delete_tree( $this->bundle_dir ) );
 		$this->assertDirectoryDoesNotExist( $this->bundle_dir );

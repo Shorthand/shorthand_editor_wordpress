@@ -31,6 +31,19 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		}
 
 		/**
+		 * Copies every code and message from another error.
+		 *
+		 * @param WP_Error $error Error to copy from.
+		 */
+		public function merge_from( WP_Error $error ): void {
+			foreach ( $error->errors as $code => $messages ) {
+				foreach ( $messages as $message ) {
+					$this->add( (string) $code, $message );
+				}
+			}
+		}
+
+		/**
 		 * @return string[]
 		 */
 		public function get_error_codes(): array {
@@ -330,6 +343,33 @@ function wp_remote_retrieve_response_code( array $response ): int {
  */
 function wp_remote_retrieve_body( array $response ): string {
 	return (string) ( $response['body'] ?? '' );
+}
+
+/**
+ * @param array<string, mixed> $response
+ * @return string
+ */
+function wp_remote_retrieve_header( array $response, string $name ): string {
+	foreach ( $response['headers'] ?? array() as $header => $value ) {
+		if ( strtolower( (string) $header ) === strtolower( $name ) ) {
+			return (string) $value;
+		}
+	}
+
+	return '';
+}
+
+/**
+ * @return string|false
+ */
+function get_post_status( int $post_id ) {
+	$post = get_post( $post_id );
+
+	if ( null === $post ) {
+		return false;
+	}
+
+	return $post->post_status ?? 'draft';
 }
 
 function __( string $text, string $domain = '' ): string {

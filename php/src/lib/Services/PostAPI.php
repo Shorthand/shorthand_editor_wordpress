@@ -213,6 +213,8 @@ class PostAPI {
 		/* abort any outstanding requests by updating the nonce */
 		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
 
+		$this->sweep_story_pulls( $post_id, $request_nonce );
+
 		$this->set_story_update_error( $post_id );
 		$this->set_story_update_progress( $post_id, new StorySyncProgress( 0, 'Requesting story from Shorthand' ) );
 
@@ -235,6 +237,8 @@ class PostAPI {
 		$storage_path = "{$destination_path}_{$request_nonce}";
 
 		$this->file_system->make_dir( $storage_path );
+
+		$this->record_story_pull( $post_id, $request_nonce, $storage_path, 0 );
 
 		return new StoryUpdateTask(
 			$post_id,
@@ -380,7 +384,7 @@ class PostAPI {
 	 * @return int|\WP_Error
 	 */
 	private function pull_story_chunk( StoryUpdateTask $args ) {
-		$file_path = $this->get_download_chunk_file_path( $args->files, $args );
+		$file_path = $this->get_download_chunk_file_path( $args->files, $args->storage_path );
 
 		$url      = $args->file_url;
 		$start    = $args->start;
@@ -409,6 +413,8 @@ class PostAPI {
 
 		$args->mark_chunk_downloaded();
 
+		$this->record_story_pull( $args->post_id, $args->request_nonce, $args->storage_path, $args->files );
+
 		$progress = $args->get_progress_percent( 90 );
 
 		$this->set_story_update_progress( $args->post_id, new StorySyncProgress( $progress, 'Saving story to WordPress' ) );
@@ -416,8 +422,8 @@ class PostAPI {
 		return new WP_Error( 'retry', 'Request further file data', 0 );
 	}
 
-	private function get_download_chunk_file_path( int $chunk_number, StoryUpdateTask $args ): string {
-		return "{$args->storage_path}/file-{$chunk_number}.part";
+	private function get_download_chunk_file_path( int $chunk_number, string $storage_path ): string {
+		return "{$storage_path}/file-{$chunk_number}.part";
 	}
 
 	public function pull_story_failed( StoryUpdateTask $args, WP_Error $result ): void {
@@ -444,11 +450,96 @@ class PostAPI {
 	}
 
 	private function pull_story_cleanup( StoryUpdateTask $args ): void {
-		for ( $idx = 0; $idx < $args->files; $idx++ ) {
-			$this->file_system->delete_file( $this->get_download_chunk_file_path( $idx, $args ) );
+		$this->delete_pull_chunks( $args->storage_path, $args->files );
+		$this->forget_story_pull( $args->post_id, $args->request_nonce );
+	}
+
+	/**
+	 * Removes the chunk files of one pull, and the directory holding them.
+	 *
+	 * The chunks are named, not listed: a pull directory cannot be enumerated
+	 * on a remote uploads directory.
+	 *
+	 * @param string $storage_path Pull directory.
+	 * @param int    $files        Number of chunks downloaded into it.
+	 */
+	private function delete_pull_chunks( string $storage_path, int $files ): void {
+		for ( $idx = 0; $idx < $files; $idx++ ) {
+			$this->file_system->delete_file( $this->get_download_chunk_file_path( $idx, $storage_path ) );
 		}
 
-		$this->file_system->delete_dir( $args->storage_path );
+		$this->file_system->delete_dir( $storage_path );
+	}
+
+	/**
+	 * In-flight pulls for a post, keyed by request nonce.
+	 *
+	 * @param int $post_id Post being published.
+	 * @return array<string, array{path: string, files: int}>
+	 */
+	private function get_story_pulls( int $post_id ): array {
+		$pulls = get_post_meta( $post_id, 'story_pulls', true );
+
+		return is_array( $pulls ) ? $pulls : array();
+	}
+
+	/**
+	 * Notes the pull directory of one request, and how many chunks it holds.
+	 *
+	 * A superseded pull returns without cleaning up, so the record is what
+	 * lets a later publish find its chunks.
+	 *
+	 * @param int    $post_id      Post being published.
+	 * @param string $nonce        Request nonce identifying the pull.
+	 * @param string $storage_path Pull directory.
+	 * @param int    $files        Number of chunks downloaded so far.
+	 */
+	private function record_story_pull( int $post_id, string $nonce, string $storage_path, int $files ): void {
+		$pulls = $this->get_story_pulls( $post_id );
+
+		$pulls[ $nonce ] = array(
+			'path'  => $storage_path,
+			'files' => $files,
+		);
+
+		update_post_meta( $post_id, 'story_pulls', $pulls );
+	}
+
+	/**
+	 * Drops the record of one pull.
+	 *
+	 * @param int    $post_id Post being published.
+	 * @param string $nonce   Request nonce identifying the pull.
+	 */
+	private function forget_story_pull( int $post_id, string $nonce ): void {
+		$pulls = $this->get_story_pulls( $post_id );
+
+		unset( $pulls[ $nonce ] );
+
+		if ( array() === $pulls ) {
+			delete_post_meta( $post_id, 'story_pulls' );
+			return;
+		}
+
+		update_post_meta( $post_id, 'story_pulls', $pulls );
+	}
+
+	/**
+	 * Cleans up every pull except the one starting now.
+	 *
+	 * @param int    $post_id Post being published.
+	 * @param string $nonce   Request nonce of the pull starting now.
+	 */
+	private function sweep_story_pulls( int $post_id, string $nonce ): void {
+		foreach ( $this->get_story_pulls( $post_id ) as $stale_nonce => $pull ) {
+			if ( (string) $stale_nonce === $nonce || ! isset( $pull['path'] ) ) {
+				continue;
+			}
+
+			$this->delete_pull_chunks( (string) $pull['path'], isset( $pull['files'] ) ? (int) $pull['files'] : 0 );
+		}
+
+		delete_post_meta( $post_id, 'story_pulls' );
 	}
 
 	public function pull_story_completed( StoryUpdateTask $args ): ?\WP_Error {
@@ -457,7 +548,7 @@ class PostAPI {
 
 		$chunk_paths = array();
 		for ( $idx = 0; $idx < $args->files; $idx++ ) {
-			$chunk_paths[] = $this->get_download_chunk_file_path( $idx, $args );
+			$chunk_paths[] = $this->get_download_chunk_file_path( $idx, $args->storage_path );
 		}
 
 		if ( ! $this->file_system->join_pieces( $chunk_paths, $zip_file_path ) ) {
@@ -511,7 +602,9 @@ class PostAPI {
 			return $this->get_invalid_story_id_error( (string) $story_id );
 		}
 
-		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path );
+		$stored_manifest = $this->get_story_manifest( $post_id );
+
+		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path, $stored_manifest );
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );
 			$error->merge_from( $story );
@@ -541,7 +634,20 @@ class PostAPI {
 		update_post_meta( $post_id, 'story_head', wp_slash( $head ) );
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
 
+		/* Last, so that a failure above leaves the previous manifest in place. */
+		update_post_meta( $post_id, 'story_manifest', $story['manifest'] );
+
 		return null;
+	}
+
+	/**
+	 * Manifest of the last successful publish, or an empty array.
+	 *
+	 * @param int|string $post_id Post the bundle belongs to.
+	 * @return array<string, array{size: int, crc: int}>
+	 */
+	public function get_story_manifest( $post_id ): array {
+		return BundleManifest::from_meta( get_post_meta( absint( $post_id ), 'story_manifest', true ) );
 	}
 
 	/**
@@ -551,12 +657,13 @@ class PostAPI {
 	 * then copied into the bundle directory. `ZipArchive::extractTo()` uses
 	 * native syscalls, so it can only target a local path.
 	 *
-	 * @param string $zip_file     Assembled archive.
-	 * @param string $story_path   Bundle directory.
-	 * @param string $staging_path Staging directory for this pull.
-	 * @return array{head: string, article: string}|\WP_Error
+	 * @param string $zip_file        Assembled archive.
+	 * @param string $story_path      Bundle directory.
+	 * @param string $staging_path    Staging directory for this pull.
+	 * @param array  $stored_manifest Manifest of the last successful publish.
+	 * @return array{head: string, article: string, manifest: array}|\WP_Error
 	 */
-	private function unzip_story( $zip_file, $story_path, string $staging_path ) {
+	private function unzip_story( $zip_file, $story_path, string $staging_path, array $stored_manifest ) {
 		$zip = new ZipArchive();
 		$ok  = $zip->open( $zip_file );
 		if ( $ok !== true ) {
@@ -571,8 +678,9 @@ class PostAPI {
 
 		$this->file_system->make_dir( $unpack_path );
 
-		$head    = $zip->getFromName( 'head.html' );
-		$article = $zip->getFromName( 'article.html' );
+		$head     = $zip->getFromName( 'head.html' );
+		$article  = $zip->getFromName( 'article.html' );
+		$manifest = BundleManifest::from_archive( $zip );
 
 		if ( ! $zip->extractTo( $unpack_path ) || ! $zip->close() ) {
 			$file_size = wp_filesize( $zip_file );
@@ -583,11 +691,17 @@ class PostAPI {
 		}
 
 		if ( $unpack_path !== $story_path ) {
-			$copied = $this->file_system->copy_tree( $unpack_path, $story_path, null );
+			$copied = $this->file_system->copy_tree( $unpack_path, $story_path, $manifest, $stored_manifest );
 
 			if ( is_wp_error( $copied ) ) {
 				return $copied;
 			}
+		}
+
+		$stale = BundleManifest::removed( $stored_manifest, $manifest );
+
+		if ( array() !== $stale ) {
+			$this->file_system->delete_manifest( $story_path, $stale );
 		}
 
 		if ( ! $head ) {
@@ -599,8 +713,9 @@ class PostAPI {
 		}
 
 		return array(
-			'head'    => $head,
-			'article' => $article,
+			'head'     => $head,
+			'article'  => $article,
+			'manifest' => $manifest,
 		);
 	}
 
@@ -659,14 +774,28 @@ class PostAPI {
 		return $error;
 	}
 
+	/**
+	 * Removes a published bundle.
+	 *
+	 * A host that can enumerate deletes the tree outright. One that cannot
+	 * refuses, and the manifest names what to unlink instead. The `{post_id}`
+	 * parent is left alone: it cannot be listed, so it cannot be known to be
+	 * empty.
+	 *
+	 * @param int    $post_id  Post the bundle belongs to.
+	 * @param string $story_id Shorthand story ID.
+	 */
 	public function delete_story_bundle( int $post_id, string $story_id ): void {
 		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
 		if ( null === $bundle_path ) {
 			return;
 		}
 
-		$this->file_system->delete_tree( $bundle_path );
-		$this->file_system->delete_tree( dirname( $bundle_path ) );
+		if ( ! $this->file_system->delete_tree( $bundle_path ) ) {
+			$this->file_system->delete_manifest( $bundle_path, $this->get_story_manifest( $post_id ) );
+		}
+
+		delete_post_meta( $post_id, 'story_manifest' );
 	}
 
 	public function get_preview_content( $post_id ): ?StoryPreview {

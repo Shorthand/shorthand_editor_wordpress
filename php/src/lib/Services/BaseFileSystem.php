@@ -87,31 +87,34 @@ abstract class BaseFileSystem implements FileSystemService {
 	/**
 	 * Copies a staged tree into the bundle directory, skipping unchanged files.
 	 *
-	 * @param string     $source_dir Staging directory to copy from.
-	 * @param string     $dest_dir   Bundle directory to copy into.
-	 * @param array|null $manifest   Manifest of the last successful copy, or null to copy everything.
-	 * @return array|\WP_Error Manifest of the tree as copied, or an error.
+	 * Driven from `$source_manifest`, never by enumerating either directory.
+	 *
+	 * @param string     $source_dir      Staging directory to copy from.
+	 * @param string     $dest_dir        Bundle directory to copy into.
+	 * @param array      $source_manifest The tree to copy: relative path to size and CRC32.
+	 * @param array|null $dest_manifest   Manifest of the last successful copy, or null to copy everything.
+	 * @return array|\WP_Error The manifest of the bundle as it now stands, or an error.
 	 */
-	public function copy_tree( string $source_dir, string $dest_dir, ?array $manifest ) {
-		$new_manifest = array();
+	public function copy_tree( string $source_dir, string $dest_dir, array $source_manifest, ?array $dest_manifest ) {
+		$made = array();
 
-		foreach ( $this->list_staged_files( $source_dir ) as $relative_path ) {
-			$source_path = $source_dir . '/' . $relative_path;
-			$entry       = $this->describe_file( $source_path );
-
-			$new_manifest[ $relative_path ] = $entry;
-
-			if ( $this->is_unchanged( $manifest, $relative_path, $entry ) ) {
+		foreach ( $source_manifest as $relative_path => $entry ) {
+			if ( $this->is_unchanged( $dest_manifest, $relative_path, $entry ) ) {
 				continue;
 			}
 
-			$dest_path = $dest_dir . '/' . $relative_path;
+			$dest_path   = $dest_dir . '/' . $relative_path;
+			$parent_path = dirname( $dest_path );
 
-			if ( ! $this->make_dir( dirname( $dest_path ) ) ) {
-				return new WP_Error( 'file', "Could not create the bundle directory {$dest_path}.", $dest_path );
+			if ( ! isset( $made[ $parent_path ] ) ) {
+				if ( ! $this->make_dir( $parent_path ) ) {
+					return new WP_Error( 'file', "Could not create the bundle directory {$parent_path}.", $parent_path );
+				}
+
+				$made[ $parent_path ] = true;
 			}
 
-			$written = $this->write_file( $source_path, $dest_path );
+			$written = $this->write_file( $source_dir . '/' . $relative_path, $dest_path );
 			if ( is_wp_error( $written ) ) {
 				return $written;
 			}
@@ -121,7 +124,7 @@ abstract class BaseFileSystem implements FileSystemService {
 			}
 		}
 
-		return $new_manifest;
+		return $source_manifest;
 	}
 
 	/**
@@ -169,59 +172,11 @@ abstract class BaseFileSystem implements FileSystemService {
 	}
 
 	/**
-	 * Lists a staged tree, as paths relative to `$source_dir`.
-	 *
-	 * The staging directory is local on every host, which is why this can
-	 * enumerate at all. Nothing here is ever pointed at uploads.
-	 *
-	 * @param string $source_dir Staging directory to list.
-	 * @return string[] Relative paths, sorted.
-	 */
-	protected function list_staged_files( string $source_dir ): array {
-		if ( ! is_dir( $source_dir ) ) {
-			return array();
-		}
-
-		$iterator = new \RecursiveIteratorIterator(
-			new \RecursiveDirectoryIterator( $source_dir, \FilesystemIterator::SKIP_DOTS )
-		);
-
-		$paths  = array();
-		$offset = strlen( $source_dir ) + 1;
-
-		foreach ( $iterator as $file ) {
-			if ( $file->isFile() ) {
-				$paths[] = substr( $file->getPathname(), $offset );
-			}
-		}
-
-		sort( $paths );
-
-		return $paths;
-	}
-
-	/**
-	 * Size and CRC32 of one staged file.
-	 *
-	 * CRC-32 here is the same checksum `ZipArchive::statIndex()` reports, so a
-	 * manifest built either way compares equal.
-	 *
-	 * @param string $path Staged file to describe.
-	 * @return array{size: int, crc: int} Manifest entry for the file.
-	 */
-	protected function describe_file( string $path ): array {
-		return array(
-			'size' => (int) filesize( $path ),
-			'crc'  => (int) hexdec( hash_file( 'crc32b', $path ) ),
-		);
-	}
-
-	/**
 	 * Reports whether a staged file matches the manifest entry recorded for it.
 	 *
 	 * @param array|null                 $manifest      Manifest of the last successful copy, or null.
 	 * @param string                     $relative_path Path of the file within the tree.
-	 * @param array{size: int, crc: int} $entry         Manifest entry describing the staged file.
+	 * @param array{size: int, crc: int} $entry         Source manifest entry for the file.
 	 * @return bool True when the file can be skipped.
 	 */
 	private function is_unchanged( ?array $manifest, string $relative_path, array $entry ): bool {
