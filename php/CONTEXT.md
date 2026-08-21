@@ -15,7 +15,9 @@ different meaning.
 
 - **Staging directory** — holds the assembled archive and the unpacked tree
   for one pull. Location: the local temp directory returned by
-  `get_temp_dir()`. Lifetime: one request. Never readable by a later request.
+  `get_temp_dir()`, at `sh_pull_{nonce}_{random}/`.
+  Contents: `archive.zip` and `unpacked/`.
+  Lifetime: one request. Never readable by a later request.
 
 - **Bundle directory** — holds the published story files. Location: uploads,
   at `shorthand/{post_id}/{story_id}/`. Lifetime: until the post is deleted.
@@ -40,6 +42,20 @@ different meaning.
 
 Steps 5 and 6 run through the `FileSystem` platform service, not through
 direct `ZipArchive::extractTo()` into uploads.
+
+## Staging setting
+
+Staging is the default. The `shorthand_disable_staging` option turns it off,
+reverting to `ZipArchive::extractTo()` straight into the bundle directory. It
+exists for sites where the extra local copy costs more than it saves.
+
+`Shorthand\Services\Options::can_disable_staging()` withdraws the choice where
+uploads are remote, and `is_staging_enabled()` then reports `true` whatever the
+stored option says. The settings screen renders the checkbox disabled, with a
+sentence from `Shorthand\Admin\UploadsHostNotice`.
+
+`UploadsHostNotice` is the only place in this codebase that names a vendor, and
+it produces a message, never a behaviour.
 
 ## Manifest invariants
 

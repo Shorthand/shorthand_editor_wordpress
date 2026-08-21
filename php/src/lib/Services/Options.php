@@ -63,6 +63,18 @@ class Options {
 
 		register_setting(
 			'theshed-general-options-group',
+			'shorthand_disable_staging',
+			array(
+				'type'              => 'boolean',
+				'label'             => __( 'Disable staging directory', 'the-shorthand-editor' ),
+				'description'       => __( 'Unpack story archives straight into the uploads directory', 'the-shorthand-editor' ),
+				'sanitize_callback' => array( $this, 'sanitize_checkbox' ),
+				'default'           => false,
+			)
+		);
+
+		register_setting(
+			'theshed-general-options-group',
 			'shorthand_css',
 			array(
 				'type'              => 'string',
@@ -270,6 +282,37 @@ class Options {
 
 	public function get_post_regex_list(): string {
 		return get_option( 'shorthand_regex_list' );
+	}
+
+	/**
+	 * Reports whether story archives are unpacked in a staging directory first.
+	 *
+	 * Staging is the default, and cannot be turned off where uploads are
+	 * remote: `ZipArchive::extractTo()` ignores stream wrappers, so unpacking
+	 * straight into uploads would write nothing there.
+	 */
+	public function is_staging_enabled(): bool {
+		if ( ! $this->can_disable_staging() ) {
+			return true;
+		}
+
+		return ! get_option( 'shorthand_disable_staging', false );
+	}
+
+	/**
+	 * Reports whether the staging setting is the author's to choose.
+	 */
+	public function can_disable_staging(): bool {
+		return ! FileSystem::is_remote_uploads();
+	}
+
+	/**
+	 * Reads a checkbox as a boolean.
+	 *
+	 * @param mixed $value Submitted value; absent when the box is unticked.
+	 */
+	public function sanitize_checkbox( $value ): bool {
+		return ! empty( $value );
 	}
 
 	public function get_v2_token() {

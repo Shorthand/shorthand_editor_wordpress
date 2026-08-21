@@ -30,6 +30,13 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			}
 		}
 
+		/**
+		 * @return string[]
+		 */
+		public function get_error_codes(): array {
+			return array_keys( $this->errors );
+		}
+
 		public function get_error_code(): string {
 			foreach ( $this->errors as $code => $_messages ) {
 				return (string) $code;
@@ -634,6 +641,7 @@ function update_post_meta( int $post_id, string $meta_key, $meta_value ): bool {
 		'meta_key'   => $meta_key,
 		'meta_value' => $meta_value,
 	);
+	tests_wp_set_post_meta( $post_id, $meta_key, $meta_value );
 	return true;
 }
 

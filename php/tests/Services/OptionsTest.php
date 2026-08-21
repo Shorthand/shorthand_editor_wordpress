@@ -89,4 +89,40 @@ final class OptionsTest extends WordPressTestCase {
 			\tests_wp_settings_errors()
 		);
 	}
+
+	public function test_staging_is_on_by_default(): void {
+		$options = new Options( new Version() );
+
+		$this->assertTrue( $options->is_staging_enabled() );
+		$this->assertTrue( $options->can_disable_staging() );
+	}
+
+	public function test_staging_can_be_turned_off_where_uploads_are_local(): void {
+		update_option( 'shorthand_disable_staging', true );
+
+		$options = new Options( new Version() );
+
+		$this->assertFalse( $options->is_staging_enabled() );
+	}
+
+	/**
+	 * Unpacking cannot target a stream wrapper, so the choice is withdrawn.
+	 */
+	public function test_staging_cannot_be_turned_off_where_uploads_are_remote(): void {
+		\tests_wp_set_upload_dir( 'vip://wp-content/uploads', 'https://example.test/uploads' );
+		update_option( 'shorthand_disable_staging', true );
+
+		$options = new Options( new Version() );
+
+		$this->assertFalse( $options->can_disable_staging() );
+		$this->assertTrue( $options->is_staging_enabled() );
+	}
+
+	public function test_sanitize_checkbox_reads_an_absent_box_as_off(): void {
+		$options = new Options( new Version() );
+
+		$this->assertTrue( $options->sanitize_checkbox( '1' ) );
+		$this->assertFalse( $options->sanitize_checkbox( '' ) );
+		$this->assertFalse( $options->sanitize_checkbox( null ) );
+	}
 }

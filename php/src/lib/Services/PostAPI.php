@@ -465,7 +465,7 @@ class PostAPI {
 			return new WP_Error( 'file', 'Failed to assemble story download.', $zip_file_path );
 		}
 
-		$story = $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id );
+		$story = $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id, $staging_path );
 
 		$this->file_system->delete_temp_dir( $staging_path );
 
@@ -495,7 +495,15 @@ class PostAPI {
 		}
 	}
 
-	public function extract_story_content( $zip_file, $post_id, $story_id ): ?\WP_Error {
+	/**
+	 * Unpacks a story archive into the bundle directory, and stores its documents.
+	 *
+	 * @param string     $zip_file     Assembled archive, inside the staging directory.
+	 * @param int|string $post_id      Post the story belongs to.
+	 * @param string     $story_id     Shorthand story ID.
+	 * @param string     $staging_path Staging directory for this pull.
+	 */
+	public function extract_story_content( $zip_file, $post_id, $story_id, string $staging_path ): ?\WP_Error {
 		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
 		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
 
@@ -503,7 +511,7 @@ class PostAPI {
 			return $this->get_invalid_story_id_error( (string) $story_id );
 		}
 
-		$story = $this->unzip_story( $zip_file, $bundle_path );
+		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path );
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );
 			$error->merge_from( $story );
@@ -536,7 +544,19 @@ class PostAPI {
 		return null;
 	}
 
-	private function unzip_story( $zip_file, $story_path ) {
+	/**
+	 * Unpacks an archive into the bundle directory, and reads its two documents.
+	 *
+	 * With staging on, the archive is unpacked under the staging directory and
+	 * then copied into the bundle directory. `ZipArchive::extractTo()` uses
+	 * native syscalls, so it can only target a local path.
+	 *
+	 * @param string $zip_file     Assembled archive.
+	 * @param string $story_path   Bundle directory.
+	 * @param string $staging_path Staging directory for this pull.
+	 * @return array{head: string, article: string}|\WP_Error
+	 */
+	private function unzip_story( $zip_file, $story_path, string $staging_path ) {
 		$zip = new ZipArchive();
 		$ok  = $zip->open( $zip_file );
 		if ( $ok !== true ) {
@@ -547,17 +567,27 @@ class PostAPI {
 			return $err;
 		}
 
-		$this->file_system->make_dir( $story_path );
+		$unpack_path = $this->options->is_staging_enabled() ? "{$staging_path}/unpacked" : $story_path;
+
+		$this->file_system->make_dir( $unpack_path );
 
 		$head    = $zip->getFromName( 'head.html' );
 		$article = $zip->getFromName( 'article.html' );
 
-		if ( ! $zip->extractTo( $story_path ) || ! $zip->close() ) {
+		if ( ! $zip->extractTo( $unpack_path ) || ! $zip->close() ) {
 			$file_size = wp_filesize( $zip_file );
 			$err       = new WP_Error( 'file', "Could not extract story archive at {$zip_file}.", $zip_file );
 			$err->add( 'file_size', "File size is {$file_size}.", $file_size );
 			$err->add( 'zip', $zip->getStatusString(), $zip->status );
 			return $err;
+		}
+
+		if ( $unpack_path !== $story_path ) {
+			$copied = $this->file_system->copy_tree( $unpack_path, $story_path, null );
+
+			if ( is_wp_error( $copied ) ) {
+				return $copied;
+			}
 		}
 
 		if ( ! $head ) {
