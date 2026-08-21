@@ -95,6 +95,14 @@ function tests_wp_reset_state(): void {
 		'password_required'    => false,
 		'rewrite_flushes'      => 0,
 		'post_types'           => array(),
+		'post_meta'            => array(),
+		'registered_post_meta' => array(),
+		'deleted_post_meta'    => array(),
+		'deleted_files'        => array(),
+		'upload_dir'           => array(
+			'basedir' => '/var/www/html/wp-content/uploads',
+			'baseurl' => 'https://example.test/wp-content/uploads',
+		),
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -702,6 +710,125 @@ function get_footer(): void {
 	$GLOBALS['tests_wp_state']['template_calls'][] = 'get_footer';
 }
 
+
+/**
+ * Raised in place of `wp_die()`, which halts the request in WordPress.
+ */
+class Tests_WP_Die_Exception extends Exception {}
+
+/**
+ * @param string|WP_Error $message
+ * @param string|array    $title
+ * @param string|array    $args
+ * @throws Tests_WP_Die_Exception Always.
+ */
+function wp_die( $message = '', $title = '', $args = array() ): void {
+	throw new Tests_WP_Die_Exception( is_string( $message ) ? $message : '' );
+}
+
+function esc_html( string $text ): string {
+	return htmlspecialchars( $text, ENT_QUOTES );
+}
+
+function esc_html__( string $text, string $domain = '' ): string {
+	return esc_html( $text );
+}
+
+function esc_attr( string $text ): string {
+	return htmlspecialchars( $text, ENT_QUOTES );
+}
+
+/**
+ * @param mixed $value
+ * @param mixed ...$args
+ * @return mixed
+ */
+function apply_filters( string $hook_name, $value, ...$args ) {
+	return $value;
+}
+
+function tests_wp_set_upload_dir( string $basedir, string $baseurl ): void {
+	$GLOBALS['tests_wp_state']['upload_dir'] = array(
+		'basedir' => $basedir,
+		'baseurl' => $baseurl,
+	);
+}
+
+function wp_upload_dir(): array {
+	return $GLOBALS['tests_wp_state']['upload_dir'];
+}
+
+/**
+ * @param mixed $meta_value
+ */
+function tests_wp_set_post_meta( int $post_id, string $meta_key, $meta_value ): void {
+	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = $meta_value;
+}
+
+/**
+ * @return mixed
+ */
+function get_post_meta( int $post_id, string $meta_key = '', bool $single = false ) {
+	$meta = isset( $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] )
+		? $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ]
+		: null;
+
+	if ( $single ) {
+		return null === $meta ? '' : $meta;
+	}
+
+	return null === $meta ? array() : array( $meta );
+}
+
+/**
+ * @param mixed $meta_value
+ */
+function delete_post_meta( int $post_id, string $meta_key, $meta_value = '' ): bool {
+	$GLOBALS['tests_wp_state']['deleted_post_meta'][] = array(
+		'post_id'  => $post_id,
+		'meta_key' => $meta_key,
+	);
+	unset( $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] );
+
+	return true;
+}
+
+function tests_wp_deleted_post_meta(): array {
+	return $GLOBALS['tests_wp_state']['deleted_post_meta'];
+}
+
+function wp_delete_file( string $file ): void {
+	$GLOBALS['tests_wp_state']['deleted_files'][] = $file;
+}
+
+function tests_wp_deleted_files(): array {
+	return $GLOBALS['tests_wp_state']['deleted_files'];
+}
+
+/**
+ * @return null
+ */
+function register_post_type( string $post_type, array $args = array() ) {
+	tests_wp_register_post_type( $post_type );
+
+	return null;
+}
+
+function register_taxonomy_for_object_type( string $taxonomy, string $object_type ): bool {
+	return true;
+}
+
+function register_post_meta( string $post_type, string $meta_key, array $args = array() ): bool {
+	$GLOBALS['tests_wp_state']['registered_post_meta'][ $post_type ][ $meta_key ] = $args;
+
+	return true;
+}
+
+function tests_wp_registered_post_meta( string $post_type, string $meta_key ): array {
+	return isset( $GLOBALS['tests_wp_state']['registered_post_meta'][ $post_type ][ $meta_key ] )
+		? $GLOBALS['tests_wp_state']['registered_post_meta'][ $post_type ][ $meta_key ]
+		: array();
+}
 require_once __DIR__ . '/../vendor/autoload.php';
 spl_autoload_register(
 	function ( string $class ): void {

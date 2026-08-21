@@ -69,6 +69,13 @@ class PostAPI {
 	 * @return \WP_Post|\WP_Error The linked post, or a WP_Error should linking to Shorthand fail after creation.
 	 */
 	public function connect_story( string $story_id, ?int $post_id, string $post_status = 'draft' ) {
+		if ( ! StoryId::is_valid( $story_id ) ) {
+			wp_die(
+				esc_html__( 'Shorthand returned a story identifier that could not be recognised.', 'the-shorthand-editor' ),
+				esc_html__( 'Error linking post to story.', 'the-shorthand-editor' )
+			);
+		}
+
 		if ( ! $post_id ) {
 			$title = 'Add your title';
 
@@ -115,7 +122,6 @@ class PostAPI {
 			);
 		}
 
-		$story_id = sanitize_text_field( $story_id );
 		update_post_meta( $post_id, 'story_id', $story_id );
 
 		$err = $this->shorthand->set_story_external_id( $story_id, $post_id );
@@ -210,14 +216,18 @@ class PostAPI {
 			return new WP_Error( 'pretty', 'Post does not have a Shorthand story associated with it' );
 		}
 
+		$destination_path = $this->get_default_story_bundle_path( $post_id, $story_id );
+		if ( null === $destination_path ) {
+			return $this->get_invalid_story_id_error( (string) $story_id );
+		}
+
 		$download_url = $this->post_download_request( $story_id );
 
 		if ( is_wp_error( $download_url ) ) {
 			return $download_url;
 		}
 
-		$destination_path = $this->get_default_story_bundle_path( $post_id, $story_id );
-		$storage_path     = "{$destination_path}_{$request_nonce}";
+		$storage_path = "{$destination_path}_{$request_nonce}";
 
 		FileSystem::init();
 		wp_mkdir_p( $storage_path );
@@ -564,8 +574,14 @@ class PostAPI {
 	}
 
 	public function extract_story_content( $zip_file, $post_id, $story_id ): ?\WP_Error {
-		$story_path = wp_upload_dir()['basedir'] . '/shorthand/' . $post_id . '/' . $story_id;
-		$story      = $this->unzip_story( $zip_file, $story_path );
+		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
+		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
+
+		if ( null === $bundle_path || null === $bundle_url ) {
+			return $this->get_invalid_story_id_error( (string) $story_id );
+		}
+
+		$story = $this->unzip_story( $zip_file, $bundle_path );
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );
 			$error->merge_from( $story );
@@ -574,13 +590,8 @@ class PostAPI {
 
 		wp_delete_file( $zip_file );
 
-		$story['path'] = $story_path;
-
 		$head    = $story['head'];
 		$article = $story['article'];
-
-		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
-		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
 
 		$head    = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $head );
 		$article = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $article );
@@ -643,29 +654,70 @@ class PostAPI {
 		);
 	}
 
-	public function get_story_bundle_url( $post_id, $story_id ): string {
-		$destination_url = wp_upload_dir()['baseurl'] . '/shorthand/' . $post_id . '/' . $story_id;
+	/**
+	 * Public URL of the bundle directory, or null when the story ID is invalid.
+	 *
+	 * @param int|string $post_id  Post the bundle belongs to.
+	 * @param string     $story_id Shorthand story ID.
+	 */
+	public function get_story_bundle_url( $post_id, $story_id ): ?string {
+		if ( ! StoryId::is_valid( $story_id ) ) {
+			return null;
+		}
+
+		$destination_url = wp_upload_dir()['baseurl'] . '/shorthand/' . absint( $post_id ) . '/' . $story_id;
 
 		$destination_url = apply_filters( 'theshed_get_story_url', $destination_url );
 
 		return $destination_url;
 	}
 
-	public function get_story_bundle_path( $post_id, $story_id ): string {
+	/**
+	 * Path of the bundle directory, or null when the story ID is invalid.
+	 *
+	 * @param int|string $post_id  Post the bundle belongs to.
+	 * @param string     $story_id Shorthand story ID.
+	 */
+	public function get_story_bundle_path( $post_id, $story_id ): ?string {
 		return $this->get_default_story_bundle_path( $post_id, $story_id );
 	}
 
-	private function get_default_story_bundle_path( $post_id, $story_id ): string {
-		$destination_path = wp_upload_dir()['basedir'] . '/shorthand/' . $post_id . '/' . $story_id;
+	/**
+	 * Builds the bundle directory path, or withholds it for an unusable story ID.
+	 *
+	 * @param int|string $post_id  Post the bundle belongs to.
+	 * @param string     $story_id Shorthand story ID.
+	 */
+	private function get_default_story_bundle_path( $post_id, $story_id ): ?string {
+		if ( ! StoryId::is_valid( $story_id ) ) {
+			return null;
+		}
+
+		$destination_path = wp_upload_dir()['basedir'] . '/shorthand/' . absint( $post_id ) . '/' . $story_id;
 
 		return $destination_path;
 	}
 
+	/**
+	 * The error returned wherever a stored story ID cannot be used as a path.
+	 *
+	 * @param string $story_id The rejected story ID, carried as error data.
+	 */
+	private function get_invalid_story_id_error( string $story_id ): WP_Error {
+		$error = new WP_Error( 'pretty', __( 'This post is linked to a story that Shorthand does not recognise. Please reconnect the post to its story.', 'the-shorthand-editor' ) );
+		$error->add( 'story_id', 'Stored Shorthand story ID is not a valid path segment.', $story_id );
+		return $error;
+	}
+
 	public function delete_story_bundle( int $post_id, string $story_id ): void {
+		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
+		if ( null === $bundle_path ) {
+			return;
+		}
+
 		FileSystem::init();
 		global $wp_filesystem;
 
-		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
 		if ( $wp_filesystem->exists( $bundle_path ) ) {
 			$wp_filesystem->delete( $bundle_path, true );
 		}

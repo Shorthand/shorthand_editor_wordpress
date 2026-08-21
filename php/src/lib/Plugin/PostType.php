@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 use Shorthand\Core\Version;
 use Shorthand\Core\Loader;
 use Shorthand\Services\Options;
+use Shorthand\Services\StoryId;
 
 class PostType {
 
@@ -105,7 +106,7 @@ class PostType {
 				'type'              => 'string',
 				'description'       => __( 'Shorthand story ID', 'the-shorthand-editor' ),
 				'show_in_rest'      => true,
-				'sanitize_callback' => 'sanitize_text_field',
+				'sanitize_callback' => array( StoryId::class, 'sanitize' ),
 			)
 		);
 
