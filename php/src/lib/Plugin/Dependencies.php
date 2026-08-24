@@ -10,6 +10,7 @@ use Shorthand\Core\Version;
 use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
+use Shorthand\Services\FileSystem;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
@@ -161,7 +162,7 @@ class Dependencies {
 	public function get_post_api(): PostAPI {
 		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer() );
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), FileSystem::create() );
 		}
 		return $this->post_api;
 	}
