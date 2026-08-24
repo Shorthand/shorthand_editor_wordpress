@@ -20,6 +20,42 @@ final class OptionsTest extends WordPressTestCase {
 		$this->assertSame( 'story', \get_option( 'shorthand_permalink' ) );
 	}
 
+	/**
+	 * The synchronous publish override goes, whatever it was left at.
+	 *
+	 * @dataProvider legacy_option_values
+	 *
+	 * @param mixed $value Value the option was left at.
+	 */
+	public function test_legacy_synchronous_publish_option_is_dropped( $value ): void {
+		\tests_wp_set_option( 'shorthand_disable_cron', $value );
+
+		$options = new Options( new Version() );
+		$options->remove_legacy_options();
+
+		$this->assertSame( 'absent', \get_option( 'shorthand_disable_cron', 'absent' ) );
+	}
+
+	/**
+	 * A turned-off override is still an option row, and still goes.
+	 *
+	 * @return array<string, array{0: mixed}>
+	 */
+	public static function legacy_option_values(): array {
+		return array(
+			'turned on'  => array( true ),
+			'turned off' => array( false ),
+			'unchecked'  => array( '' ),
+		);
+	}
+
+	public function test_legacy_option_cleanup_is_a_no_op_on_a_clean_install(): void {
+		$options = new Options( new Version() );
+		$options->remove_legacy_options();
+
+		$this->assertSame( 'absent', \get_option( 'shorthand_disable_cron', 'absent' ) );
+	}
+
 	public function test_permalink_changes_schedule_a_rewrite_flush(): void {
 		$options = new Options( new Version() );
 
@@ -72,5 +108,41 @@ final class OptionsTest extends WordPressTestCase {
 			),
 			\tests_wp_settings_errors()
 		);
+	}
+
+	public function test_staging_is_on_by_default(): void {
+		$options = new Options( new Version() );
+
+		$this->assertTrue( $options->is_staging_enabled() );
+		$this->assertTrue( $options->can_disable_staging() );
+	}
+
+	public function test_staging_can_be_turned_off_where_uploads_are_local(): void {
+		update_option( 'shorthand_disable_staging', true );
+
+		$options = new Options( new Version() );
+
+		$this->assertFalse( $options->is_staging_enabled() );
+	}
+
+	/**
+	 * Unpacking cannot target a stream wrapper, so the choice is withdrawn.
+	 */
+	public function test_staging_cannot_be_turned_off_where_uploads_are_remote(): void {
+		\tests_wp_set_upload_dir( 'vip://wp-content/uploads', 'https://example.test/uploads' );
+		update_option( 'shorthand_disable_staging', true );
+
+		$options = new Options( new Version() );
+
+		$this->assertFalse( $options->can_disable_staging() );
+		$this->assertTrue( $options->is_staging_enabled() );
+	}
+
+	public function test_sanitize_checkbox_reads_an_absent_box_as_off(): void {
+		$options = new Options( new Version() );
+
+		$this->assertTrue( $options->sanitize_checkbox( '1' ) );
+		$this->assertFalse( $options->sanitize_checkbox( '' ) );
+		$this->assertFalse( $options->sanitize_checkbox( null ) );
 	}
 }

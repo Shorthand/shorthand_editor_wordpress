@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 if ( ! defined( 'ABSPATH' ) ) {
-	define( 'ABSPATH', '/var/www/html/' );
+	define( 'ABSPATH', __DIR__ . '/fixtures/wp/' );
 }
 
 if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
@@ -22,12 +22,40 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		public $errors = array();
 
 		/**
+		 * @var array<string, mixed>
+		 */
+		public $error_data = array();
+
+		/**
 		 * @param mixed $data
 		 */
 		public function __construct( string $code = '', string $message = '', $data = null ) {
 			if ( $code !== '' ) {
 				$this->errors[ $code ] = array( $message );
+				if ( null !== $data ) {
+					$this->error_data[ $code ] = $data;
+				}
 			}
+		}
+
+		/**
+		 * Copies every code and message from another error.
+		 *
+		 * @param WP_Error $error Error to copy from.
+		 */
+		public function merge_from( WP_Error $error ): void {
+			foreach ( $error->errors as $code => $messages ) {
+				foreach ( $messages as $message ) {
+					$this->add( (string) $code, $message );
+				}
+			}
+		}
+
+		/**
+		 * @return string[]
+		 */
+		public function get_error_codes(): array {
+			return array_keys( $this->errors );
 		}
 
 		public function get_error_code(): string {
@@ -37,14 +65,27 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			return '';
 		}
 
-		public function get_error_message(): string {
-			$code = $this->get_error_code();
+		public function get_error_message( string $code = '' ): string {
+			if ( '' === $code ) {
+				$code = $this->get_error_code();
+			}
 
 			if ( $code === '' || empty( $this->errors[ $code ] ) ) {
 				return '';
 			}
 
 			return $this->errors[ $code ][0];
+		}
+
+		/**
+		 * @return mixed
+		 */
+		public function get_error_data( string $code = '' ) {
+			if ( '' === $code ) {
+				$code = $this->get_error_code();
+			}
+
+			return $this->error_data[ $code ] ?? null;
 		}
 
 		/**
@@ -56,6 +97,10 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			}
 
 			$this->errors[ $code ][] = $message;
+
+			if ( null !== $data ) {
+				$this->error_data[ $code ] = $data;
+			}
 		}
 	}
 }
@@ -66,6 +111,7 @@ if ( ! class_exists( 'WP_Error' ) ) {
 function tests_wp_reset_state(): void {
 	$GLOBALS['tests_wp_state'] = array(
 		'options'              => array(),
+		'filter_args'          => array(),
 		'transients'           => array(),
 		'transient_ttls'       => array(),
 		'site_transients'      => array(),
@@ -90,11 +136,26 @@ function tests_wp_reset_state(): void {
 		'insert_post_result'   => 0,
 		'stub_posts'           => array(),
 		'updated_post_meta'    => array(),
+		'updated_posts'        => array(),
+		'update_post_observer' => null,
+		'post_fields'          => array(),
+		'post_meta'            => array(),
 		'is_block_theme'       => false,
 		'template_calls'       => array(),
 		'password_required'    => false,
 		'rewrite_flushes'      => 0,
 		'post_types'           => array(),
+		'post_meta'            => array(),
+		'registered_post_meta' => array(),
+		'deleted_post_meta'    => array(),
+		'deleted_files'        => array(),
+		'upload_dir'           => array(
+			'basedir' => '/var/www/html/wp-content/uploads',
+			'baseurl' => 'https://example.test/wp-content/uploads',
+		),
+		'temp_dir'             => sys_get_temp_dir() . '/',
+		'copy_error'           => null,
+		'wp_rand_calls'        => 0,
 		'status_headers'       => array(),
 		'nocache_calls'        => 0,
 		'current_user_can'     => true,
@@ -321,6 +382,33 @@ function wp_remote_retrieve_body( array $response ): string {
 	return (string) ( $response['body'] ?? '' );
 }
 
+/**
+ * @param array<string, mixed> $response
+ * @return string
+ */
+function wp_remote_retrieve_header( array $response, string $name ): string {
+	foreach ( $response['headers'] ?? array() as $header => $value ) {
+		if ( strtolower( (string) $header ) === strtolower( $name ) ) {
+			return (string) $value;
+		}
+	}
+
+	return '';
+}
+
+/**
+ * @return string|false
+ */
+function get_post_status( int $post_id ) {
+	$post = get_post( $post_id );
+
+	if ( null === $post ) {
+		return false;
+	}
+
+	return $post->post_status ?? 'draft';
+}
+
 function current_user_can( string $capability, ...$args ): bool {
 	return (bool) $GLOBALS['tests_wp_state']['current_user_can'];
 }
@@ -357,28 +445,6 @@ function wp_safe_redirect( string $location, int $status = 302 ): bool {
  */
 function tests_wp_safe_redirects(): array {
 	return $GLOBALS['tests_wp_state']['safe_redirects'];
-}
-
-function wp_remote_retrieve_header( array $response, string $header ) {
-	$headers = isset( $response['headers'] ) ? $response['headers'] : array();
-	foreach ( (array) $headers as $name => $value ) {
-		if ( strtolower( (string) $name ) === strtolower( $header ) ) {
-			return $value;
-		}
-	}
-	return '';
-}
-
-function esc_html( string $text ): string {
-	return htmlspecialchars( $text, ENT_QUOTES );
-}
-
-function esc_html__( string $text, string $domain = '' ): string {
-	return esc_html( __( $text, $domain ) );
-}
-
-function esc_attr( string $text ): string {
-	return htmlspecialchars( $text, ENT_QUOTES );
 }
 
 function esc_url( string $url ): string {
@@ -637,8 +703,16 @@ function sanitize_textarea_field( string $value ): string {
 	return trim( wp_strip_all_tags( $value ) );
 }
 
-function wp_strip_all_tags( string $value ): string {
-	return trim( strip_tags( $value ) );
+function wp_strip_all_tags( string $value, bool $remove_breaks = false ): string {
+	$stripped = preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $value );
+	$value    = strip_tags( is_string( $stripped ) ? $stripped : $value );
+
+	if ( $remove_breaks ) {
+		$collapsed = preg_replace( '/[\r\n\t ]+/', ' ', $value );
+		$value     = is_string( $collapsed ) ? $collapsed : $value;
+	}
+
+	return trim( $value );
 }
 
 /**
@@ -718,7 +792,89 @@ function update_post_meta( int $post_id, string $meta_key, $meta_value ): bool {
 		'meta_key'   => $meta_key,
 		'meta_value' => $meta_value,
 	);
+	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = is_string( $meta_value )
+		? stripslashes( $meta_value )
+		: $meta_value;
 	return true;
+}
+
+function tests_wp_set_post_field( int $post_id, string $field, string $value ): void {
+	$GLOBALS['tests_wp_state']['post_fields'][ $post_id ][ $field ] = $value;
+}
+
+/**
+ * @param mixed $post
+ * @return mixed
+ */
+function get_post_field( string $field, $post = 0, string $context = 'display' ) {
+	$post_id = is_object( $post ) ? (int) $post->ID : (int) $post;
+	return $GLOBALS['tests_wp_state']['post_fields'][ $post_id ][ $field ] ?? '';
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_updated_posts(): array {
+	return $GLOBALS['tests_wp_state']['updated_posts'];
+}
+
+/**
+ * Observes wp_update_post() from inside the call, so a test can assert on
+ * state that only holds for its duration.
+ */
+function tests_wp_set_update_post_observer( callable $observer ): void {
+	$GLOBALS['tests_wp_state']['update_post_observer'] = $observer;
+}
+
+/**
+ * @param array<string, mixed> $postarr
+ * @return int|WP_Error
+ */
+function wp_update_post( array $postarr = array(), bool $wp_error = false ) {
+	$GLOBALS['tests_wp_state']['updated_posts'][] = $postarr;
+
+	$observer = $GLOBALS['tests_wp_state']['update_post_observer'] ?? null;
+	if ( is_callable( $observer ) ) {
+		$observer( $postarr );
+	}
+
+	$post_id = isset( $postarr['ID'] ) ? (int) $postarr['ID'] : 0;
+
+	foreach ( array( 'post_content', 'post_excerpt', 'post_title' ) as $field ) {
+		if ( isset( $postarr[ $field ] ) ) {
+			$GLOBALS['tests_wp_state']['post_fields'][ $post_id ][ $field ] = stripslashes( (string) $postarr[ $field ] );
+		}
+	}
+
+	return $post_id;
+}
+
+/**
+ * @param mixed $value
+ * @return mixed
+ */
+function wp_slash( $value ) {
+	return is_string( $value ) ? addslashes( $value ) : $value;
+}
+
+function wp_trim_words( string $text, int $num_words = 55, ?string $more = null ): string {
+	if ( null === $more ) {
+		$more = '&hellip;';
+	}
+
+	$text  = wp_strip_all_tags( $text );
+	$words = preg_split( "/[\n\r\t ]+/", $text, $num_words + 1, PREG_SPLIT_NO_EMPTY );
+
+	if ( ! is_array( $words ) ) {
+		return '';
+	}
+
+	if ( count( $words ) > $num_words ) {
+		array_pop( $words );
+		return implode( ' ', $words ) . $more;
+	}
+
+	return implode( ' ', $words );
 }
 
 function tests_wp_set_is_block_theme( bool $is_block_theme ): void {
@@ -795,12 +951,314 @@ function get_footer(): void {
 	$GLOBALS['tests_wp_state']['template_calls'][] = 'get_footer';
 }
 
+
+/**
+ * Raised in place of `wp_die()`, which halts the request in WordPress.
+ */
+class Tests_WP_Die_Exception extends Exception {}
+
+/**
+ * @param string|WP_Error $message
+ * @param string|array    $title
+ * @param string|array    $args
+ * @throws Tests_WP_Die_Exception Always.
+ */
+function wp_die( $message = '', $title = '', $args = array() ): void {
+	throw new Tests_WP_Die_Exception( is_string( $message ) ? $message : '' );
+}
+
+function esc_html( string $text ): string {
+	return htmlspecialchars( $text, ENT_QUOTES );
+}
+
+function esc_html__( string $text, string $domain = '' ): string {
+	return esc_html( $text );
+}
+
+function esc_attr( string $text ): string {
+	return htmlspecialchars( $text, ENT_QUOTES );
+}
+
+/**
+ * @param mixed $value
+ * @param mixed ...$args
+ * @return mixed
+ */
+function apply_filters( string $hook_name, $value, ...$args ) {
+	$GLOBALS['tests_wp_state']['filter_args'][ $hook_name ][] = $args;
+
+	return $value;
+}
+
+/**
+ * Arguments passed after the filtered value, one entry per call.
+ *
+ * @param string $hook_name Filter name.
+ * @return array<int, array<int, mixed>>
+ */
+function tests_wp_get_filter_args( string $hook_name ): array {
+	return $GLOBALS['tests_wp_state']['filter_args'][ $hook_name ] ?? array();
+}
+
+function tests_wp_set_upload_dir( string $basedir, string $baseurl ): void {
+	$GLOBALS['tests_wp_state']['upload_dir'] = array(
+		'basedir' => $basedir,
+		'baseurl' => $baseurl,
+	);
+}
+
+function wp_upload_dir(): array {
+	return $GLOBALS['tests_wp_state']['upload_dir'];
+}
+
+/**
+ * @param mixed $meta_value
+ */
+function tests_wp_set_post_meta( int $post_id, string $meta_key, $meta_value ): void {
+	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = $meta_value;
+}
+
+/**
+ * @return mixed
+ */
+function get_post_meta( int $post_id, string $meta_key = '', bool $single = false ) {
+	$meta = isset( $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] )
+		? $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ]
+		: null;
+
+	if ( $single ) {
+		return null === $meta ? '' : $meta;
+	}
+
+	return null === $meta ? array() : array( $meta );
+}
+
+/**
+ * @param mixed $meta_value
+ */
+function delete_post_meta( int $post_id, string $meta_key, $meta_value = '' ): bool {
+	$GLOBALS['tests_wp_state']['deleted_post_meta'][] = array(
+		'post_id'  => $post_id,
+		'meta_key' => $meta_key,
+	);
+	unset( $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] );
+
+	return true;
+}
+
+function tests_wp_deleted_post_meta(): array {
+	return $GLOBALS['tests_wp_state']['deleted_post_meta'];
+}
+
+function wp_delete_file( string $file ): void {
+	$GLOBALS['tests_wp_state']['deleted_files'][] = $file;
+}
+
+function tests_wp_deleted_files(): array {
+	return $GLOBALS['tests_wp_state']['deleted_files'];
+}
+
+/**
+ * @return null
+ */
+function register_post_type( string $post_type, array $args = array() ) {
+	tests_wp_register_post_type( $post_type );
+
+	return null;
+}
+
+function register_taxonomy_for_object_type( string $taxonomy, string $object_type ): bool {
+	return true;
+}
+
+function register_post_meta( string $post_type, string $meta_key, array $args = array() ): bool {
+	$GLOBALS['tests_wp_state']['registered_post_meta'][ $post_type ][ $meta_key ] = $args;
+
+	return true;
+}
+
+function tests_wp_registered_post_meta( string $post_type, string $meta_key ): array {
+	return isset( $GLOBALS['tests_wp_state']['registered_post_meta'][ $post_type ][ $meta_key ] )
+		? $GLOBALS['tests_wp_state']['registered_post_meta'][ $post_type ][ $meta_key ]
+		: array();
+}
+
+/**
+ * The subset of `WP_Filesystem_Direct` the plugin uses, acting on the real
+ * file system. Only the local temp directory and PHPUnit's own scratch space
+ * are ever passed to it under test.
+ */
+class WP_Filesystem_Base {
+
+	/**
+	 * Errors left by the last operation, as `WP_Filesystem_VIP` reports them.
+	 *
+	 * @var WP_Error|null
+	 */
+	public $errors = null;
+}
+
+class Tests_WP_Filesystem extends WP_Filesystem_Base {
+
+	public function __construct() {
+		$this->errors = new WP_Error();
+	}
+
+	public function exists( string $path ): bool {
+		return file_exists( $path );
+	}
+
+	public function is_dir( string $path ): bool {
+		return is_dir( $path );
+	}
+
+	public function mkdir( string $path ): bool {
+		return is_dir( $path ) || mkdir( $path, 0777, true );
+	}
+
+	public function rmdir( string $path, bool $recursive = false ): bool {
+		if ( ! is_dir( $path ) ) {
+			return false;
+		}
+
+		if ( ! $recursive ) {
+			return rmdir( $path );
+		}
+
+		return $this->delete( $path, true );
+	}
+
+	/**
+	 * @param string|false $type
+	 */
+	public function delete( string $path, bool $recursive = false, $type = false ): bool {
+		if ( is_file( $path ) ) {
+			return unlink( $path );
+		}
+
+		if ( ! is_dir( $path ) ) {
+			return false;
+		}
+
+		if ( ! $recursive ) {
+			return rmdir( $path );
+		}
+
+		foreach ( array_diff( scandir( $path ), array( '.', '..' ) ) as $entry ) {
+			$this->delete( $path . '/' . $entry, true );
+		}
+
+		return rmdir( $path );
+	}
+
+	public function copy( string $source, string $destination, bool $overwrite = false ): bool {
+		$failure = $GLOBALS['tests_wp_state']['copy_error'];
+
+		if ( null !== $failure ) {
+			/*
+			 * A remote uploads host reports a refused write by replacing
+			 * `errors` and answering false, never by throwing or warning.
+			 */
+			$this->errors = new WP_Error( $failure[0], $failure[1] );
+
+			return false;
+		}
+
+		if ( ! $overwrite && file_exists( $destination ) ) {
+			return false;
+		}
+
+		return copy( $source, $destination );
+	}
+}
+
+/**
+ * Makes every `WP_Filesystem::copy()` fail, leaving an error behind it.
+ *
+ * @param string|null $code    Error code, or null to copy normally again.
+ * @param string      $message Error message.
+ */
+function tests_wp_set_copy_error( ?string $code, string $message = '' ): void {
+	$GLOBALS['tests_wp_state']['copy_error'] = null === $code ? null : array( $code, $message );
+}
+
+function WP_Filesystem(): bool {
+	if ( ! isset( $GLOBALS['wp_filesystem'] ) || ! is_a( $GLOBALS['wp_filesystem'], 'WP_Filesystem_Base' ) ) {
+		$GLOBALS['wp_filesystem'] = new Tests_WP_Filesystem();
+	}
+
+	return true;
+}
+
+function wp_raise_memory_limit( string $context = 'admin' ): bool {
+	return true;
+}
+
+/**
+ * @return array|false
+ */
+function request_filesystem_credentials( string $form_post ) {
+	return array();
+}
+
+function site_url( string $path = '' ): string {
+	return 'https://example.test' . $path;
+}
+
+function get_temp_dir(): string {
+	return $GLOBALS['tests_wp_state']['temp_dir'];
+}
+
+function tests_wp_set_temp_dir( string $path ): void {
+	$GLOBALS['tests_wp_state']['temp_dir'] = trailingslashit( $path );
+}
+
+function wp_mkdir_p( string $target ): bool {
+	return is_dir( $target ) || mkdir( $target, 0777, true );
+}
+
+function untrailingslashit( string $value ): string {
+	return rtrim( $value, '/\\' );
+}
+
+function wp_rand( int $min = 0, int $max = 0 ): int {
+	// Deterministic but distinct per call, so nonce-rotation logic stays observable.
+	$calls = $GLOBALS['tests_wp_state']['wp_rand_calls'];
+
+	$GLOBALS['tests_wp_state']['wp_rand_calls'] = $calls + 1;
+
+	if ( $max <= $min ) {
+		return $min + $calls;
+	}
+	return $min + ( $calls % ( $max - $min + 1 ) );
+}
+
+/**
+ * @return int|false
+ */
+function wp_filesize( string $path ) {
+	return file_exists( $path ) ? filesize( $path ) : 0;
+}
+
 require_once __DIR__ . '/../vendor/autoload.php';
 spl_autoload_register(
 	function ( string $class ): void {
 		$prefix = 'Shorthand\\';
 
 		if ( strncmp( $class, $prefix, strlen( $prefix ) ) !== 0 ) {
+			return;
+		}
+
+		$test_prefix = 'Shorthand\\Tests\\';
+
+		if ( strncmp( $class, $test_prefix, strlen( $test_prefix ) ) === 0 ) {
+			$relative_test = substr( $class, strlen( $test_prefix ) );
+			$test_file     = __DIR__ . '/' . str_replace( '\\', '/', $relative_test ) . '.php';
+
+			if ( is_readable( $test_file ) ) {
+				require_once $test_file;
+			}
+
 			return;
 		}
 

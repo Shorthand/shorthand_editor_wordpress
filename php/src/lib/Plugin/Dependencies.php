@@ -11,6 +11,7 @@ use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\ConnectionFailureClassifier;
+use Shorthand\Services\FileSystem;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
@@ -18,6 +19,7 @@ use Shorthand\Services\Shorthand;
 use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\ShorthandHttpTransport;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\TokenManager;
 use Shorthand\Services\WordPressContextProvider;
 use Shorthand\Admin\AdminController;
@@ -163,7 +165,7 @@ class Dependencies {
 	public function get_post_api(): PostAPI {
 		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer() );
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), FileSystem::create(), new StoryTextExtractor() );
 		}
 		return $this->post_api;
 	}

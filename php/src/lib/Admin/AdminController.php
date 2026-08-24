@@ -144,6 +144,10 @@ class AdminController {
 		/* Show a notice on admin pages if the plugin is not in a connected state. */
 		$loader->add_action( 'admin_notices', $this, 'render_auth_notice' );
 		$loader->add_action( 'wp_ajax_shorthand_dismiss_auth_notice', $this, 'dismiss_auth_notice' );
+
+		/* Show a notice on admin pages if story text cannot be indexed. */
+		$loader->add_action( 'admin_notices', $this, 'render_dom_notice' );
+		$loader->add_action( 'wp_ajax_shorthand_dismiss_dom_notice', $this, 'dismiss_dom_notice' );
 	}
 
 	public function add_admin_menu(): void {
@@ -408,6 +412,64 @@ class AdminController {
 			'shorthand_auth_notice_dismissed_at',
 			$this->auth_state_manager->get_changed_at()
 		);
+		wp_die();
+	}
+
+	/**
+	 * Warn that story text is not reaching `post_content` or `post_excerpt`.
+	 *
+	 * `StoryTextExtractor` needs `ext-dom`, which WordPress itself treats as
+	 * optional and which several distributions package separately. Without
+	 * it stories publish and render normally and only search is affected, so
+	 * this warns rather than blocking anything.
+	 */
+	public function render_dom_notice(): void {
+		if ( class_exists( 'DOMDocument', false ) ) {
+			return;
+		}
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		if ( get_user_meta( get_current_user_id(), 'shorthand_dom_notice_dismissed', true ) ) {
+			return;
+		}
+
+		?>
+		<div class="notice notice-warning is-dismissible" id="shorthand-dom-notice">
+			<p>
+				<strong><?php esc_html_e( 'Shorthand', 'the-shorthand-editor' ); ?></strong> &mdash;
+				<?php
+				esc_html_e(
+					'The PHP DOM extension is not available, so published stories are not searchable by their text. Stories still publish and display as normal. Ask your host to enable the PHP "dom" extension.',
+					'the-shorthand-editor'
+				);
+				?>
+			</p>
+		</div>
+		<script>
+		jQuery( document ).on( 'click', '#shorthand-dom-notice .notice-dismiss', function() {
+			jQuery.post( ajaxurl, {
+				action: 'shorthand_dismiss_dom_notice',
+				nonce: '<?php echo esc_js( wp_create_nonce( 'shorthand_dismiss_dom_notice' ) ); ?>'
+			} );
+		} );
+		</script>
+		<?php
+	}
+
+	/**
+	 * AJAX handler: dismiss the DOM extension notice for the current user.
+	 *
+	 * Dismissal is permanent, because the extension cannot appear without a
+	 * server change that the administrator would have made deliberately.
+	 */
+	public function dismiss_dom_notice(): void {
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'shorthand_dismiss_dom_notice' ) ) {
+			wp_die( '', '', array( 'response' => 403 ) );
+		}
+		update_user_meta( get_current_user_id(), 'shorthand_dom_notice_dismissed', 1 );
 		wp_die();
 	}
 }
