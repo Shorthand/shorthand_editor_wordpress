@@ -1,16 +1,16 @@
 {
   "name": "Shorthand",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "homepage": "https://shorthand.com/products/shorthand-for-wordpress",
   "author": "Shorthand",
   "author_profile": "https://shorthand.com",
   "requires": "6.0",
-  "tested": "6.9.4",
+  "tested": "7.1",
   "requires_php": "7.4",
   "download_url": "https://shorthand.com/plugins/wp/the-shorthand-editor/the-shorthand-editor.zip",
   "sections": {
     "description": "The Shorthand plugin allows you to publish Shorthand stories directly to your WordPress site.",
-    "changelog": "<h4>1.0.7</h4><ul><li>Render site headers and footers for Shorthand stories using block themes</li><li>Fix story permalinks returning 404 after activation or a permalink change</li></ul><h4>1.0.6</h4><ul><li>Allow editors to recover Shorthand stories that are not attached</li></ul><h4>1.0.5</h4><ul><li>Fix settings save disconnecting the plugin</li></ul><h4>1.0.4</h4><ul><li>Confirm compatibility with WordPress 6.9.4</li><li>Fix story permalink slug falling back to the post type name</li></ul><h4>1.0.3</h4><ul><li>Improve error messaging when connections to Shorthand fail</li><li>Extend authorisation token expiry to tolerate slower navigation</li></ul>"
+    "changelog": "<h4>1.0.8</h4><ul><li>Publish stories safely on WordPress VIP and other object-store hosting</li><li>Store story text so stories appear in WordPress search, archives and feeds</li><li>Explain publishing failures when a workspace is publishing too many stories at once</li><li>Show clear, branded pages when connecting to Shorthand fails</li><li>Confirm compatibility with WordPress 7.1</li></ul><h4>1.0.7</h4><ul><li>Render site headers and footers for Shorthand stories using block themes</li><li>Fix story permalinks returning 404 after activation or a permalink change</li></ul><h4>1.0.6</h4><ul><li>Allow editors to recover Shorthand stories that are not attached</li></ul><h4>1.0.5</h4><ul><li>Fix settings save disconnecting the plugin</li></ul><h4>1.0.4</h4><ul><li>Confirm compatibility with WordPress 6.9.4</li><li>Fix story permalink slug falling back to the post type name</li></ul><h4>1.0.3</h4><ul><li>Improve error messaging when connections to Shorthand fail</li><li>Extend authorisation token expiry to tolerate slower navigation</li></ul>"
   },
   "icons": {
     "svg": "https://shorthand.com/plugins/wp/the-shorthand-editor/assets/logos/shorthand-logo-black.svg"
