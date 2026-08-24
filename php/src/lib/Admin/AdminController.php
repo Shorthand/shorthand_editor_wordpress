@@ -124,7 +124,8 @@ class AdminController {
 		$return_to_connect = new ReturnToConnect(
 			$this->shorthand,
 			new ConnectionCompletionService( $this->shorthand, $this->admin_gateway ),
-			$this->admin_gateway
+			$this->admin_gateway,
+			new ConnectionErrorPage()
 		);
 		$return_to_connect->define_return_page( $loader );
 
@@ -132,7 +133,8 @@ class AdminController {
 			$this->shorthand,
 			$return_to_connect,
 			admin_url( 'plugins.php' ),
-			$this->auth_state_manager
+			$this->auth_state_manager,
+			new ConnectionErrorPage()
 		);
 		$redirect_to_integration->define_redirect_page( $loader );
 
@@ -209,7 +211,8 @@ class AdminController {
 			$story_return_handler,
 			$this->auth_state_manager,
 			$this->admin_gateway,
-			$story_editor_link_builder
+			$story_editor_link_builder,
+			new ConnectionErrorPage()
 		);
 
 		$post_preview = new PostPreview( $this->options, $this->post_api, $this->permissions, $this->version, $this->auth_state_manager );

@@ -156,6 +156,11 @@ function tests_wp_reset_state(): void {
 		'temp_dir'             => sys_get_temp_dir() . '/',
 		'copy_error'           => null,
 		'wp_rand_calls'        => 0,
+		'status_headers'       => array(),
+		'nocache_calls'        => 0,
+		'current_user_can'     => true,
+		'verify_nonce'         => true,
+		'safe_redirects'       => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -404,6 +409,71 @@ function get_post_status( int $post_id ) {
 	return $post->post_status ?? 'draft';
 }
 
+function current_user_can( string $capability, ...$args ): bool {
+	return (bool) $GLOBALS['tests_wp_state']['current_user_can'];
+}
+
+function tests_wp_set_current_user_can( bool $can ): void {
+	$GLOBALS['tests_wp_state']['current_user_can'] = $can;
+}
+
+/**
+ * @param mixed $nonce
+ */
+function wp_verify_nonce( $nonce, string $action = '' ): bool {
+	return (bool) $GLOBALS['tests_wp_state']['verify_nonce'];
+}
+
+function tests_wp_set_verify_nonce( bool $valid ): void {
+	$GLOBALS['tests_wp_state']['verify_nonce'] = $valid;
+}
+
+function wp_create_nonce( string $action = '' ): string {
+	return 'test-nonce';
+}
+
+function wp_safe_redirect( string $location, int $status = 302 ): bool {
+	$GLOBALS['tests_wp_state']['safe_redirects'][] = array(
+		'location' => $location,
+		'status'   => $status,
+	);
+	return true;
+}
+
+/**
+ * @return array<int, array{location: string, status: int}>
+ */
+function tests_wp_safe_redirects(): array {
+	return $GLOBALS['tests_wp_state']['safe_redirects'];
+}
+
+function esc_url( string $url ): string {
+	return $url;
+}
+
+function status_header( int $code ): void {
+	$GLOBALS['tests_wp_state']['status_headers'][] = $code;
+}
+
+/**
+ * @return int[]
+ */
+function tests_wp_status_headers(): array {
+	return $GLOBALS['tests_wp_state']['status_headers'];
+}
+
+function nocache_headers(): void {
+	$GLOBALS['tests_wp_state']['nocache_calls']++;
+}
+
+function tests_wp_nocache_calls(): int {
+	return $GLOBALS['tests_wp_state']['nocache_calls'];
+}
+
+function wp_get_current_user(): object {
+	return (object) array( 'ID' => 1 );
+}
+
 function __( string $text, string $domain = '' ): string {
 	return $text;
 }
@@ -535,9 +605,10 @@ function wp_add_inline_style( string $handle, string $data ): bool {
 
 /**
  * @param mixed $value
+ * @param int   $flags json_encode flags, honoured as in core.
  */
-function wp_json_encode( $value ): string {
-	return (string) json_encode( $value );
+function wp_json_encode( $value, $flags = 0 ): string {
+	return (string) json_encode( $value, $flags );
 }
 
 function sanitize_text_field( string $value ): string {
@@ -1193,6 +1264,22 @@ spl_autoload_register(
 
 		$relative_class = substr( $class, strlen( $prefix ) );
 		$file           = __DIR__ . '/../src/lib/' . str_replace( '\\', '/', $relative_class ) . '.php';
+
+		if ( is_readable( $file ) ) {
+			require_once $file;
+		}
+	}
+);
+spl_autoload_register(
+	function ( string $class_name ): void {
+		$prefix = 'Shorthand\\Vendor\\Firebase\\JWT\\';
+
+		if ( strncmp( $class_name, $prefix, strlen( $prefix ) ) !== 0 ) {
+			return;
+		}
+
+		$relative_class = substr( $class_name, strlen( $prefix ) );
+		$file           = __DIR__ . '/../src/vendor_prefixed/firebase/php-jwt/src/' . str_replace( '\\', '/', $relative_class ) . '.php';
 
 		if ( is_readable( $file ) ) {
 			require_once $file;

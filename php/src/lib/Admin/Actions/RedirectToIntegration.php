@@ -6,7 +6,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Shorthand\Admin\ConnectionErrorPage;
 use Shorthand\Services\AuthStateManager;
+use Shorthand\Services\ConnectionFailure;
 use Shorthand\Services\Shorthand;
 use Shorthand\Core\Loader;
 
@@ -37,11 +39,17 @@ class RedirectToIntegration {
 	 */
 	private $auth_state_manager;
 
-	public function __construct( Shorthand $shorthand, ReturnToConnect $return_to_connect, string $failure_url, AuthStateManager $auth_state_manager ) {
-		$this->shorthand          = $shorthand;
-		$this->return_to_connect  = $return_to_connect;
-		$this->failure_url        = $failure_url;
-		$this->auth_state_manager = $auth_state_manager;
+	/**
+	 * @var \Shorthand\Admin\ConnectionErrorPage
+	 */
+	private $connection_error_page;
+
+	public function __construct( Shorthand $shorthand, ReturnToConnect $return_to_connect, string $failure_url, AuthStateManager $auth_state_manager, ConnectionErrorPage $connection_error_page ) {
+		$this->shorthand             = $shorthand;
+		$this->return_to_connect     = $return_to_connect;
+		$this->failure_url           = $failure_url;
+		$this->auth_state_manager    = $auth_state_manager;
+		$this->connection_error_page = $connection_error_page;
 	}
 
 	public function define_redirect_page( Loader $loader ): void {
@@ -58,25 +66,13 @@ class RedirectToIntegration {
 
 	public function render_page() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die(
-				esc_html__( 'You do not have permission to access this page.', 'the-shorthand-editor' ),
-				esc_html__( 'Permission Denied', 'the-shorthand-editor' ),
-				array(
-					'response'  => 403,
-					'back_link' => true,
-				)
-			);
+			$this->connection_error_page->render( ConnectionFailure::permission_to_connect() );
+			return;
 		}
 
 		if ( $this->auth_state_manager->requires_upgrade() ) {
-			wp_die(
-				esc_html__( 'This version of the Shorthand plugin is no longer compatible with Shorthand. Please update the plugin before connecting.', 'the-shorthand-editor' ),
-				esc_html__( 'Plugin Update Required', 'the-shorthand-editor' ),
-				array(
-					'link_url'  => esc_url( self_admin_url( 'plugins.php' ) ),
-					'link_text' => esc_html__( 'Go to Plugins', 'the-shorthand-editor' ),
-				)
-			);
+			$this->connection_error_page->render( ConnectionFailure::upgrade_required() );
+			return;
 		}
 
 		$target_url = $this->return_to_connect->get_callback_url();

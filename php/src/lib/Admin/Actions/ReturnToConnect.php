@@ -6,7 +6,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 use Shorthand\Admin\AdminGateway;
+use Shorthand\Admin\ConnectionErrorPage;
 use Shorthand\Core\Loader;
+use Shorthand\Services\ConnectionFailure;
 use Shorthand\Services\Shorthand;
 
 class ReturnToConnect {
@@ -26,10 +28,16 @@ class ReturnToConnect {
 	 */
 	private $admin_gateway;
 
-	public function __construct( Shorthand $shorthand, ConnectionCompletionService $connection_completion_service, AdminGateway $admin_gateway ) {
+	/**
+	 * @var \Shorthand\Admin\ConnectionErrorPage
+	 */
+	private $connection_error_page;
+
+	public function __construct( Shorthand $shorthand, ConnectionCompletionService $connection_completion_service, AdminGateway $admin_gateway, ConnectionErrorPage $connection_error_page ) {
 		$this->shorthand                     = $shorthand;
 		$this->connection_completion_service = $connection_completion_service;
 		$this->admin_gateway                 = $admin_gateway;
+		$this->connection_error_page         = $connection_error_page;
 	}
 
 	/**
@@ -74,47 +82,42 @@ class ReturnToConnect {
 
 	public function render_page(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die(
-				esc_html__( 'You do not have permission to manage Shorthand settings. Please contact your site administrator to request access.', 'the-shorthand-editor' ),
-				esc_html__( 'Permission Denied', 'the-shorthand-editor' ),
-				array(
-					'response'  => 403,
-					'link_url'  => esc_url( admin_url( '/' ) ),
-					'link_text' => esc_html__( 'Return to Dashboard', 'the-shorthand-editor' ),
-				)
-			);
-			exit;
+			$this->connection_error_page->render( ConnectionFailure::permission_to_complete() );
+			return;
 		}
 
 		if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), 'shorthand_connect_complete' ) ) {
-			wp_die(
-				esc_html__( 'Your connection request has expired. This can happen if the connection process took too long. Please try again.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection Expired', 'the-shorthand-editor' ),
-				array(
-					'link_url'  => esc_url( admin_url( 'admin-post.php?action=shorthand_connect_start' ) ),
-					'link_text' => esc_html__( 'Try connecting again', 'the-shorthand-editor' ),
-				)
-			);
-			exit;
+			$this->connection_error_page->render( ConnectionFailure::expired() );
+			return;
 		}
 
 		$token = isset( $_GET['token'] ) ? sanitize_text_field( wp_unslash( $_GET['token'] ) ) : '';
 
 		if ( ! $token ) {
-			wp_die(
-				esc_html__( 'The connection to Shorthand was not completed. You can try again from the settings page when you are ready.', 'the-shorthand-editor' ),
-				esc_html__( 'Connection Canceled', 'the-shorthand-editor' ),
-				array(
-					'link_url'  => esc_url( $this->admin_gateway->get_settings_page_url() ),
-					'link_text' => esc_html__( 'Go to Shorthand Settings', 'the-shorthand-editor' ),
-				)
-			);
-			exit;
+			$this->connection_error_page->render( ConnectionFailure::canceled() );
+			return;
 		}
 
-		$raw_post_id  = isset( $_GET['post_id'] ) ? wp_unslash( $_GET['post_id'] ) : '';
-		$post_id      = is_numeric( $raw_post_id ) ? absint( $raw_post_id ) : 0;
-		$redirect_url = $this->connection_completion_service->complete( $token, $post_id );
+		$raw_post_id = isset( $_GET['post_id'] ) ? wp_unslash( $_GET['post_id'] ) : '';
+		$post_id     = is_numeric( $raw_post_id ) ? absint( $raw_post_id ) : 0;
+
+		/*
+		 * Completion talks to Shorthand and renders its own failure pages.
+		 * Anything that still escapes must land on a branded page rather
+		 * than WordPress's raw critical-error screen.
+		 */
+		try {
+			$redirect_url = $this->connection_completion_service->complete( $token, $post_id );
+		} catch ( \Throwable $unexpected ) {
+			// Class only: exception messages can echo secrets (option values, SQL).
+			$this->connection_error_page->render(
+				ConnectionFailure::unexpected_error()->with_diagnostics(
+					array( 'exception' => get_class( $unexpected ) )
+				)
+			);
+			return;
+		}
+
 		wp_safe_redirect( $redirect_url );
 		exit;
 	}

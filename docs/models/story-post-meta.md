@@ -7,8 +7,9 @@ updated: 2026-08-25
 # Story post meta
 
 A Shorthand story post holds its identity, its rendered markup, and the state
-of any in-flight pull in post meta. No story content is stored in
-`post_content`.
+of any in-flight pull in post meta. `post_content` and `post_excerpt` hold a
+plain text copy of the story, for core search and listing views only; the
+rendered page is built from `story_body`.
 
 ## Keys
 
@@ -22,10 +23,11 @@ of any in-flight pull in post meta. No story content is stored in
 | `story_update_nonce` | string | Nonce of the in-flight pull |
 | `story_update_state` | object | Progress of the in-flight pull |
 | `story_pulls` | object | Pull directories awaiting cleanup |
+| `story_excerpt` | string | The excerpt last generated from the story body |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
 
-`Shorthand\Plugin\PostType::register_post_type()` registers the first eight.
-`story_update_error` is written directly by
+`Shorthand\Plugin\PostType::register_post_type()` registers every key except
+`story_update_error`, which is written directly by
 `Shorthand\Services\PostAPI::set_story_update_error()`.
 
 Only `story_id` and `story_version` are exposed over REST.
@@ -81,6 +83,16 @@ array(
 A pull directory cannot be listed on a remote uploads host, so this is the only
 record of which chunk files exist. `files` is the count of `file-N.part`
 entries written so far.
+
+## story_excerpt
+
+The excerpt `Shorthand\Services\PostAPI::store_story_text()` last wrote to
+`post_excerpt`, held as the column holds it, after `excerpt_save_pre` has
+re-encoded entities.
+
+The next publish overwrites `post_excerpt` only when it still matches this
+value. Any other value, including an empty one, is an author's edit and is
+left alone.
 
 ## story_update_state
 

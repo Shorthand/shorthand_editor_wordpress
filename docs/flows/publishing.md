@@ -38,6 +38,8 @@ different meaning.
 ## Sequence
 
 1. `pull_story_begin()` requests a download URL and creates the pull directory.
+   A `429` from Shorthand means the workspace is at its concurrent build cap;
+   the publish fails at once, and the author chooses when to retry.
 2. Successive WP-Cron events download 5 MB ranges into the pull directory.
 3. On the final chunk, the chunks are concatenated into the staging directory.
 4. The archive is unpacked into the staging directory.
@@ -47,8 +49,10 @@ different meaning.
 6. Files present in the manifest but absent from the archive are deleted.
 7. `story_head` and `story_body` post meta are written, with asset URLs
    rewritten.
-8. `story_manifest` post meta is written.
-9. The staging directory and the pull directory are deleted.
+8. The story's plain text is mirrored into `post_content` and `post_excerpt`,
+   so core search and listing views have something to read.
+9. `story_manifest` post meta is written.
+10. The staging directory and the pull directory are deleted.
 
 Steps 5 and 6 run through `Shorthand\Services\FileSystemService`, never through
 a direct `ZipArchive::extractTo()` into uploads. See
@@ -89,7 +93,7 @@ extracting.
 
 ## Decision: write the manifest after the copy, never before
 
-Step 8 follows step 5. A stale manifest causes over-copying, which is safe. A
+Step 9 follows step 5. A stale manifest causes over-copying, which is safe. A
 manifest written early would claim files were copied when they were not, and
 the next publish would skip them permanently.
 
