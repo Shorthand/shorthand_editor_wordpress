@@ -14,6 +14,7 @@ delete_option( 'shorthand_flush_rewrite_rules' );
 delete_option( 'shorthand_regex_list' );
 delete_option( 'shorthand_css' );
 delete_option( 'shorthand_disable_cron' );
+delete_option( 'shorthand_disable_staging' );
 
 delete_option( 'shorthand_app_url' );
 delete_option( 'shorthand_api_url' );

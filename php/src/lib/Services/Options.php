@@ -63,23 +63,23 @@ class Options {
 
 		register_setting(
 			'theshed-general-options-group',
-			'shorthand_css',
+			'shorthand_disable_staging',
 			array(
-				'type'              => 'string',
-				'sanitize_callback' => 'wp_kses_no_null',
-				'default'           => '',
+				'type'              => 'boolean',
+				'label'             => __( 'Disable staging directory', 'the-shorthand-editor' ),
+				'description'       => __( 'Unpack story archives straight into the uploads directory', 'the-shorthand-editor' ),
+				'sanitize_callback' => array( $this, 'sanitize_checkbox' ),
+				'default'           => false,
 			)
 		);
 
 		register_setting(
 			'theshed-general-options-group',
-			'shorthand_disable_cron',
+			'shorthand_css',
 			array(
 				'type'              => 'string',
-				'sanitize_callback' => function ( $value ) {
-					return (bool) $value;
-				},
-				'default'           => false,
+				'sanitize_callback' => 'wp_kses_no_null',
+				'default'           => '',
 			)
 		);
 
@@ -284,6 +284,37 @@ class Options {
 		return get_option( 'shorthand_regex_list' );
 	}
 
+	/**
+	 * Reports whether story archives are unpacked in a staging directory first.
+	 *
+	 * Staging is the default, and cannot be turned off where uploads are
+	 * remote: `ZipArchive::extractTo()` ignores stream wrappers, so unpacking
+	 * straight into uploads would write nothing there.
+	 */
+	public function is_staging_enabled(): bool {
+		if ( ! $this->can_disable_staging() ) {
+			return true;
+		}
+
+		return ! get_option( 'shorthand_disable_staging', false );
+	}
+
+	/**
+	 * Reports whether the staging setting is the author's to choose.
+	 */
+	public function can_disable_staging(): bool {
+		return ! FileSystem::is_remote_uploads();
+	}
+
+	/**
+	 * Reads a checkbox as a boolean.
+	 *
+	 * @param mixed $value Submitted value; absent when the box is unticked.
+	 */
+	public function sanitize_checkbox( $value ): bool {
+		return ! empty( $value );
+	}
+
 	public function get_v2_token() {
 		$token = get_option( 'shorthand_v2_token' );
 		return empty( $token ) ? '' : $token;
@@ -351,10 +382,6 @@ class Options {
 		);
 	}
 
-	public function is_publishing_async(): bool {
-		return ! (bool) get_option( 'shorthand_disable_cron' );
-	}
-
 	/**
 	 * On plugin activation, copy over any config from the old plugin, unless newer values exist.
 	 */
@@ -379,5 +406,19 @@ class Options {
 
 		/* Clean up legacy notice dismissal meta from earlier plugin versions. */
 		delete_metadata( 'user', 0, 'shorthand_connect_notice_dismissed', '', true );
+	}
+
+	/**
+	 * Drops options left behind by earlier plugin versions.
+	 *
+	 * Runs on every request, because upgrading a plugin does not re-run its
+	 * activation hook. Each option named here is autoloaded, so the check is
+	 * free once the option has been dropped.
+	 */
+	public function remove_legacy_options(): void {
+		/* Publishing is always asynchronous; the synchronous debug override is gone. */
+		if ( null !== get_option( 'shorthand_disable_cron', null ) ) {
+			delete_option( 'shorthand_disable_cron' );
+		}
 	}
 }
