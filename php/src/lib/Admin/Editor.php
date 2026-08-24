@@ -149,6 +149,10 @@ class Editor {
 		$this->post_api->set_story_update_progress( $post_id );
 		$this->post_api->set_story_update_error( $post_id );
 
+		if ( ! $this->options->is_publishing_async() ) {
+			return $data;
+		}
+
 		$result = $this->cron->schedule_pull_story( $post_id );
 
 		if ( is_wp_error( $result ) || ! $result ) {
@@ -162,10 +166,12 @@ class Editor {
 	}
 
 	/**
-	 * Clears the recorded story version when a post leaves a publishing status.
+	 * Publishes the story, or clears the recorded version when the post is not published.
 	 *
-	 * Publishing itself is scheduled in `wp_insert_post_data()`, which runs
-	 * before the post is saved.
+	 * Asynchronous publishing is scheduled in `wp_insert_post_data()`, which
+	 * runs before the post is saved, so this method returns early. The
+	 * synchronous path below is a debug override, reached only through
+	 * `shorthand_disable_cron`.
 	 *
 	 * @param int      $post_id Post being saved.
 	 * @param \WP_Post $post    Post being saved.
@@ -173,7 +179,25 @@ class Editor {
 	public function save_shorthand_story( $post_id, $post ) {
 		if ( 'publish' !== $post->post_status && 'future' !== $post->post_status ) {
 			$this->post_api->set_post_story_version( $post_id, null );
+			return;
 		}
+
+		if ( $this->options->is_publishing_async() ) {
+			return;
+		}
+
+		$content_version = $this->post_api->pull_story_now( $this->get_story_id( $post ), $post_id );
+
+		if ( is_wp_error( $content_version ) ) {
+			$this->post_api->set_story_update_error( $post_id, $content_version );
+			wp_die(
+				esc_html( $content_version->get_error_message() ),
+				esc_html__( 'Error publishing story', 'the-shorthand-editor' ),
+				array( 'back_link' => true )
+			);
+		}
+
+		$this->post_api->set_post_story_version( $post_id, (int) $content_version );
 	}
 
 	/**

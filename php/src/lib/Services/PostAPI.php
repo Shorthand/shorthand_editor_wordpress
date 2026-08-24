@@ -572,6 +572,129 @@ class PostAPI {
 		return null;
 	}
 
+	/**
+	 * Downloads and unpacks a story in the request that saves the post.
+	 *
+	 * The synchronous publish path, reached only through the
+	 * `shorthand_disable_cron` option. Does in one request what
+	 * `pull_story_begin()` and `pull_story_completed()` do across cron events,
+	 * including the staging directory and the document nonce.
+	 *
+	 * @param string $story_id Shorthand story ID.
+	 * @param int    $post_id  Post the story belongs to.
+	 * @return int|null|\WP_Error Content version, or null when the response carried none.
+	 */
+	public function pull_story_now( string $story_id, int $post_id ) {
+		/* Aborts any outstanding cron pull, and versions the documents. */
+		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
+		$this->sweep_story_pulls( $post_id, $request_nonce );
+
+		$pulled       = $this->pull_story( $story_id, $post_id );
+		$staging_path = $this->file_system->make_temp_dir( "sh_pull_{$request_nonce}_" );
+
+		$error = $this->extract_story_content(
+			$pulled['zip_file'],
+			$post_id,
+			$story_id,
+			$staging_path,
+			$request_nonce
+		);
+
+		$this->file_system->delete_temp_dir( $staging_path );
+		$this->file_system->delete_file( $pulled['zip_file'] );
+
+		return is_wp_error( $error ) ? $error : $pulled['content_version'];
+	}
+
+	/**
+	 * Streams a story archive to a local temporary file.
+	 *
+	 * Uses `GET /v2/stories/{story_id}`, not the generate-then-range endpoint
+	 * the cron path uses. Reports failure with `wp_die()`, because it runs
+	 * inside `save_post` and has no later request to show an error in.
+	 *
+	 * @param string $story_id       Shorthand story ID.
+	 * @param int    $post_id        Post the story belongs to.
+	 * @param bool   $without_assets Ask the API to omit media.
+	 * @param bool   $assets_only    Ask the API for media alone.
+	 * @return mixed[]|\WP_Error
+	 */
+	public function pull_story( $story_id, $post_id, $without_assets = false, $assets_only = false ) {
+		$zip_file = wp_tempnam( "sh_zip_{$post_id}", get_temp_dir() );
+
+		$args = array();
+		if ( $without_assets ) {
+			$args['without_assets'] = 1;
+		}
+		if ( $assets_only ) {
+			$args['assets_only'] = 1;
+		}
+
+		$url = $this->options->get_api_url() . '/v2/stories/' . $story_id;
+		$url = add_query_arg( $args, $url );
+
+		$response = $this->shorthand->shorthand_api_authed_request(
+			$url,
+			'GET',
+			array(
+				'timeout'  => '600',
+				'stream'   => true,
+				'filename' => $zip_file,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			$this->set_story_update_error( $post_id, $response );
+			wp_die(
+				esc_html( $response->get_error_message() ),
+				esc_html__( 'Error publishing story', 'the-shorthand-editor' ),
+				array( 'back_link' => true )
+			);
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+		if ( 200 !== $status_code ) {
+			$body    = wp_remote_retrieve_body( $response );
+			$payload = json_decode( $body );
+
+			$error = $this->get_error_from_payload( $story_id, $payload, $status_code );
+			$this->set_story_update_error( $post_id, $error );
+
+			wp_die(
+				esc_html( isset( $payload->message ) ? $payload->message : __( 'An error occurred while publishing the story.', 'the-shorthand-editor' ) ),
+				esc_html__( 'Error publishing story', 'the-shorthand-editor' ),
+				array(
+					'additional_errors' => array(
+						array( 'message' => esc_html( "The request returned HTTP status code {$status_code}." ) ),
+					),
+					'back_link'         => true,
+				)
+			);
+		}
+
+		$content_version = wp_remote_retrieve_header( $response, 'content-version' );
+		$content_version = is_numeric( $content_version ) ? (int) $content_version : null;
+
+		return array(
+			'zip_file'        => $zip_file,
+			'content_version' => $content_version,
+		);
+	}
+
+	/**
+	 * Builds a publish error from an API error payload.
+	 *
+	 * @param string $story_id    Shorthand story ID.
+	 * @param mixed  $payload     Decoded response body.
+	 * @param int    $status_code HTTP status the request returned.
+	 */
+	private function get_error_from_payload( $story_id, $payload, $status_code ): WP_Error {
+		$error = new WP_Error( 'story', "The Shorthand story ID is {$story_id}.", $story_id );
+		$error->add( 'status', "Received HTTP status {$status_code}.", $status_code );
+		$this->add_error_params( $error, $payload );
+		return $error;
+	}
+
 	public function get_post_story_version( $post_id ): ?int {
 		$version = get_post_meta( $post_id, 'story_version', true );
 		$version = ! empty( $version ) || '0' === $version ? (int) $version : null;

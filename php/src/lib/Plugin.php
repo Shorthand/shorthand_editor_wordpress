@@ -67,8 +67,6 @@ class Plugin {
 		$this->version   = $this->dependencies->get_version();
 		$this->post_type = $this->dependencies->get_post_type();
 
-		$this->options->remove_legacy_options();
-
 		$this->dependencies->get_auth_state_manager()->initialise_missing_state(
 			'' !== $this->options->get_v2_token()
 		);

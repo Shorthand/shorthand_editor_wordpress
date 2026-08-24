@@ -763,6 +763,44 @@ function get_footer(): void {
 
 
 /**
+ * The subset of `WP_Post` this plugin's type hints require.
+ */
+class WP_Post {
+
+	/**
+	 * Post ID.
+	 *
+	 * @var int
+	 */
+	public $ID = 0;
+
+	/**
+	 * Post status, such as `publish` or `draft`.
+	 *
+	 * @var string
+	 */
+	public $post_status = '';
+
+	/**
+	 * Registered post type name.
+	 *
+	 * @var string
+	 */
+	public $post_type = '';
+
+	/**
+	 * Sets the given fields, leaving the rest at their defaults.
+	 *
+	 * @param array<string, mixed> $fields Post fields to set.
+	 */
+	public function __construct( array $fields = array() ) {
+		foreach ( $fields as $name => $value ) {
+			$this->$name = $value;
+		}
+	}
+}
+
+/**
  * Raised in place of `wp_die()`, which halts the request in WordPress.
  */
 class Tests_WP_Die_Exception extends Exception {}

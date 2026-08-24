@@ -75,6 +75,18 @@ class Options {
 
 		register_setting(
 			'theshed-general-options-group',
+			'shorthand_disable_cron',
+			array(
+				'type'              => 'boolean',
+				'label'             => __( 'Disable asynchronous publishing', 'the-shorthand-editor' ),
+				'description'       => __( 'Download and unpack the story in the request that saves the post', 'the-shorthand-editor' ),
+				'sanitize_callback' => array( $this, 'sanitize_checkbox' ),
+				'default'           => false,
+			)
+		);
+
+		register_setting(
+			'theshed-general-options-group',
 			'shorthand_css',
 			array(
 				'type'              => 'string',
@@ -300,6 +312,16 @@ class Options {
 	}
 
 	/**
+	 * Reports whether publishing is scheduled on WP-Cron.
+	 *
+	 * A debug override only. The synchronous path does the whole download and
+	 * unpack in the request that saves the post.
+	 */
+	public function is_publishing_async(): bool {
+		return ! get_option( 'shorthand_disable_cron', false );
+	}
+
+	/**
 	 * Reports whether the staging setting is the author's to choose.
 	 */
 	public function can_disable_staging(): bool {
@@ -406,19 +428,5 @@ class Options {
 
 		/* Clean up legacy notice dismissal meta from earlier plugin versions. */
 		delete_metadata( 'user', 0, 'shorthand_connect_notice_dismissed', '', true );
-	}
-
-	/**
-	 * Drops options left behind by earlier plugin versions.
-	 *
-	 * Runs on every request, because upgrading a plugin does not re-run its
-	 * activation hook. Each option named here is autoloaded, so the check is
-	 * free once the option has been dropped.
-	 */
-	public function remove_legacy_options(): void {
-		/* Publishing is always asynchronous; the synchronous debug override is gone. */
-		if ( null !== get_option( 'shorthand_disable_cron', null ) ) {
-			delete_option( 'shorthand_disable_cron' );
-		}
 	}
 }

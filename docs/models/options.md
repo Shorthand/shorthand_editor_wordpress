@@ -14,12 +14,17 @@ settings screen, and those the plugin writes for itself.
 
 Group `theshed-general-options-group`.
 
-| Option | Type | Default | Sanitizer |
-| --- | --- | --- | --- |
-| `shorthand_permalink` | string | `story` | `sanitize_text_field` |
-| `shorthand_regex_list` | string | `''` | `Options::sanitize_regex_list()` |
-| `shorthand_disable_staging` | boolean | `false` | `Options::sanitize_checkbox()` |
-| `shorthand_css` | string | `''` | `wp_kses_no_null` |
+| Option | Type | Default | Sanitizer | Field |
+| --- | --- | --- | --- | --- |
+| `shorthand_permalink` | string | `story` | `sanitize_text_field` | yes |
+| `shorthand_regex_list` | string | `''` | `Options::sanitize_regex_list()` | yes |
+| `shorthand_disable_staging` | boolean | `false` | `Options::sanitize_checkbox()` | yes |
+| `shorthand_disable_cron` | boolean | `false` | `Options::sanitize_checkbox()` | no |
+| `shorthand_css` | string | `''` | `wp_kses_no_null` | yes |
+
+`Shorthand\Admin\GeneralSettingsPage` renders a field for every option marked
+`yes`. `shorthand_disable_cron` is registered but has no field: set it with
+`wp option update shorthand_disable_cron 1`.
 
 ## Internal options
 
@@ -51,18 +56,16 @@ says. The settings screen renders the checkbox disabled, with a sentence from
 See `docs/services/file-system.md` for how a remote uploads directory is
 detected, and `docs/flows/publishing.md` for what staging does.
 
-## Removed options
+## shorthand_disable_cron
 
-`Options::remove_legacy_options()` runs on upgrade and deletes options the
-plugin no longer reads.
+Publishing is scheduled on WP-Cron by default. This option turns scheduling off,
+so `Shorthand\Admin\Editor::save_shorthand_story()` downloads and unpacks the
+story in the request that saves the post. A debug override.
 
-| Option | Removed because |
-| --- | --- |
-| `shorthand_disable_cron` | Publishing is always asynchronous; the synchronous debug override is gone |
+`Options::is_publishing_async()` reports the inverse of the stored option.
 
-Test the option's presence with a sentinel default, not with `false !==`. A
-checkbox left unticked stores a falsy value, and a `false !==` test would leave
-that row behind.
+The synchronous path uses a different API endpoint, reports failure with
+`wp_die()`, and reports no progress. See `docs/flows/publishing.md`.
 
 ## Uninstall
 

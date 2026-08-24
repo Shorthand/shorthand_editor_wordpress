@@ -21,39 +21,38 @@ final class OptionsTest extends WordPressTestCase {
 	}
 
 	/**
-	 * The synchronous publish override goes, whatever it was left at.
+	 * The cron override is read as a plain truthy value.
 	 *
-	 * @dataProvider legacy_option_values
+	 * @dataProvider cron_option_values
 	 *
-	 * @param mixed $value Value the option was left at.
+	 * @param mixed $value    Value the option is left at.
+	 * @param bool  $expected Whether publishing should be scheduled on WP-Cron.
 	 */
-	public function test_legacy_synchronous_publish_option_is_dropped( $value ): void {
+	public function test_the_cron_override_decides_whether_publishing_is_asynchronous( $value, bool $expected ): void {
 		\tests_wp_set_option( 'shorthand_disable_cron', $value );
 
 		$options = new Options( new Version() );
-		$options->remove_legacy_options();
 
-		$this->assertSame( 'absent', \get_option( 'shorthand_disable_cron', 'absent' ) );
+		$this->assertSame( $expected, $options->is_publishing_async() );
 	}
 
 	/**
-	 * A turned-off override is still an option row, and still goes.
+	 * A checkbox left unticked stores a falsy value, not an absent row.
 	 *
-	 * @return array<string, array{0: mixed}>
+	 * @return array<string, array{0: mixed, 1: bool}>
 	 */
-	public static function legacy_option_values(): array {
+	public static function cron_option_values(): array {
 		return array(
-			'turned on'  => array( true ),
-			'turned off' => array( false ),
-			'unchecked'  => array( '' ),
+			'turned on'  => array( true, false ),
+			'turned off' => array( false, true ),
+			'unchecked'  => array( '', true ),
 		);
 	}
 
-	public function test_legacy_option_cleanup_is_a_no_op_on_a_clean_install(): void {
+	public function test_publishing_is_asynchronous_on_a_clean_install(): void {
 		$options = new Options( new Version() );
-		$options->remove_legacy_options();
 
-		$this->assertSame( 'absent', \get_option( 'shorthand_disable_cron', 'absent' ) );
+		$this->assertTrue( $options->is_publishing_async() );
 	}
 
 	public function test_permalink_changes_schedule_a_rewrite_flush(): void {

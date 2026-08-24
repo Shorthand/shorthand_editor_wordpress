@@ -8,9 +8,13 @@ updated: 2026-08-25
 
 Publishing downloads a story archive from Shorthand in chunks, unpacks it, and
 copies only the changed files into the uploads directory. It is driven by
-WP-Cron and is always asynchronous.
+WP-Cron.
 
 Entry point: `Shorthand\Services\PostAPI::pull_story_begin()`.
+
+A synchronous path does the same work in the request that saves the post. It is
+a debug override, off by default, and described under
+`## Synchronous publishing`.
 
 ## Directories
 
@@ -128,6 +132,26 @@ the third argument of the `theshed_post_process_body` and
 A republish of an unedited story performs two writes and two deletes, both of
 them documents, whatever the size of the story. See
 `Shorthand\Tests\Services\PostAPIUnpackTest`.
+
+## Synchronous publishing
+
+`Shorthand\Services\PostAPI::pull_story_now()` replaces steps 1–4 with a single
+`GET /v2/stories/{story_id}`, streamed to a local temporary file, then runs
+steps 5–9 unchanged. Reached only when the `shorthand_disable_cron` option is
+set. Option: `docs/models/options.md`.
+
+It differs from the WP-Cron path in four ways that matter.
+
+| | WP-Cron path | Synchronous path |
+| --- | --- | --- |
+| Endpoint | `POST /v2/stories/{id}/generate`, then ranged `GET` | `GET /v2/stories/{id}` |
+| Failure | Recorded in `story_update_error`, shown in the editor | `wp_die()` halts the save |
+| Progress | `story_update_progress` polled by the editor | None |
+| Peak cost | One 5 MB chunk per request | Whole archive plus the unpacked tree in one request |
+
+The last row is the reason it stays off. Staging adds a full local copy of the
+story, and a remote uploads directory adds one HTTP request per copied file.
+Both land in a single `save_post` request, under `max_execution_time`.
 
 ## Pull tracking
 
