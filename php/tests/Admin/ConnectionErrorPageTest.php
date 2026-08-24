@@ -50,6 +50,19 @@ final class ConnectionErrorPageTest extends WordPressTestCase {
 		$this->assertStringContainsString( '"plugin_version"', $html );
 	}
 
+	public function test_diagnostics_carry_the_served_status_even_without_classifier_data(): void {
+		$html = ( new ConnectionErrorPage() )->build_html( ConnectionFailure::expired() );
+
+		$this->assertStringContainsString( '"page_status":400', $html );
+	}
+
+	public function test_the_two_inactive_connection_pages_have_distinct_modes(): void {
+		$this->assertNotSame(
+			ConnectionFailure::connection_inactive_admin()->get_slug(),
+			ConnectionFailure::connection_inactive()->get_slug()
+		);
+	}
+
 	public function test_rendering_sends_the_failure_status_and_no_cache_headers(): void {
 		ob_start();
 		( new ConnectionErrorPage() )->render( ConnectionFailure::expired(), false );

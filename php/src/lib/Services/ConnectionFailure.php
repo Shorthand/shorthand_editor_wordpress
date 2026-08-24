@@ -496,7 +496,7 @@ class ConnectionFailure {
 	 */
 	public static function connection_inactive_admin(): self {
 		return new self(
-			'connect.inactive',
+			'connect.inactive.admin',
 			__( 'Shorthand is not connected', 'the-shorthand-editor' ),
 			__( 'This site\'s connection to Shorthand is not active right now, so Shorthand stories cannot be opened or created.', 'the-shorthand-editor' ),
 			'',

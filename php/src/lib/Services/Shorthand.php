@@ -123,7 +123,8 @@ class Shorthand {
 			return;
 		}
 
-		if ( empty( $payload->nonce ) ) {
+		$nonce = isset( $payload->nonce ) && is_string( $payload->nonce ) ? $payload->nonce : '';
+		if ( '' === $nonce ) {
 			$this->connection_error_page->render(
 				ConnectionFailure::return_token_malformed()->with_diagnostics(
 					array( 'parse_error' => 'missing-nonce' )
@@ -134,7 +135,7 @@ class Shorthand {
 
 		// https://darutk.medium.com/illustrated-dpop-oauth-access-token-security-enhancement-801680d761ff
 		// The dpop response is a separate JWT to the token.
-		$dpop = $this->sign_dpop_for_connection( $payload->nonce );
+		$dpop = $this->sign_dpop_for_connection( $nonce );
 
 		$url  = $this->options->get_api_url() . '/v2/connect?type=wordpress'; /* phpcs:ignore WordPress.WP.CapitalPDangit */
 		$body = array(
@@ -380,110 +381,129 @@ class Shorthand {
 	}
 
 	private function sign_identity_for_current_user( string $res, string $return_url ): string {
+		// Missing or corrupt key options surface as a TypeError, not an
+		// Exception, so the whole extraction-and-signing operation is guarded.
 		try {
 			$jwk_secret = $this->options->get_v2_signing_key();
 			$alg        = $jwk_secret['alg'];
 			$key        = $jwk_secret['d'];
-		} catch ( Exception $e ) {
-			$this->connection_error_page->render( ConnectionFailure::signing_keys_missing() );
+
+			$user    = wp_get_current_user();
+			$time    = time();
+			$payload = array(
+				'iss'             => get_site_url(),
+				'aud'             => 'shorthand.com',
+				'iat'             => $time,
+				'exp'             => $time + 5 * 60, // 5 minutes
+				'sub'             => "wordpress/{$user->ID}",
+				'scope'           => 'stories',
+				'session_request' => array(
+					'return_url'        => $return_url,
+					'resource_context'  => array(
+						'resource'     => $res,
+						'team'         => $this->options->get_token_team_id(),
+						'organisation' => $this->options->get_token_org_id(),
+					),
+					'wordpress_context' => $this->context_provider->get_context(),
+				),
+			);
+
+			return JWT::encode( $payload, $key, $alg );
+		} catch ( \Throwable $signing_error ) {
+			$this->connection_error_page->render(
+				ConnectionFailure::signing_keys_missing()->with_diagnostics(
+					array( 'exception' => get_class( $signing_error ) )
+				)
+			);
 			return '';
 		}
-
-		$user    = wp_get_current_user();
-		$time    = time();
-		$payload = array(
-			'iss'             => get_site_url(),
-			'aud'             => 'shorthand.com',
-			'iat'             => $time,
-			'exp'             => $time + 5 * 60, // 5 minutes
-			'sub'             => "wordpress/{$user->ID}",
-			'scope'           => 'stories',
-			'session_request' => array(
-				'return_url'        => $return_url,
-				'resource_context'  => array(
-					'resource'     => $res,
-					'team'         => $this->options->get_token_team_id(),
-					'organisation' => $this->options->get_token_org_id(),
-				),
-				'wordpress_context' => $this->context_provider->get_context(),
-			),
-		);
-
-		return JWT::encode( $payload, $key, $alg );
 	}
 
 	private function sign_identity_for_connection( string $return_url, ?string $nonce = null ): string {
-		[$signing_key, $verifying_key] = $this->options->get_v2_next_signing_and_verifying_keys();
-
+		// Missing or corrupt key options surface as a TypeError, not an
+		// Exception, so the whole extraction-and-signing operation is guarded.
 		try {
+			[$signing_key, $verifying_key] = $this->options->get_v2_next_signing_and_verifying_keys();
+
 			$jwk_secret = $signing_key;
 			$jwk        = $verifying_key;
 			$alg        = $jwk_secret['alg'];
 			$key        = $jwk_secret['d'];
-		} catch ( Exception $e ) {
-			$this->connection_error_page->render( ConnectionFailure::signing_keys_missing() );
+
+			$user    = wp_get_current_user();
+			$time    = time();
+			$payload = array(
+				'iss'             => get_site_url(),
+				'aud'             => 'shorthand.com',
+				'iat'             => $time,
+				'exp'             => $time + 15 * 60, // 15 minutes
+				'sub'             => "wordpress/{$user->ID}",
+				'scope'           => 'connect',
+				'connect_request' => array(
+					'return_url'        => $return_url,
+					'wordpress_context' => $this->context_provider->get_context(),
+				),
+			);
+
+			if ( $nonce ) {
+				$payload['nonce'] = $nonce;
+				$payload['jti']   = JWT::urlsafeB64Encode( random_bytes( 16 ) );
+			}
+
+			$head = array(
+				'jwk' => $jwk,
+			);
+
+			return JWT::encode( $payload, $key, $alg, null, $head );
+		} catch ( \Throwable $signing_error ) {
+			$this->connection_error_page->render(
+				ConnectionFailure::signing_keys_missing()->with_diagnostics(
+					array( 'exception' => get_class( $signing_error ) )
+				)
+			);
 			return '';
 		}
-
-		$user    = wp_get_current_user();
-		$time    = time();
-		$payload = array(
-			'iss'             => get_site_url(),
-			'aud'             => 'shorthand.com',
-			'iat'             => $time,
-			'exp'             => $time + 15 * 60, // 15 minutes
-			'sub'             => "wordpress/{$user->ID}",
-			'scope'           => 'connect',
-			'connect_request' => array(
-				'return_url'        => $return_url,
-				'wordpress_context' => $this->context_provider->get_context(),
-			),
-		);
-
-		if ( $nonce ) {
-			$payload['nonce'] = $nonce;
-			$payload['jti']   = JWT::urlsafeB64Encode( random_bytes( 16 ) );
-		}
-
-		$head = array(
-			'jwk' => $jwk,
-		);
-
-		return JWT::encode( $payload, $key, $alg, null, $head );
 	}
 
 	private function sign_dpop_for_connection( string $nonce ): string {
-		[$signing_key, $verifying_key] = $this->options->get_v2_next_signing_and_verifying_keys();
+		// Missing or corrupt key options surface as a TypeError, not an
+		// Exception, so the whole extraction-and-signing operation is guarded.
 		try {
+			[$signing_key, $verifying_key] = $this->options->get_v2_next_signing_and_verifying_keys();
+
 			$jwk_secret = $signing_key;
 			$jwk        = $verifying_key;
 			$alg        = $jwk_secret['alg'];
 			$key        = $jwk_secret['d'];
-		} catch ( Exception $e ) {
-			$this->connection_error_page->render( ConnectionFailure::signing_keys_missing() );
+
+			$user    = wp_get_current_user();
+			$time    = time();
+			$payload = array(
+				'iss'   => get_site_url(),
+				'aud'   => 'shorthand.com',
+				'iat'   => $time,
+				'exp'   => $time + 15 * 60, // 15 minutes
+				'sub'   => "wordpress/{$user->ID}",
+				'scope' => 'connect',
+			);
+
+			$payload['nonce'] = $nonce;
+			$payload['jti']   = JWT::urlsafeB64Encode( random_bytes( 16 ) );
+
+			$head = array(
+				'typ' => 'dpop+jwt',
+				'jwk' => $jwk,
+			);
+
+			return JWT::encode( $payload, $key, $alg, null, $head );
+		} catch ( \Throwable $signing_error ) {
+			$this->connection_error_page->render(
+				ConnectionFailure::signing_keys_missing()->with_diagnostics(
+					array( 'exception' => get_class( $signing_error ) )
+				)
+			);
 			return '';
 		}
-
-		$user    = wp_get_current_user();
-		$time    = time();
-		$payload = array(
-			'iss'   => get_site_url(),
-			'aud'   => 'shorthand.com',
-			'iat'   => $time,
-			'exp'   => $time + 15 * 60, // 15 minutes
-			'sub'   => "wordpress/{$user->ID}",
-			'scope' => 'connect',
-		);
-
-		$payload['nonce'] = $nonce;
-		$payload['jti']   = JWT::urlsafeB64Encode( random_bytes( 16 ) );
-
-		$head = array(
-			'typ' => 'dpop+jwt',
-			'jwk' => $jwk,
-		);
-
-		return JWT::encode( $payload, $key, $alg, null, $head );
 	}
 
 }

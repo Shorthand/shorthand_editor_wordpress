@@ -100,6 +100,7 @@ class ConnectionErrorPage {
 		$diagnostics = array_merge(
 			array(
 				'mode'           => $failure->get_slug(),
+				'page_status'    => $failure->get_status(),
 				'timestamp'      => gmdate( 'c' ),
 				'plugin_version' => Version::PLUGIN_VERSION,
 				'wp_version'     => isset( $GLOBALS['wp_version'] ) ? (string) $GLOBALS['wp_version'] : '',

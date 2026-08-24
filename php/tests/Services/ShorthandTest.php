@@ -283,6 +283,15 @@ final class ShorthandTest extends WordPressTestCase {
 		$service->connect( 'not-a-jwt' );
 	}
 
+	public function test_connect_renders_the_malformed_token_page_when_the_nonce_is_not_a_string(): void {
+		[$service, $api_client, $error_page] = $this->connectable_service();
+
+		$api_client->expects( $this->never() )->method( 'request' );
+		$this->expect_rendered_slug( $error_page, 'connect.token.malformed' );
+
+		$service->connect( $this->return_token( array( 'nonce' => array( 'unexpected' ) ) ) );
+	}
+
 	public function test_connect_renders_the_malformed_token_page_when_the_nonce_is_missing(): void {
 		[$service, $api_client, $error_page] = $this->connectable_service();
 
@@ -354,5 +363,76 @@ final class ShorthandTest extends WordPressTestCase {
 		$service->connect( $this->return_token( array( 'nonce' => 'n1' ) ) );
 
 		$this->assertFalse( get_option( 'shorthand_v2_token' ) );
+	}
+
+	public function test_missing_next_keys_render_the_keys_missing_page(): void {
+		$options          = $this->createMock( Options::class );
+		$context_provider = $this->createMock( WordPressContextProvider::class );
+		$error_page       = $this->createMock( ConnectionErrorPage::class );
+
+		// The stored-option shape when the key options are absent.
+		$options->method( 'get_v2_next_signing_and_verifying_keys' )->willReturn( array( null, null ) );
+		$context_provider->method( 'get_context' )->willReturn( array() );
+
+		$this->expect_rendered_slug(
+			$error_page,
+			'connect.keys-missing',
+			function ( array $diagnostics ): bool {
+				return isset( $diagnostics['exception'] );
+			}
+		);
+
+		$service = new Shorthand(
+			$options,
+			$this->createMock( Version::class ),
+			$this->createMock( ShorthandApiClient::class ),
+			$context_provider,
+			$error_page,
+			new ConnectionFailureClassifier()
+		);
+
+		// The null keys emit array-offset warnings before the guarded
+		// TypeError; keep them out of the suite's warning report.
+		set_error_handler( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- test-only warning suppression.
+			static function (): bool {
+				return true;
+			},
+			E_WARNING
+		);
+		try {
+			$service->get_integration_url( 'https://blog.example.test/return' );
+		} finally {
+			restore_error_handler();
+		}
+	}
+
+	public function test_a_corrupt_signing_key_renders_the_keys_missing_page(): void {
+		$options          = $this->createMock( Options::class );
+		$context_provider = $this->createMock( WordPressContextProvider::class );
+		$error_page       = $this->createMock( ConnectionErrorPage::class );
+
+		// Options::get_v2_signing_key(): array throws when the option is absent.
+		$options->method( 'get_v2_signing_key' )->willThrowException(
+			new \TypeError( 'Return value must be of type array, null returned' )
+		);
+
+		$this->expect_rendered_slug(
+			$error_page,
+			'connect.keys-missing',
+			function ( array $diagnostics ): bool {
+				return \TypeError::class === ( $diagnostics['exception'] ?? null );
+			}
+		);
+
+		$service = new Shorthand(
+			$options,
+			$this->createMock( Version::class ),
+			$this->createMock( ShorthandApiClient::class ),
+			$context_provider,
+			$error_page,
+			new ConnectionFailureClassifier()
+		);
+
+		$service->get_story_creation_url( 'https://blog.example.test/return' );
 	}
 }
