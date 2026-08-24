@@ -56,6 +56,7 @@ final class ConnectionErrorPageTest extends WordPressTestCase {
 		$output = ob_get_clean();
 
 		$this->assertSame( array( 400 ), \tests_wp_status_headers() );
+		$this->assertSame( 1, \tests_wp_nocache_calls() );
 		$this->assertStringContainsString( '<!DOCTYPE html>', $output );
 	}
 

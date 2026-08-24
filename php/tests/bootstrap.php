@@ -400,6 +400,14 @@ function nocache_headers(): void {
 	$GLOBALS['tests_wp_state']['nocache_calls']++;
 }
 
+function tests_wp_nocache_calls(): int {
+	return $GLOBALS['tests_wp_state']['nocache_calls'];
+}
+
+function wp_get_current_user(): object {
+	return (object) array( 'ID' => 1 );
+}
+
 function __( string $text, string $domain = '' ): string {
 	return $text;
 }
@@ -798,6 +806,22 @@ spl_autoload_register(
 
 		$relative_class = substr( $class, strlen( $prefix ) );
 		$file           = __DIR__ . '/../src/lib/' . str_replace( '\\', '/', $relative_class ) . '.php';
+
+		if ( is_readable( $file ) ) {
+			require_once $file;
+		}
+	}
+);
+spl_autoload_register(
+	function ( string $class_name ): void {
+		$prefix = 'Shorthand\\Vendor\\Firebase\\JWT\\';
+
+		if ( strncmp( $class_name, $prefix, strlen( $prefix ) ) !== 0 ) {
+			return;
+		}
+
+		$relative_class = substr( $class_name, strlen( $prefix ) );
+		$file           = __DIR__ . '/../src/vendor_prefixed/firebase/php-jwt/src/' . str_replace( '\\', '/', $relative_class ) . '.php';
 
 		if ( is_readable( $file ) ) {
 			require_once $file;

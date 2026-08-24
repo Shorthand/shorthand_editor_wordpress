@@ -70,7 +70,7 @@ class Shorthand {
 		$url = get_rest_url();
 		$this->refresh_next_keys();
 
-		$identity = $this->sign_identity_for_connection( $target_url ); // 15 mimnutes
+		$identity = $this->sign_identity_for_connection( $target_url ); // 15 minutes
 
 		$args = array(
 			'type'  => 'wordpress',
@@ -112,8 +112,8 @@ class Shorthand {
 			if ( 3 !== count( $tks ) ) {
 				throw new Exception( 'The return token does not have three segments.' );
 			}
-			[$headb64, $bodyb64, $cryptob64] = $tks;
-			$payload                         = JWT::jsonDecode( JWT::urlsafeB64Decode( $bodyb64 ) );
+			[, $bodyb64] = $tks;
+			$payload     = JWT::jsonDecode( JWT::urlsafeB64Decode( $bodyb64 ) );
 		} catch ( \Throwable $parse_error ) {
 			$this->connection_error_page->render(
 				ConnectionFailure::return_token_malformed()->with_diagnostics(
@@ -153,8 +153,17 @@ class Shorthand {
 			return;
 		}
 
+		// The classifier only passes a response whose body carries a non-empty
+		// string apiToken; guard anyway — this line persists credentials.
 		$body      = json_decode( wp_remote_retrieve_body( $response ), true );
-		$api_token = $body['apiToken'];
+		$api_token = isset( $body['apiToken'] ) && is_string( $body['apiToken'] ) ? $body['apiToken'] : '';
+
+		if ( '' === $api_token ) {
+			$this->connection_error_page->render(
+				ConnectionFailure::response_invalid()->with_diagnostics( array( 'request_url' => $url ) )
+			);
+			return;
+		}
 
 		$this->options->update_v2_signing_keys();
 		update_option( 'shorthand_v2_token', $api_token );
