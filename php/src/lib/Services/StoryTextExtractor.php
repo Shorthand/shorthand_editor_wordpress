@@ -25,27 +25,16 @@ class StoryTextExtractor {
 	/**
 	 * Elements whose text belongs to the page furniture, not the story.
 	 *
-	 * The engine's skip link carries `Theme-skip-content-link` as its class
-	 * and `skip-link` as its id, so the class alone catches it. Bespoke
-	 * customer themes predating that component use `skip-link` as a class.
+	 * Every entry is a `Theme-` class. The engine treats those as public
+	 * names and will not rename one without notice, so a selector built on
+	 * them survives a theme release. Chrome a customer theme injects for
+	 * itself carries no such promise and is left where it is.
 	 */
 	private const CHROME_CLASSES = array(
 		'Theme-Footer',
 		'Theme-SocialIcons',
 		'Theme-Logos',
 		'Theme-skip-content-link',
-		'skip-link',
-	);
-
-	/**
-	 * Elements holding the narrow-screen copy of text that also exists wide.
-	 *
-	 * Themes emit a caption once per screen width and show one of the two.
-	 * Dropping the narrow copy leaves the text present exactly once.
-	 */
-	private const NARROW_COPIES = array(
-		'Responsive--hide-landscape',
-		'Display--md-none',
 	);
 
 	/**
@@ -134,7 +123,7 @@ class StoryTextExtractor {
 			$this->discard( $xpath, '//' . $tag );
 		}
 
-		foreach ( array_merge( self::CHROME_CLASSES, self::NARROW_COPIES ) as $class_name ) {
+		foreach ( self::CHROME_CLASSES as $class_name ) {
 			$this->discard( $xpath, '//*[' . $this->has_class( $class_name ) . ']' );
 		}
 

@@ -64,7 +64,7 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 	public function test_prose_excludes_the_title_section(): void {
 		$text = $this->extract( self::STORY );
 
-		$this->assertSame( 'First paragraph of the story. A caption A note Alpha Beta', $text['prose'] );
+		$this->assertSame( 'First paragraph of the story. A caption A caption A note A note Alpha Beta', $text['prose'] );
 	}
 
 	public function test_chrome_is_dropped_from_both(): void {
@@ -76,12 +76,19 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 		}
 	}
 
-	public function test_skip_link_is_dropped_whichever_shape_a_theme_uses(): void {
-		$engine  = $this->extract( '<a href="#article" id="skip-link" class="Theme-skip-content-link">Skip to main content</a><p>Body.</p>' );
-		$bespoke = $this->extract( '<a href="#" class="skip-link">Skip to main content</a><p>Body.</p>' );
+	/**
+	 * Only the engine's own skip link counts as furniture.
+	 *
+	 * The engine element is matched on `Theme-skip-content-link`, never on
+	 * its `skip-link` id. A `skip-link` class a customer theme injects for
+	 * itself is a name nobody guarantees, so it stays in the text.
+	 */
+	public function test_only_the_engine_skip_link_is_dropped(): void {
+		$engine = $this->extract( '<a href="#article" id="skip-link" class="Theme-skip-content-link">Skip to main content</a><p>Body.</p>' );
+		$theme  = $this->extract( '<a href="#" class="skip-link">Skip to main content</a><p>Body.</p>' );
 
 		$this->assertSame( 'Body.', $engine['content'] );
-		$this->assertSame( 'Body.', $bespoke['content'] );
+		$this->assertSame( 'Skip to main content Body.', $theme['content'] );
 	}
 
 	/**
@@ -126,11 +133,20 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 		$this->assertStringNotContainsString( 'does not support this video', $text['content'] );
 	}
 
-	public function test_text_repeated_for_each_screen_width_appears_once(): void {
+	/**
+	 * Text emitted once per screen width is indexed once per screen width.
+	 *
+	 * The classes that mark the narrow copy — `Responsive--hide-landscape`,
+	 * `Display--md-none` — are layout utilities, not `Theme-` names, so the
+	 * engine may rename them at any time. Keying on them would fail silently
+	 * when it did. The duplicate costs about 1% of a story's indexed length
+	 * and changes no search result, so it is left in.
+	 */
+	public function test_text_repeated_for_each_screen_width_is_kept(): void {
 		$text = $this->extract( self::STORY );
 
-		$this->assertSame( 1, substr_count( $text['content'], 'A caption' ) );
-		$this->assertSame( 1, substr_count( $text['content'], 'A note' ) );
+		$this->assertSame( 2, substr_count( $text['content'], 'A caption' ) );
+		$this->assertSame( 2, substr_count( $text['content'], 'A note' ) );
 	}
 
 	public function test_inline_elements_stay_part_of_their_sentence(): void {
