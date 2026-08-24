@@ -151,7 +151,7 @@ class Editor {
 				$post_id,
 				new WP_Error( 'auth', __( 'Cannot publish: the Shorthand connection is not active.', 'the-shorthand-editor' ) )
 			);
-			$data['post_status'] = get_post_status( $post_id );
+			$data['post_status'] = PostAPI::get_restore_status( get_post_status( $post_id ) );
 			return $data;
 		}
 
@@ -163,7 +163,7 @@ class Editor {
 		if ( is_wp_error( $result ) || ! $result ) {
 			/* if the cron job fails, it should fall back to the original status */
 			$this->post_api->set_story_update_error( $post_id, $result );
-			$data['post_status'] = get_post_status( $post_id );
+			$data['post_status'] = PostAPI::get_restore_status( get_post_status( $post_id ) );
 			return $data;
 		}
 

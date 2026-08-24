@@ -32,17 +32,23 @@ final class PostAPITest extends WordPressTestCase {
 		$this->callPrivateMethod( $post_api, 'store_story_text', array( $post_id, $article ) );
 	}
 
-	private function make_post_api( Shorthand $shorthand, ?FileSystemService $file_system = null ): PostAPI {
+	private function make_post_api( Shorthand $shorthand, ?AuthStateManager $auth_state_manager = null, ?FileSystemService $file_system = null ): PostAPI {
 		return new PostAPI(
 			$shorthand,
 			$this->createMock( Options::class ),
 			$this->createMock( Permissions::class ),
 			'tse_story',
-			$this->createMock( AuthStateManager::class ),
+			$auth_state_manager ?? $this->createMock( AuthStateManager::class ),
 			$this->createMock( StoryContentTransformer::class ),
 			$file_system ?? $this->createMock( FileSystemService::class ),
 			new StoryTextExtractor()
 		);
+	}
+
+	private function make_connected_auth_state_manager(): AuthStateManager {
+		$auth_state_manager = $this->createMock( AuthStateManager::class );
+		$auth_state_manager->method( 'is_connected' )->willReturn( true );
+		return $auth_state_manager;
 	}
 
 	public function test_connect_story_creates_a_draft_post_by_default(): void {
@@ -152,7 +158,7 @@ final class PostAPITest extends WordPressTestCase {
 		$file_system->expects( $this->never() )->method( 'delete_tree' );
 		$file_system->expects( $this->never() )->method( 'delete_dir' );
 
-		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ), $file_system );
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ), null, $file_system );
 		$post_api->delete_story_bundle( 7, $story_id );
 	}
 
@@ -268,5 +274,85 @@ final class PostAPITest extends WordPressTestCase {
 
 		$this->assertTrue( $flag_during_write );
 		$this->assertFalse( $post_api->is_storing_text() );
+	}
+
+	public function test_pull_story_begin_maps_a_429_from_the_generate_route_to_a_rate_limited_error(): void {
+		$shorthand = $this->createMock( Shorthand::class );
+		$shorthand->method( 'shorthand_api_authed_request' )->willReturn(
+			array(
+				'response' => array( 'code' => 429 ),
+				'body'     => '',
+			)
+		);
+
+		tests_wp_set_post_meta( 123, 'story_id', 'story1' );
+
+		$post_api = $this->make_post_api( $shorthand, $this->make_connected_auth_state_manager() );
+		$result   = $post_api->pull_story_begin( 123 );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'rate_limited', $result->get_error_code() );
+		$this->assertSame(
+			'Your Shorthand workspace is publishing too many stories at once. Wait a moment, then publish again.',
+			$result->get_error_message( 'pretty' )
+		);
+		$this->assertSame( 429, $result->get_error_data( 'status' ) );
+	}
+
+	public function test_pull_story_begin_keeps_the_plugin_message_first_when_the_api_supplies_its_own(): void {
+		$shorthand = $this->createMock( Shorthand::class );
+		$shorthand->method( 'shorthand_api_authed_request' )->willReturn(
+			array(
+				'response' => array( 'code' => 429 ),
+				'body'     => wp_json_encode(
+					array(
+						'message' => 'This workspace already has 10 story downloads in progress, try again in a moment.',
+					)
+				),
+			)
+		);
+
+		tests_wp_set_post_meta( 123, 'story_id', 'story1' );
+
+		$post_api = $this->make_post_api( $shorthand, $this->make_connected_auth_state_manager() );
+		$result   = $post_api->pull_story_begin( 123 );
+
+		$this->assertSame( 'rate_limited', $result->get_error_code() );
+		$this->assertSame(
+			'Your Shorthand workspace is publishing too many stories at once. Wait a moment, then publish again.',
+			$result->get_error_message( 'pretty' )
+		);
+	}
+
+	public function test_pull_story_begin_maps_other_generate_failures_to_a_story_error(): void {
+		$shorthand = $this->createMock( Shorthand::class );
+		$shorthand->method( 'shorthand_api_authed_request' )->willReturn(
+			array(
+				'response' => array( 'code' => 500 ),
+				'body'     => '',
+			)
+		);
+
+		tests_wp_set_post_meta( 123, 'story_id', 'story1' );
+
+		$post_api = $this->make_post_api( $shorthand, $this->make_connected_auth_state_manager() );
+		$result   = $post_api->pull_story_begin( 123 );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'story', $result->get_error_code() );
+		$this->assertSame( 500, $result->get_error_data( 'status' ) );
+	}
+
+	public function test_get_restore_status_returns_draft_for_a_first_time_publish(): void {
+		$this->assertSame( 'draft', PostAPI::get_restore_status( 'auto-draft' ) );
+		$this->assertSame( 'draft', PostAPI::get_restore_status( false ) );
+		$this->assertSame( 'draft', PostAPI::get_restore_status( '' ) );
+		$this->assertSame( 'draft', PostAPI::get_restore_status( 'draft' ) );
+	}
+
+	public function test_get_restore_status_preserves_the_status_of_an_already_published_story(): void {
+		$this->assertSame( 'publish', PostAPI::get_restore_status( 'publish' ) );
+		$this->assertSame( 'future', PostAPI::get_restore_status( 'future' ) );
+		$this->assertSame( 'private', PostAPI::get_restore_status( 'private' ) );
 	}
 }

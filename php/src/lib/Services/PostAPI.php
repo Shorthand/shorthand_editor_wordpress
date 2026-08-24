@@ -20,6 +20,8 @@ use WP_Error;
 
 class PostAPI {
 
+	const HTTP_TOO_MANY_REQUESTS = 429;
+
 	/**
 	 * @var \Shorthand\Services\Shorthand
 	 */
@@ -303,10 +305,7 @@ class PostAPI {
 		$payload     = json_decode( $body );
 
 		if ( 202 !== $status_code ) {
-			$error = new WP_Error( 'story', "Shorthand story ID is {$story_id}.", $story_id );
-			$error->add( 'status', "Received HTTP status {$status_code}.", $status_code );
-			$this->add_error_params( $error, $payload );
-			return $error;
+			return $this->get_error_from_payload( $story_id, $payload, $status_code );
 		}
 
 		$download_url = wp_remote_retrieve_header( $response, 'Location' );
@@ -350,6 +349,10 @@ class PostAPI {
 			return new WP_Error( 'retry', 'File download not ready.', 5 ); /* 5 second retry */
 		}
 
+		if ( self::HTTP_TOO_MANY_REQUESTS === $status_code ) {
+			return $this->get_rate_limited_error( $args->story_id, $payload );
+		}
+
 		if ( 302 !== $status_code ) {
 			$error = new WP_Error( 'status', "Download query received HTTP status {$status_code}.", $status_code );
 			$this->add_error_params( $error, $payload );
@@ -371,6 +374,22 @@ class PostAPI {
 
 		$args->size = \intval( wp_remote_retrieve_header( $response, 'Content-Length' ) );
 		return null;
+	}
+
+	/**
+	 * Resolve the status a post should return to when a publish is interrupted.
+	 *
+	 * A post that has never been published has no restorable public status
+	 * (`auto-draft`, or no status at all), so it falls back to `draft`.
+	 *
+	 * @param string|false|null $prior_status Status the post held before publishing began.
+	 * @return string
+	 */
+	public static function get_restore_status( $prior_status ): string {
+		if ( empty( $prior_status ) || 'auto-draft' === $prior_status ) {
+			return 'draft';
+		}
+		return $prior_status;
 	}
 
 	public function fix_api_url( string $url ): string {
@@ -459,13 +478,14 @@ class PostAPI {
 
 		$this->set_story_update_error( $args->post_id, $result );
 
-		// Restore the original post status
-		$status = get_post_status( $args->post_id );
-		if ( $status !== $args->prior_status ) {
+		// Restore the original post status; a first-time publish returns to draft.
+		$prior_status = self::get_restore_status( $args->prior_status );
+		$status       = get_post_status( $args->post_id );
+		if ( $status !== $prior_status ) {
 			wp_update_post(
 				array(
 					'ID'          => $args->post_id,
-					'post_status' => $args->prior_status,
+					'post_status' => $prior_status,
 				)
 			);
 		}
@@ -594,6 +614,37 @@ class PostAPI {
 
 		$this->pull_story_cleanup( $args );
 		return null;
+	}
+
+	private function get_error_from_payload( $story_id, $payload, $status_code ): WP_Error {
+		if ( self::HTTP_TOO_MANY_REQUESTS === $status_code ) {
+			return $this->get_rate_limited_error( $story_id, $payload );
+		}
+
+		$error = new WP_Error( 'story', "The Shorthand story ID is {$story_id}.", $story_id );
+		$error->add( 'status', "Received HTTP status {$status_code}.", $status_code );
+		$this->add_error_params( $error, $payload );
+		return $error;
+	}
+
+	/**
+	 * Build the error served when the Shorthand API rate limits a story build.
+	 *
+	 * The API rejects story builds beyond the organisation's concurrency cap
+	 * with a bare 429 and no Retry-After header, so the publish fails fast
+	 * and the user chooses when to retry. The `pretty` entry is added before
+	 * any payload params so the editor toolbar shows this message.
+	 *
+	 * @param string $story_id Shorthand story ID being published.
+	 * @param mixed  $payload  Decoded JSON response body, if any.
+	 * @return WP_Error
+	 */
+	private function get_rate_limited_error( string $story_id, $payload ): WP_Error {
+		$error = new WP_Error( 'rate_limited', "The Shorthand story ID is {$story_id}.", $story_id );
+		$error->add( 'pretty', __( 'Your Shorthand workspace is publishing too many stories at once. Wait a moment, then publish again.', 'the-shorthand-editor' ) );
+		$error->add( 'status', 'Received HTTP status ' . self::HTTP_TOO_MANY_REQUESTS . '.', self::HTTP_TOO_MANY_REQUESTS );
+		$this->add_error_params( $error, $payload );
+		return $error;
 	}
 
 	public function get_post_story_version( $post_id ): ?int {

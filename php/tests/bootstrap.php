@@ -22,11 +22,19 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		public $errors = array();
 
 		/**
+		 * @var array<string, mixed>
+		 */
+		public $error_data = array();
+
+		/**
 		 * @param mixed $data
 		 */
 		public function __construct( string $code = '', string $message = '', $data = null ) {
 			if ( $code !== '' ) {
 				$this->errors[ $code ] = array( $message );
+				if ( null !== $data ) {
+					$this->error_data[ $code ] = $data;
+				}
 			}
 		}
 
@@ -57,14 +65,27 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			return '';
 		}
 
-		public function get_error_message(): string {
-			$code = $this->get_error_code();
+		public function get_error_message( string $code = '' ): string {
+			if ( '' === $code ) {
+				$code = $this->get_error_code();
+			}
 
 			if ( $code === '' || empty( $this->errors[ $code ] ) ) {
 				return '';
 			}
 
 			return $this->errors[ $code ][0];
+		}
+
+		/**
+		 * @return mixed
+		 */
+		public function get_error_data( string $code = '' ) {
+			if ( '' === $code ) {
+				$code = $this->get_error_code();
+			}
+
+			return $this->error_data[ $code ] ?? null;
 		}
 
 		/**
@@ -76,6 +97,10 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			}
 
 			$this->errors[ $code ][] = $message;
+
+			if ( null !== $data ) {
+				$this->error_data[ $code ] = $data;
+			}
 		}
 	}
 }
@@ -130,6 +155,7 @@ function tests_wp_reset_state(): void {
 		),
 		'temp_dir'             => sys_get_temp_dir() . '/',
 		'copy_error'           => null,
+		'wp_rand_calls'        => 0,
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -1125,7 +1151,15 @@ function untrailingslashit( string $value ): string {
 }
 
 function wp_rand( int $min = 0, int $max = 0 ): int {
-	return random_int( $min, $max );
+	// Deterministic but distinct per call, so nonce-rotation logic stays observable.
+	$calls = $GLOBALS['tests_wp_state']['wp_rand_calls'];
+
+	$GLOBALS['tests_wp_state']['wp_rand_calls'] = $calls + 1;
+
+	if ( $max <= $min ) {
+		return $min + $calls;
+	}
+	return $min + ( $calls % ( $max - $min + 1 ) );
 }
 
 /**
