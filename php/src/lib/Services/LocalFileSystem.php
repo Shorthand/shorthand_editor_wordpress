@@ -15,22 +15,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 class LocalFileSystem extends BaseFileSystem {
 
 	public function delete_dir( string $path ): bool {
-		global $wp_filesystem;
+		$fs = $this->wp_filesystem();
 
-		if ( ! $wp_filesystem->is_dir( $path ) ) {
+		if ( ! $fs->is_dir( $path ) ) {
 			return true;
 		}
 
-		return $wp_filesystem->rmdir( $path );
+		return $fs->rmdir( $path );
 	}
 
 	public function delete_tree( string $path ): bool {
-		global $wp_filesystem;
+		$fs = $this->wp_filesystem();
 
-		if ( ! $wp_filesystem->exists( $path ) ) {
+		if ( ! $fs->exists( $path ) ) {
 			return true;
 		}
 
-		return $wp_filesystem->delete( $path, true );
+		return $fs->delete( $path, true );
 	}
 }

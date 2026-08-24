@@ -9,9 +9,10 @@ use Shorthand\Services\RemoteFileSystem;
 /**
  * A `RemoteFileSystem` whose uploads directory is an in-memory object store.
  *
- * Reproduces the VIP File System constraint table in `php/CONTEXT.md`:
- * uploads cannot be enumerated, `mkdir()` reports success without creating
- * anything, and every write and delete is a round trip that is counted here.
+ * Reproduces the remote uploads constraint table in
+ * `docs/services/file-system.md`: uploads cannot be enumerated, `mkdir()`
+ * reports success without creating anything, and every write and delete is a
+ * round trip that is counted here.
  *
  * The staging directory is untouched by this class, because it is local on
  * every host and the inherited behaviour is already correct for it.

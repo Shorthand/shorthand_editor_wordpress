@@ -417,7 +417,7 @@ class Options {
 	 */
 	public function remove_legacy_options(): void {
 		/* Publishing is always asynchronous; the synchronous debug override is gone. */
-		if ( false !== get_option( 'shorthand_disable_cron', false ) ) {
+		if ( null !== get_option( 'shorthand_disable_cron', null ) ) {
 			delete_option( 'shorthand_disable_cron' );
 		}
 	}

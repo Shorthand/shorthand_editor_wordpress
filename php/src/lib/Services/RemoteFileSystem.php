@@ -55,15 +55,9 @@ class RemoteFileSystem extends BaseFileSystem {
 	 * @return bool|\WP_Error True on success, false on a plain failure, or an error the host named.
 	 */
 	protected function write_file( string $source_path, string $dest_path ) {
-		$before = error_get_last();
-
 		$written = parent::write_file( $source_path, $dest_path );
 
-		if ( false !== $written ) {
-			return $written;
-		}
-
-		if ( ! $this->is_write_cap_refusal( $before ) ) {
+		if ( false !== $written || ! $this->is_write_cap_refusal() ) {
 			return $written;
 		}
 
@@ -77,29 +71,40 @@ class RemoteFileSystem extends BaseFileSystem {
 	}
 
 	/**
-	 * Reports whether a failed write was refused for exceeding the write cap.
+	 * Reports whether the write that just failed was refused for exceeding the cap.
 	 *
 	 * The uploads host permits a fixed number of modifications to any one
-	 * path, and answers the next write with HTTP 405. That status does not
-	 * reach a caller as a code: the host's API client has no branch for it,
-	 * and returns a generic failure with the status embedded in the message
-	 * as `(response code: 405)`. The stream wrapper then raises that message
-	 * as a PHP warning, which is what this reads.
+	 * path and refuses the next write. The status does not reach a caller as
+	 * a code: the host's API client has no branch for it, and returns a
+	 * generic `upload_file-failed` error with the status embedded in the
+	 * message as `(response code: 405)`. `WP_Filesystem::copy()` leaves that
+	 * error on its `errors` property and answers false, which is what this
+	 * reads.
 	 *
-	 * Matching on message text is fragile, and this is the only place that
-	 * does it. When the match fails, the plain write failure surfaces exactly
-	 * as it did before.
+	 * The 2000-modification limit is documented; the status code is not, and
+	 * matching on message text is fragile. This is the only place in this
+	 * codebase that does either. When the match fails, the plain write
+	 * failure surfaces exactly as it did before.
 	 *
-	 * @param array|null $before Last PHP error before the write was attempted.
+	 * The error code is checked as well as the text, because `errors` is not
+	 * cleared between calls. Only the upload branch sets that code.
+	 *
+	 * @link https://docs.wpvip.com/vip-file-system/media-uploads/
+	 *       The 2000-modification limit.
+	 * @link https://github.com/Automattic/vip-go-mu-plugins/blob/35ff0ddaa1d996d1adcff99e0fff35d59d051db7/files/class-api-client.php#L144
+	 *       `Api_Client::upload_file()` building the message.
+	 * @link https://github.com/Automattic/vip-go-mu-plugins/blob/968d6196fe98dfd570e09a6271f34b2bb84d085e/files/class-wp-filesystem-vip.php#L243-L247
+	 *       `WP_Filesystem_VIP::copy()` leaving it on `errors`.
+	 *
 	 * @return bool True when the write was refused for exceeding the cap.
 	 */
-	private function is_write_cap_refusal( ?array $before ): bool {
-		$last = error_get_last();
+	private function is_write_cap_refusal(): bool {
+		$errors = $this->wp_filesystem()->errors;
 
-		if ( null === $last || $last === $before ) {
+		if ( ! is_wp_error( $errors ) || 'upload_file-failed' !== $errors->get_error_code() ) {
 			return false;
 		}
 
-		return 1 === preg_match( '/\(\s*response code:\s*405\s*\)/i', (string) $last['message'] );
+		return 1 === preg_match( '/\(\s*response code:\s*405\s*\)/i', $errors->get_error_message() );
 	}
 }

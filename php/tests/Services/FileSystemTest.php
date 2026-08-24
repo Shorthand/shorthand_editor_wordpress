@@ -12,7 +12,7 @@ use Shorthand\Tests\WordPressTestCase;
 /**
  * The uploads host is chosen from the shape of the uploads path alone.
  *
- * See `docs/adr/0001-detect-remote-uploads-by-scheme.md`.
+ * See `docs/services/file-system.md`.
  */
 final class FileSystemTest extends WordPressTestCase {
 
@@ -71,6 +71,46 @@ final class FileSystemTest extends WordPressTestCase {
 		tests_wp_set_upload_dir( '/var/www/html/wp-content/uploads', 'https://example.test/uploads' );
 
 		$this->assertInstanceOf( LocalFileSystem::class, FileSystem::create() );
+	}
+
+	/**
+	 * Booting `WP_Filesystem` is an admin-weight operation, and a service is
+	 * constructed on every admin request. It waits for the first write.
+	 */
+	public function test_constructing_a_service_does_not_boot_wp_filesystem(): void {
+		$this->forget_filesystem_boot();
+
+		new LocalFileSystem();
+
+		$this->assertArrayNotHasKey( 'wp_filesystem', $GLOBALS, 'Constructing a service booted WP_Filesystem.' );
+
+		( new LocalFileSystem() )->delete_file( $this->temp_path() );
+
+		$this->assertArrayHasKey( 'wp_filesystem', $GLOBALS, 'Writing did not boot WP_Filesystem.' );
+	}
+
+	/**
+	 * Returns the boot to the state of a fresh request.
+	 */
+	private function forget_filesystem_boot(): void {
+		$forget = \Closure::bind(
+			static function (): void {
+				FileSystem::$has_init_fs = false;
+			},
+			null,
+			FileSystem::class
+		);
+
+		$forget();
+
+		unset( $GLOBALS['wp_filesystem'] );
+	}
+
+	/**
+	 * A path under the system temp directory that need not exist.
+	 */
+	private function temp_path(): string {
+		return sys_get_temp_dir() . '/sh_absent_' . getmypid();
 	}
 
 	/**

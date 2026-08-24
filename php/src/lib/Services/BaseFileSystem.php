@@ -16,8 +16,20 @@ use WP_Error;
  */
 abstract class BaseFileSystem implements FileSystemService {
 
-	public function __construct() {
+	/**
+	 * `WP_Filesystem`, booted on first use.
+	 *
+	 * Booting requires an admin include, raises the memory limit, and may ask
+	 * for credentials, so it waits until something is actually written.
+	 *
+	 * @return \WP_Filesystem_Base
+	 */
+	protected function wp_filesystem() {
 		FileSystem::init();
+
+		global $wp_filesystem;
+
+		return $wp_filesystem;
 	}
 
 	/**
@@ -27,6 +39,9 @@ abstract class BaseFileSystem implements FileSystemService {
 	 * @return string Absolute path to the new directory.
 	 */
 	public function make_temp_dir( string $prefix ): string {
+		/* Every publish starts here, and unpacking an archive wants the admin memory limit. */
+		FileSystem::init();
+
 		$base = untrailingslashit( get_temp_dir() );
 
 		do {
@@ -48,13 +63,13 @@ abstract class BaseFileSystem implements FileSystemService {
 	 * @return bool True when the directory is gone.
 	 */
 	public function delete_temp_dir( string $path ): bool {
-		global $wp_filesystem;
+		$fs = $this->wp_filesystem();
 
-		if ( ! $wp_filesystem->is_dir( $path ) ) {
+		if ( ! $fs->is_dir( $path ) ) {
 			return true;
 		}
 
-		return $wp_filesystem->delete( $path, true );
+		return $fs->delete( $path, true );
 	}
 
 	/**
@@ -76,12 +91,34 @@ abstract class BaseFileSystem implements FileSystemService {
 	 */
 	public function join_pieces( array $parts, string $dest ): bool {
 		foreach ( $parts as $part ) {
-			if ( ! FileSystem::concat_file( $part, $dest ) ) {
+			if ( ! $this->append_file( $part, $dest ) ) {
 				return false;
 			}
 		}
 
 		return true;
+	}
+
+	/**
+	 * Appends one file to another, creating it if it is not there yet.
+	 *
+	 * Both paths are local: chunks are downloaded into the staging directory,
+	 * where a plain append is available. `WP_Filesystem::put_contents()` has no
+	 * append mode.
+	 *
+	 * @param string $source_path File to read.
+	 * @param string $dest_path   File to append it to.
+	 * @return bool True when the whole source was appended.
+	 */
+	private function append_file( string $source_path, string $dest_path ): bool {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- the staging directory is local, and WP_Filesystem::put_contents() does not append.
+		$source_contents = file_get_contents( $source_path );
+		if ( false === $source_contents ) {
+			return false;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP_Filesystem::put_contents() does not append.
+		return file_put_contents( $dest_path, $source_contents, FILE_APPEND ) === strlen( $source_contents );
 	}
 
 	/**
@@ -156,9 +193,7 @@ abstract class BaseFileSystem implements FileSystemService {
 	 * @return bool True when the file is gone.
 	 */
 	public function delete_file( string $path ): bool {
-		global $wp_filesystem;
-
-		return $wp_filesystem->delete( $path, false, 'f' );
+		return $this->wp_filesystem()->delete( $path, false, 'f' );
 	}
 
 	/**
@@ -188,9 +223,7 @@ abstract class BaseFileSystem implements FileSystemService {
 	 * @return bool|\WP_Error True on success, false on a plain failure, or an error the host named.
 	 */
 	protected function write_file( string $source_path, string $dest_path ) {
-		global $wp_filesystem;
-
-		return $wp_filesystem->copy( $source_path, $dest_path, true );
+		return $this->wp_filesystem()->copy( $source_path, $dest_path, true );
 	}
 
 	/**

@@ -20,20 +20,40 @@ final class OptionsTest extends WordPressTestCase {
 		$this->assertSame( 'story', \get_option( 'shorthand_permalink' ) );
 	}
 
-	public function test_legacy_synchronous_publish_option_is_dropped(): void {
-		\tests_wp_set_option( 'shorthand_disable_cron', true );
+	/**
+	 * The synchronous publish override goes, whatever it was left at.
+	 *
+	 * @dataProvider legacy_option_values
+	 *
+	 * @param mixed $value Value the option was left at.
+	 */
+	public function test_legacy_synchronous_publish_option_is_dropped( $value ): void {
+		\tests_wp_set_option( 'shorthand_disable_cron', $value );
 
 		$options = new Options( new Version() );
 		$options->remove_legacy_options();
 
-		$this->assertFalse( \get_option( 'shorthand_disable_cron', false ) );
+		$this->assertSame( 'absent', \get_option( 'shorthand_disable_cron', 'absent' ) );
+	}
+
+	/**
+	 * A turned-off override is still an option row, and still goes.
+	 *
+	 * @return array<string, array{0: mixed}>
+	 */
+	public static function legacy_option_values(): array {
+		return array(
+			'turned on'  => array( true ),
+			'turned off' => array( false ),
+			'unchecked'  => array( '' ),
+		);
 	}
 
 	public function test_legacy_option_cleanup_is_a_no_op_on_a_clean_install(): void {
 		$options = new Options( new Version() );
 		$options->remove_legacy_options();
 
-		$this->assertFalse( \get_option( 'shorthand_disable_cron', false ) );
+		$this->assertSame( 'absent', \get_option( 'shorthand_disable_cron', 'absent' ) );
 	}
 
 	public function test_permalink_changes_schedule_a_rewrite_flush(): void {

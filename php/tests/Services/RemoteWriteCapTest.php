@@ -10,11 +10,17 @@ use Shorthand\Tests\WordPressTestCase;
 /**
  * Reporting the uploads host's per-path write cap.
  *
- * The host permits a fixed number of modifications to one path and answers
- * the next write with HTTP 405. That status reaches the plugin only as text
- * in a PHP warning, so this covers both the match and its failure.
+ * The host permits a fixed number of modifications to one path and refuses
+ * the next write. The status reaches the plugin only as text, in the error
+ * `WP_Filesystem::copy()` leaves behind, so this covers both the match and
+ * its failure.
  */
 final class RemoteWriteCapTest extends WordPressTestCase {
+
+	/**
+	 * The error a refused write leaves, as the uploads host words it.
+	 */
+	private const REFUSAL_MESSAGE = 'Failed to upload file `/tmp/article.html` to `/wp-content/uploads/shorthand/1/abc/article.html` (response code: 405)';
 
 	/** @var string */
 	private $temp_root;
@@ -35,7 +41,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	}
 
 	protected function tearDown(): void {
-		tests_wp_set_copy_warning( null );
+		tests_wp_set_copy_error( null );
 
 		if ( is_dir( $this->bundle_dir() ) ) {
 			rmdir( $this->bundle_dir() );
@@ -51,7 +57,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	}
 
 	public function test_a_refused_write_is_reported_as_an_error(): void {
-		tests_wp_set_copy_warning( 'upload_file-failed (response code: 405)' );
+		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
 
 		$result = $this->copy_tree();
 
@@ -63,7 +69,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	 * The author reads this. It names no file, path, status code, or limit.
 	 */
 	public function test_the_author_facing_message_says_what_to_do(): void {
-		tests_wp_set_copy_warning( 'upload_file-failed (response code: 405)' );
+		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
 
 		$result = $this->copy_tree();
 
@@ -74,7 +80,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	}
 
 	public function test_the_bundle_path_stays_on_the_error_for_the_log(): void {
-		tests_wp_set_copy_warning( 'upload_file-failed (response code: 405)' );
+		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
 
 		$result = $this->copy_tree();
 
@@ -84,12 +90,13 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	/**
 	 * Every other refusal must read as it did before the match existed.
 	 *
-	 * @dataProvider other_warnings
+	 * @dataProvider other_failures
 	 *
-	 * @param string $warning Warning text raised by the failed write.
+	 * @param string $code    Error code the host left behind.
+	 * @param string $message Error message the host left behind.
 	 */
-	public function test_another_failure_is_not_named_as_the_write_cap( string $warning ): void {
-		tests_wp_set_copy_warning( $warning );
+	public function test_another_failure_is_not_named_as_the_write_cap( string $code, string $message ): void {
+		tests_wp_set_copy_error( $code, $message );
 
 		$result = $this->copy_tree();
 
@@ -98,13 +105,15 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	}
 
 	/**
-	 * @return array<string, array{0: string}>
+	 * @return array<string, array{0: string, 1: string}>
 	 */
-	public static function other_warnings(): array {
+	public static function other_failures(): array {
 		return array(
-			'quota reached'  => array( 'upload_file-failed-quota_reached' ),
-			'server error'   => array( 'upload_file-failed (response code: 500)' ),
-			'wording change' => array( 'upload_file-failed: method not allowed' ),
+			'quota reached'     => array( 'upload_file-failed-quota_reached', 'Failed to upload file; file space quota has been exceeded.' ),
+			'server error'      => array( 'upload_file-failed', 'Failed to upload file `/tmp/article.html` to `/wp-content/uploads/a` (response code: 500)' ),
+			'wording change'    => array( 'upload_file-failed', 'Failed to upload file: method not allowed' ),
+			'another operation' => array( 'get_file-failed', 'Failed to get file `/wp-content/uploads/a` (response code: 405)' ),
+			'no error left'     => array( '', '' ),
 		);
 	}
 

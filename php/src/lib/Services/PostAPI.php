@@ -223,7 +223,7 @@ class PostAPI {
 			return new WP_Error( 'pretty', 'Post does not have a Shorthand story associated with it' );
 		}
 
-		$destination_path = $this->get_default_story_bundle_path( $post_id, $story_id );
+		$destination_path = $this->get_story_bundle_path( $post_id, $story_id );
 		if ( null === $destination_path ) {
 			return $this->get_invalid_story_id_error( (string) $story_id );
 		}
@@ -775,16 +775,6 @@ class PostAPI {
 	 * @param string     $story_id Shorthand story ID.
 	 */
 	public function get_story_bundle_path( $post_id, $story_id ): ?string {
-		return $this->get_default_story_bundle_path( $post_id, $story_id );
-	}
-
-	/**
-	 * Builds the bundle directory path, or withholds it for an unusable story ID.
-	 *
-	 * @param int|string $post_id  Post the bundle belongs to.
-	 * @param string     $story_id Shorthand story ID.
-	 */
-	private function get_default_story_bundle_path( $post_id, $story_id ): ?string {
 		if ( ! StoryId::is_valid( $story_id ) ) {
 			return null;
 		}

@@ -12,13 +12,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 class FileSystem {
 
 	/**
-	 * Matches a path that names a PHP stream wrapper rather than a directory.
+	 * Captures the scheme of a path that names a PHP stream wrapper.
 	 *
-	 * See `docs/adr/0001-detect-remote-uploads-by-scheme.md`. The test is on
+	 * See `docs/services/file-system.md`. The test is on
 	 * the shape of the path, never on a vendor constant or a named plugin.
 	 */
-	const REMOTE_SCHEME_PATTERN = '#^[a-z][a-z0-9+.\\-]*://#i';
+	const REMOTE_SCHEME_PATTERN = '#^([a-z][a-z0-9+.\\-]*)://#i';
 
+	/**
+	 * Whether `WP_Filesystem` has been booted for this request.
+	 *
+	 * @var bool
+	 */
 	private static $has_init_fs = false;
 
 	/**
@@ -32,9 +37,22 @@ class FileSystem {
 	 * Reports whether uploads are held somewhere other than this file system.
 	 */
 	public static function is_remote_uploads(): bool {
+		return '' !== self::get_uploads_scheme();
+	}
+
+	/**
+	 * Lowercased stream wrapper scheme of the uploads directory.
+	 *
+	 * @return string Scheme such as `vip`, or an empty string where uploads are a plain path.
+	 */
+	public static function get_uploads_scheme(): string {
 		$basedir = wp_upload_dir()['basedir'];
 
-		return is_string( $basedir ) && 1 === preg_match( self::REMOTE_SCHEME_PATTERN, $basedir );
+		if ( ! is_string( $basedir ) || ! preg_match( self::REMOTE_SCHEME_PATTERN, $basedir, $matches ) ) {
+			return '';
+		}
+
+		return strtolower( $matches[1] );
 	}
 
 	public static function init() {
@@ -53,16 +71,5 @@ class FileSystem {
 			$creds = request_filesystem_credentials( site_url() );
 			wp_filesystem( $creds );
 		}
-	}
-
-	public static function concat_file( string $source_path, string $dest_path ): bool {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents, WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP_Filesystem::put_contents() does not support FILE_APPEND
-		$source_contents = file_get_contents( $source_path );
-		if ( false === $source_contents ) {
-			return false;
-		}
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP_Filesystem::put_contents() does not support FILE_APPEND
-		return file_put_contents( $dest_path, $source_contents, FILE_APPEND ) === strlen( $source_contents );
 	}
 }

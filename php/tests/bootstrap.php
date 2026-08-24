@@ -125,7 +125,7 @@ function tests_wp_reset_state(): void {
 			'baseurl' => 'https://example.test/wp-content/uploads',
 		),
 		'temp_dir'             => sys_get_temp_dir() . '/',
-		'copy_warning'         => null,
+		'copy_error'           => null,
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -898,9 +898,21 @@ function tests_wp_registered_post_meta( string $post_type, string $meta_key ): a
  * file system. Only the local temp directory and PHPUnit's own scratch space
  * are ever passed to it under test.
  */
-class WP_Filesystem_Base {}
+class WP_Filesystem_Base {
+
+	/**
+	 * Errors left by the last operation, as `WP_Filesystem_VIP` reports them.
+	 *
+	 * @var WP_Error|null
+	 */
+	public $errors = null;
+}
 
 class Tests_WP_Filesystem extends WP_Filesystem_Base {
+
+	public function __construct() {
+		$this->errors = new WP_Error();
+	}
 
 	public function exists( string $path ): bool {
 		return file_exists( $path );
@@ -950,16 +962,15 @@ class Tests_WP_Filesystem extends WP_Filesystem_Base {
 	}
 
 	public function copy( string $source, string $destination, bool $overwrite = false ): bool {
-		$warning = $GLOBALS['tests_wp_state']['copy_warning'];
+		$failure = $GLOBALS['tests_wp_state']['copy_error'];
 
-		if ( null !== $warning ) {
+		if ( null !== $failure ) {
 			/*
-			 * The VIP stream wrapper reports a refused write as a PHP warning
-			 * and returns false. Suppressed here so that PHPUnit does not
-			 * convert it: the code under test reads `error_get_last()`, which
-			 * is populated either way.
+			 * A remote uploads host reports a refused write by replacing
+			 * `errors` and answering false, never by throwing or warning.
 			 */
-			@trigger_error( $warning, E_USER_WARNING ); // phpcs:ignore
+			$this->errors = new WP_Error( $failure[0], $failure[1] );
+
 			return false;
 		}
 
@@ -972,12 +983,13 @@ class Tests_WP_Filesystem extends WP_Filesystem_Base {
 }
 
 /**
- * Makes the next `WP_Filesystem::copy()` fail, reporting `$warning`.
+ * Makes every `WP_Filesystem::copy()` fail, leaving an error behind it.
  *
- * @param string|null $warning Warning text, or null to copy normally again.
+ * @param string|null $code    Error code, or null to copy normally again.
+ * @param string      $message Error message.
  */
-function tests_wp_set_copy_warning( ?string $warning ): void {
-	$GLOBALS['tests_wp_state']['copy_warning'] = $warning;
+function tests_wp_set_copy_error( ?string $code, string $message = '' ): void {
+	$GLOBALS['tests_wp_state']['copy_error'] = null === $code ? null : array( $code, $message );
 }
 
 function WP_Filesystem(): bool {

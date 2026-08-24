@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Two implementations exist, chosen by `FileSystem::create()`: one for a
  * uploads directory that is a plain path, one for an uploads directory that is
  * an object store behind a PHP stream wrapper. See
- * `docs/adr/0001-detect-remote-uploads-by-scheme.md`.
+ * `docs/services/file-system.md`.
  *
  * Methods divide by which store they act on:
  *
