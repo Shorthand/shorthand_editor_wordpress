@@ -24,11 +24,16 @@ class StoryTextExtractor {
 
 	/**
 	 * Elements whose text belongs to the page furniture, not the story.
+	 *
+	 * The engine's skip link carries `Theme-skip-content-link` as its class
+	 * and `skip-link` as its id, so the class alone catches it. Bespoke
+	 * customer themes predating that component use `skip-link` as a class.
 	 */
 	private const CHROME_CLASSES = array(
 		'Theme-Footer',
 		'Theme-SocialIcons',
 		'Theme-Logos',
+		'Theme-skip-content-link',
 		'skip-link',
 	);
 

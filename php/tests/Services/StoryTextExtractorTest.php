@@ -10,7 +10,7 @@ use Shorthand\Tests\WordPressTestCase;
 final class StoryTextExtractorTest extends WordPressTestCase {
 
 	private const STORY = '<div class="Theme-Story">
-		<a class="skip-link" href="#main">Skip to main content</a>
+		<a href="#article" id="skip-link" class="Theme-skip-content-link">Skip to main content</a>
 		<nav class="Navigation Theme-NavigationBar"><ul><li><a href="#s1">Jump to chapter one</a></li></ul></nav>
 		<div class="Theme-SocialIcons"><a href="#">Share on X</a></div>
 		<section class="Theme-Section Theme-TitleSection Theme-Section-Position-1">
@@ -74,6 +74,44 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 			$this->assertStringNotContainsString( $chrome, $text['content'] );
 			$this->assertStringNotContainsString( $chrome, $text['prose'] );
 		}
+	}
+
+	public function test_skip_link_is_dropped_whichever_shape_a_theme_uses(): void {
+		$engine  = $this->extract( '<a href="#article" id="skip-link" class="Theme-skip-content-link">Skip to main content</a><p>Body.</p>' );
+		$bespoke = $this->extract( '<a href="#" class="skip-link">Skip to main content</a><p>Body.</p>' );
+
+		$this->assertSame( 'Body.', $engine['content'] );
+		$this->assertSame( 'Body.', $bespoke['content'] );
+	}
+
+	/**
+	 * The parser must not dereference anything a story declares.
+	 *
+	 * `loadHTML()` has no DTD subset machinery, so a `SYSTEM` identifier is
+	 * never fetched and an entity is never substituted. Nothing in the parse
+	 * flags is what makes that true, so pin it: a future switch to
+	 * `loadXML()`, or a libxml that grows the behaviour, must fail here.
+	 */
+	public function test_external_entities_are_never_resolved(): void {
+		$secret = tempnam( sys_get_temp_dir(), 'tse' );
+		file_put_contents( $secret, 'LEAKED' );
+
+		$declared = '<!DOCTYPE html [<!ENTITY payload SYSTEM "file://' . $secret . '">]>'
+			. '<html><body><p>&payload;</p></body></html>';
+
+		$text = $this->extract( $declared );
+
+		unlink( $secret );
+
+		$this->assertStringNotContainsString( 'LEAKED', $text['content'] );
+	}
+
+	public function test_an_unreachable_doctype_does_not_fail_the_parse(): void {
+		$text = $this->extract(
+			'<!DOCTYPE html SYSTEM "file:///nowhere/absent.dtd"><html><body><p>Body.</p></body></html>'
+		);
+
+		$this->assertSame( 'Body.', $text['content'] );
 	}
 
 	public function test_adjacent_elements_do_not_weld_into_one_word(): void {
