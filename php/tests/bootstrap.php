@@ -111,6 +111,10 @@ function tests_wp_reset_state(): void {
 		'insert_post_result'   => 0,
 		'stub_posts'           => array(),
 		'updated_post_meta'    => array(),
+		'updated_posts'        => array(),
+		'update_post_observer' => null,
+		'post_fields'          => array(),
+		'post_meta'            => array(),
 		'is_block_theme'       => false,
 		'template_calls'       => array(),
 		'password_required'    => false,
@@ -602,8 +606,16 @@ function sanitize_textarea_field( string $value ): string {
 	return trim( wp_strip_all_tags( $value ) );
 }
 
-function wp_strip_all_tags( string $value ): string {
-	return trim( strip_tags( $value ) );
+function wp_strip_all_tags( string $value, bool $remove_breaks = false ): string {
+	$stripped = preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $value );
+	$value    = strip_tags( is_string( $stripped ) ? $stripped : $value );
+
+	if ( $remove_breaks ) {
+		$collapsed = preg_replace( '/[\r\n\t ]+/', ' ', $value );
+		$value     = is_string( $collapsed ) ? $collapsed : $value;
+	}
+
+	return trim( $value );
 }
 
 /**
@@ -683,8 +695,89 @@ function update_post_meta( int $post_id, string $meta_key, $meta_value ): bool {
 		'meta_key'   => $meta_key,
 		'meta_value' => $meta_value,
 	);
-	tests_wp_set_post_meta( $post_id, $meta_key, $meta_value );
+	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = is_string( $meta_value )
+		? stripslashes( $meta_value )
+		: $meta_value;
 	return true;
+}
+
+function tests_wp_set_post_field( int $post_id, string $field, string $value ): void {
+	$GLOBALS['tests_wp_state']['post_fields'][ $post_id ][ $field ] = $value;
+}
+
+/**
+ * @param mixed $post
+ * @return mixed
+ */
+function get_post_field( string $field, $post = 0, string $context = 'display' ) {
+	$post_id = is_object( $post ) ? (int) $post->ID : (int) $post;
+	return $GLOBALS['tests_wp_state']['post_fields'][ $post_id ][ $field ] ?? '';
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_updated_posts(): array {
+	return $GLOBALS['tests_wp_state']['updated_posts'];
+}
+
+/**
+ * Observes wp_update_post() from inside the call, so a test can assert on
+ * state that only holds for its duration.
+ */
+function tests_wp_set_update_post_observer( callable $observer ): void {
+	$GLOBALS['tests_wp_state']['update_post_observer'] = $observer;
+}
+
+/**
+ * @param array<string, mixed> $postarr
+ * @return int|WP_Error
+ */
+function wp_update_post( array $postarr = array(), bool $wp_error = false ) {
+	$GLOBALS['tests_wp_state']['updated_posts'][] = $postarr;
+
+	$observer = $GLOBALS['tests_wp_state']['update_post_observer'] ?? null;
+	if ( is_callable( $observer ) ) {
+		$observer( $postarr );
+	}
+
+	$post_id = isset( $postarr['ID'] ) ? (int) $postarr['ID'] : 0;
+
+	foreach ( array( 'post_content', 'post_excerpt', 'post_title' ) as $field ) {
+		if ( isset( $postarr[ $field ] ) ) {
+			$GLOBALS['tests_wp_state']['post_fields'][ $post_id ][ $field ] = stripslashes( (string) $postarr[ $field ] );
+		}
+	}
+
+	return $post_id;
+}
+
+/**
+ * @param mixed $value
+ * @return mixed
+ */
+function wp_slash( $value ) {
+	return is_string( $value ) ? addslashes( $value ) : $value;
+}
+
+function wp_trim_words( string $text, int $num_words = 55, ?string $more = null ): string {
+	if ( null === $more ) {
+		$more = '&hellip;';
+	}
+
+	$text  = wp_strip_all_tags( $text );
+	$words = preg_split( "/[\n\r\t ]+/", $text, $num_words + 1, PREG_SPLIT_NO_EMPTY );
+
+	if ( ! is_array( $words ) ) {
+		return '';
+	}
+
+	if ( count( $words ) > $num_words ) {
+		array_pop( $words );
+		return implode( ' ', $words ) . $more;
+	}
+
+	return implode( ' ', $words );
 }
 
 function tests_wp_set_is_block_theme( bool $is_block_theme ): void {
@@ -1040,14 +1133,6 @@ function wp_rand( int $min = 0, int $max = 0 ): int {
  */
 function wp_filesize( string $path ) {
 	return file_exists( $path ) ? filesize( $path ) : 0;
-}
-
-/**
- * @param mixed $value
- * @return mixed
- */
-function wp_slash( $value ) {
-	return $value;
 }
 
 require_once __DIR__ . '/../vendor/autoload.php';

@@ -36,4 +36,19 @@ abstract class WordPressTestCase extends TestCase {
 
 		$property->setValue( $object, $value );
 	}
+
+	/**
+	 * @param array<int, mixed> $arguments
+	 * @return mixed
+	 */
+	protected function callPrivateMethod( object $object, string $method_name, array $arguments = array() ) {
+		$reflection = new ReflectionClass( $object );
+		$method     = $reflection->getMethod( $method_name );
+
+		if ( method_exists( $method, 'setAccessible' ) ) {
+			$method->setAccessible( true );
+		}
+
+		return $method->invokeArgs( $object, $arguments );
+	}
 }

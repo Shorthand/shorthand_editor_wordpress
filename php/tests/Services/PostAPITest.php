@@ -11,9 +11,26 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Tests\WordPressTestCase;
 
 final class PostAPITest extends WordPressTestCase {
+
+	private const STORY = '<div class="Theme-Story">
+		<section class="Theme-Section Theme-TitleSection">
+			<h1 class="Theme-StoryTitle">The Long Road</h1>
+			<div class="Theme-LeadIn">A journey through the hills.</div>
+			<div class="Theme-Byline">By Alex Rivers</div>
+		</section>
+		<section class="Theme-Section">
+			<div class="Theme-Layer-BodyText"><p>First paragraph of the story.</p></div>
+		</section>
+		<footer class="Theme-Footer">Built with Shorthand</footer>
+	</div>';
+
+	private function store_text( PostAPI $post_api, int $post_id, string $article ): void {
+		$this->callPrivateMethod( $post_api, 'store_story_text', array( $post_id, $article ) );
+	}
 
 	private function make_post_api( Shorthand $shorthand, ?FileSystemService $file_system = null ): PostAPI {
 		return new PostAPI(
@@ -23,7 +40,8 @@ final class PostAPITest extends WordPressTestCase {
 			'tse_story',
 			$this->createMock( AuthStateManager::class ),
 			$this->createMock( StoryContentTransformer::class ),
-			$file_system ?? $this->createMock( FileSystemService::class )
+			$file_system ?? $this->createMock( FileSystemService::class ),
+			new StoryTextExtractor()
 		);
 	}
 
@@ -151,5 +169,104 @@ final class PostAPITest extends WordPressTestCase {
 
 		$inserted = tests_wp_inserted_posts();
 		$this->assertSame( 'draft', $inserted[0]['post_status'] );
+	}
+
+	public function test_store_story_text_puts_searchable_prose_in_post_content(): void {
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$updated = tests_wp_updated_posts();
+		$this->assertCount( 1, $updated );
+		$this->assertSame( 42, $updated[0]['ID'] );
+
+		$content = stripslashes( $updated[0]['post_content'] );
+		$this->assertStringNotContainsString( 'The Long Road', $content );
+		$this->assertStringNotContainsString( 'Built with Shorthand', $content );
+		$this->assertStringContainsString( 'By Alex Rivers', $content );
+		$this->assertStringContainsString( 'First paragraph of the story.', $content );
+	}
+
+	public function test_store_story_text_keeps_the_title_section_out_of_the_excerpt(): void {
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$updated = tests_wp_updated_posts();
+		$this->assertSame( 'First paragraph of the story.', stripslashes( $updated[0]['post_excerpt'] ) );
+	}
+
+	public function test_store_story_text_records_the_excerpt_it_wrote(): void {
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$this->assertSame(
+			(string) get_post_field( 'post_excerpt', 42, 'raw' ),
+			(string) get_post_meta( 42, 'story_excerpt', true )
+		);
+	}
+
+	public function test_store_story_text_leaves_an_author_written_excerpt_alone(): void {
+		tests_wp_set_post_field( 42, 'post_excerpt', 'A hand-written summary.' );
+
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$updated = tests_wp_updated_posts();
+		$this->assertArrayNotHasKey( 'post_excerpt', $updated[0] );
+		$this->assertArrayHasKey( 'post_content', $updated[0] );
+	}
+
+	/**
+	 * An author who empties the excerpt means it, so it is not refilled.
+	 */
+	public function test_store_story_text_leaves_a_cleared_excerpt_empty(): void {
+		tests_wp_set_post_field( 42, 'post_excerpt', '' );
+		tests_wp_set_post_meta( 42, 'story_excerpt', 'An earlier draft of the story.' );
+
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$updated = tests_wp_updated_posts();
+		$this->assertArrayNotHasKey( 'post_excerpt', $updated[0] );
+		$this->assertArrayHasKey( 'post_content', $updated[0] );
+	}
+
+	public function test_store_story_text_replaces_an_excerpt_it_wrote_before(): void {
+		tests_wp_set_post_field( 42, 'post_excerpt', 'An earlier draft of the story.' );
+		tests_wp_set_post_meta( 42, 'story_excerpt', 'An earlier draft of the story.' );
+
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$updated = tests_wp_updated_posts();
+		$this->assertSame( 'First paragraph of the story.', stripslashes( $updated[0]['post_excerpt'] ) );
+	}
+
+	public function test_store_story_text_writes_nothing_for_an_empty_body(): void {
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+
+		$this->store_text( $post_api, 42, '   ' );
+
+		$this->assertSame( array(), tests_wp_updated_posts() );
+	}
+
+	public function test_store_story_text_flags_its_own_write_so_publishing_does_not_recurse(): void {
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+
+		$flag_during_write = null;
+		tests_wp_set_update_post_observer(
+			static function () use ( $post_api, &$flag_during_write ): void {
+				$flag_during_write = $post_api->is_storing_text();
+			}
+		);
+
+		$this->assertFalse( $post_api->is_storing_text() );
+
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$this->assertTrue( $flag_during_write );
+		$this->assertFalse( $post_api->is_storing_text() );
 	}
 }

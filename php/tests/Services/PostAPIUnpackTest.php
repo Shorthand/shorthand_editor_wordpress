@@ -11,6 +11,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Tests\Support\FakeRemoteFileSystem;
 use Shorthand\Tests\WordPressTestCase;
 use ZipArchive;
@@ -384,7 +385,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			'tse_story',
 			$this->createMock( AuthStateManager::class ),
 			$transformer,
-			$file_system ?? $this->file_system
+			$file_system ?? $this->file_system,
+			new StoryTextExtractor()
 		);
 	}
 
