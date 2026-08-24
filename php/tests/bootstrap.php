@@ -128,6 +128,7 @@ function tests_wp_reset_state(): void {
 		'password_required'    => false,
 		'rewrite_flushes'      => 0,
 		'post_types'           => array(),
+		'wp_rand_calls'       => 0,
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -683,7 +684,15 @@ function delete_post_meta( int $post_id, string $meta_key ): bool {
 }
 
 function wp_rand( int $min = 0, int $max = 0 ): int {
-	return $min;
+	// Deterministic but distinct per call, so nonce-rotation logic stays observable.
+	$calls = $GLOBALS['tests_wp_state']['wp_rand_calls'];
+
+	$GLOBALS['tests_wp_state']['wp_rand_calls'] = $calls + 1;
+
+	if ( $max <= $min ) {
+		return $min + $calls;
+	}
+	return $min + ( $calls % ( $max - $min + 1 ) );
 }
 
 function tests_wp_set_is_block_theme( bool $is_block_theme ): void {
