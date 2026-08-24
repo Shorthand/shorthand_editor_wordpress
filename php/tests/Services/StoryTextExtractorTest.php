@@ -101,14 +101,17 @@ final class StoryTextExtractorTest extends WordPressTestCase {
 	 */
 	public function test_external_entities_are_never_resolved(): void {
 		$secret = tempnam( sys_get_temp_dir(), 'tse' );
+		$this->assertIsString( $secret, 'The temporary directory is not writable.' );
 		file_put_contents( $secret, 'LEAKED' );
 
 		$declared = '<!DOCTYPE html [<!ENTITY payload SYSTEM "file://' . $secret . '">]>'
 			. '<html><body><p>&payload;</p></body></html>';
 
-		$text = $this->extract( $declared );
-
-		unlink( $secret );
+		try {
+			$text = $this->extract( $declared );
+		} finally {
+			unlink( $secret );
+		}
 
 		$this->assertStringNotContainsString( 'LEAKED', $text['content'] );
 	}

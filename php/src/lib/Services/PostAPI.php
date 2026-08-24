@@ -700,8 +700,11 @@ class PostAPI {
 		$current = (string) get_post_field( 'post_excerpt', $post_id, 'raw' );
 		$stored  = (string) get_post_meta( $post_id, 'story_excerpt', true );
 
-		// An excerpt the author wrote or edited is theirs; only replace ours.
-		if ( '' !== trim( $current ) && $current !== $stored ) {
+		/*
+		 * Only ours is replaceable. Clearing the excerpt is an edit like any
+		 * other, so an empty column with a non-empty meta stays empty.
+		 */
+		if ( $current !== $stored ) {
 			return null;
 		}
 

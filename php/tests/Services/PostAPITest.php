@@ -150,6 +150,21 @@ final class PostAPITest extends WordPressTestCase {
 		$this->assertArrayHasKey( 'post_content', $updated[0] );
 	}
 
+	/**
+	 * An author who empties the excerpt means it, so it is not refilled.
+	 */
+	public function test_store_story_text_leaves_a_cleared_excerpt_empty(): void {
+		tests_wp_set_post_field( 42, 'post_excerpt', '' );
+		tests_wp_set_post_meta( 42, 'story_excerpt', 'An earlier draft of the story.' );
+
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$updated = tests_wp_updated_posts();
+		$this->assertArrayNotHasKey( 'post_excerpt', $updated[0] );
+		$this->assertArrayHasKey( 'post_content', $updated[0] );
+	}
+
 	public function test_store_story_text_replaces_an_excerpt_it_wrote_before(): void {
 		tests_wp_set_post_field( 42, 'post_excerpt', 'An earlier draft of the story.' );
 		tests_wp_set_post_meta( 42, 'story_excerpt', 'An earlier draft of the story.' );
