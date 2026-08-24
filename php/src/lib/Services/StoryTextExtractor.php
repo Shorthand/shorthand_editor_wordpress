@@ -108,7 +108,7 @@ class StoryTextExtractor {
 			'prose'   => '',
 		);
 
-		if ( '' === trim( $article ) || ! class_exists( 'DOMDocument' ) ) {
+		if ( '' === trim( $article ) || ! class_exists( 'DOMDocument', false ) ) {
 			return $empty;
 		}
 
