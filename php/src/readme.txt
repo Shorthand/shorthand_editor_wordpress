@@ -2,8 +2,8 @@
 Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
-Tested up to: 6.9.4
-Stable tag: 1.0.7
+Tested up to: 7.1
+Stable tag: 1.0.8
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -366,6 +366,14 @@ page.
 For further support and feedback, contact help@shorthand.com.
 
 == Changelog ==
+
+= 1.0.8 =
+
+- Publish stories safely on WordPress VIP and other object-store hosting.
+- Store story text so stories appear in WordPress search, archives and feeds.
+- Explain publishing failures when a workspace is publishing too many stories at once.
+- Show clear, branded pages when connecting to Shorthand fails.
+- Confirm compatibility with WordPress 7.1.
 
 = 1.0.7 =
 
