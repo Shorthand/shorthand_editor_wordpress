@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 use Shorthand\Core\Version;
 use Shorthand\Core\Loader;
 use Shorthand\Services\Options;
+use Shorthand\Services\StoryId;
 
 class PostType {
 
@@ -105,7 +106,7 @@ class PostType {
 				'type'              => 'string',
 				'description'       => __( 'Shorthand story ID', 'the-shorthand-editor' ),
 				'show_in_rest'      => true,
-				'sanitize_callback' => 'sanitize_text_field',
+				'sanitize_callback' => array( StoryId::class, 'sanitize' ),
 			)
 		);
 
@@ -168,6 +169,28 @@ class PostType {
 
 		register_post_meta(
 			$this->post_type,
+			'story_manifest',
+			array(
+				'single'       => true,
+				'type'         => 'object',
+				'description'  => __( 'Name, size and CRC32 of every file in the published story bundle', 'the-shorthand-editor' ),
+				'show_in_rest' => false,
+			)
+		);
+
+		register_post_meta(
+			$this->post_type,
+			'story_pulls',
+			array(
+				'single'       => true,
+				'type'         => 'object',
+				'description'  => __( 'Directory and chunk count of each Shorthand story download in flight', 'the-shorthand-editor' ),
+				'show_in_rest' => false,
+			)
+		);
+
+		register_post_meta(
+			$this->post_type,
 			'story_excerpt',
 			array(
 				'single'       => true,
@@ -195,7 +218,7 @@ class PostType {
 	}
 
 	public function is_protected_meta( $prot, $meta_key, $meta_type ) {
-		$protected_meta_keys = array( 'story_id', 'story_body', 'story_head', 'story_version', 'story_update_nonce', 'story_update_state', 'story_excerpt' );
+		$protected_meta_keys = array( 'story_id', 'story_body', 'story_head', 'story_version', 'story_update_nonce', 'story_update_state', 'story_manifest', 'story_pulls', 'story_excerpt' );
 		if ( 'post' === $meta_type && in_array( $meta_key, $protected_meta_keys, true ) ) {
 			return true;
 		}

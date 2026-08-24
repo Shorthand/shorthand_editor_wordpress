@@ -111,6 +111,8 @@ class GeneralSettingsPage extends SettingsPage {
 			)
 		);
 
+		$this->add_staging_field();
+
 		add_settings_field(
 			'shorthand_css',
 			esc_html__( 'Additional CSS', 'the-shorthand-editor' ),
@@ -140,6 +142,35 @@ class GeneralSettingsPage extends SettingsPage {
 				'type'      => 'textarea',
 				'rows'      => 10,
 				'cols'      => 80,
+			)
+		);
+	}
+
+	/**
+	 * Adds the checkbox that turns the staging directory off.
+	 *
+	 * Staging is the default. The checkbox is an escape hatch for sites where
+	 * the extra local copy costs more than it saves, and it is unavailable
+	 * where uploads are remote, because unpacking cannot target them.
+	 */
+	private function add_staging_field(): void {
+		$can_disable = $this->options->can_disable_staging();
+
+		add_settings_field(
+			'shorthand_disable_staging',
+			esc_html__( 'Story unpacking', 'the-shorthand-editor' ),
+			array( $this, 'render_partial' ),
+			$this->settings_page_slug,
+			'shorthand_processing_section',
+			array(
+				'label_for'   => 'shorthand_disable_staging',
+				'value'       => $can_disable && ! $this->options->is_staging_enabled(),
+				'partial'     => 'partials/option-checkbox.php',
+				'disabled'    => ! $can_disable,
+				'label'       => esc_html__( 'Unpack stories straight into the uploads directory', 'the-shorthand-editor' ),
+				'description' => $can_disable
+					? esc_html__( 'Stories are unpacked in a temporary directory and then copied into uploads. Turn this on only if that extra copy is a problem.', 'the-shorthand-editor' )
+					: esc_html( UploadsHostNotice::get_message() ),
 			)
 		);
 	}
