@@ -12,6 +12,7 @@ use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\ConnectionFailureClassifier;
 use Shorthand\Services\FileSystem;
+use Shorthand\Services\LivePreview;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
@@ -72,6 +73,10 @@ class Dependencies {
 	 * @var \Shorthand\Services\Cron
 	 */
 	protected $cron;
+	/**
+	 * @var \Shorthand\Services\LivePreview
+	 */
+	protected $live_preview;
 
 	/**
 	 * @var bool
@@ -106,6 +111,9 @@ class Dependencies {
 		$this->templates = $this->create_templates( $this->post_type->post_type, $this->options, $this->version );
 		$this->templates->init();
 
+		$this->live_preview = $this->create_live_preview( $this->post_type->post_type, $this->auth_state_manager, $this->version, $this );
+		$this->live_preview->init();
+
 		$this->cron = $this->create_cron( $this );
 		$this->cron->init();
 
@@ -138,6 +146,10 @@ class Dependencies {
 
 	protected function create_templates( string $post_type, Options $options, Version $version ): Templates {
 		return new Templates( $post_type, $options, $version );
+	}
+
+	protected function create_live_preview( string $post_type, AuthStateManager $auth_state_manager, Version $version, Dependencies $dependencies ): LivePreview {
+		return new LivePreview( $post_type, $auth_state_manager, $version, $dependencies );
 	}
 
 	protected function create_cron( Dependencies $dependencies ): Cron {
@@ -211,5 +223,10 @@ class Dependencies {
 	public function get_cron(): Cron {
 		$this->boot();
 		return $this->cron;
+	}
+
+	public function get_live_preview(): LivePreview {
+		$this->boot();
+		return $this->live_preview;
 	}
 }

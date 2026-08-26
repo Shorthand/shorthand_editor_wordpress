@@ -103,6 +103,59 @@ final class StoryTemplateTest extends WordPressTestCase {
 		);
 	}
 
+	public function test_the_story_body_renders_inside_the_loop(): void {
+		$this->stage_story( '<article id="story"></article>' );
+
+		$output = $this->render_template();
+
+		$this->assertStringContainsString( '<article id="story"></article>', $output );
+	}
+
+	/**
+	 * The whole-post form of get_post_meta() passes an empty key to the
+	 * `get_post_metadata` filter and expects every key back, which the live
+	 * preview filter cannot serve without calling itself.
+	 */
+	public function test_story_meta_is_read_one_key_at_a_time(): void {
+		$this->stage_story( '<article id="story"></article>' );
+
+		$this->render_template();
+
+		$this->assertSame(
+			array( 'story_body', 'story_version' ),
+			\tests_wp_post_meta_reads()
+		);
+	}
+
+	public function test_the_before_story_action_fires_for_each_story(): void {
+		$this->stage_story( '<article id="story"></article>' );
+
+		$this->render_template();
+
+		$this->assertCount( 1, \tests_wp_actions_done( 'theshed_before_story' ) );
+	}
+
+	public function test_the_before_story_action_fires_ahead_of_the_story_body(): void {
+		$this->stage_story( '<article id="story"></article>' );
+
+		add_action(
+			'theshed_before_story',
+			static function (): void {
+				echo '<!--notice-->';
+			}
+		);
+
+		$output = $this->render_template();
+
+		$this->assertMatchesRegularExpression( '#<!--notice-->.*<article id="story">#s', $output );
+	}
+
+	private function stage_story( string $body ): void {
+		\tests_wp_set_have_posts( 1 );
+		\tests_wp_set_post_meta( 42, 'story_body', $body );
+		\tests_wp_set_post_meta( 42, 'story_version', 9 );
+	}
+
 	private function render_template(): string {
 		$post = (object) array(
 			'ID' => 42,
