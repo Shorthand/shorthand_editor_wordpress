@@ -153,24 +153,27 @@ class LivePreview {
 			return $value;
 		}
 
+		/* Settled before get_content(), so an unrelated key costs no API call. */
+		switch ( $meta_key ) {
+			case 'story_body':
+				$reader = 'get_body';
+				break;
+			case 'story_head':
+				$reader = 'get_head';
+				break;
+			case 'story_version':
+				$reader = 'get_content_version';
+				break;
+			default:
+				return $value;
+		}
+
 		$content = $this->get_content();
 		if ( null === $content ) {
 			return $value;
 		}
 
-		switch ( $meta_key ) {
-			case 'story_body':
-				$live = $content->get_body();
-				break;
-			case 'story_head':
-				$live = $content->get_head();
-				break;
-			case 'story_version':
-				$live = $content->get_content_version();
-				break;
-			default:
-				return $value;
-		}
+		$live = $content->$reader();
 
 		return $single ? $live : array( $live );
 	}
