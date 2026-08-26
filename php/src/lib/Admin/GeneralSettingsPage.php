@@ -44,7 +44,7 @@ class GeneralSettingsPage extends SettingsPage {
 	protected function build_settings_sections(): void {
 		add_settings_section(
 			'shorthand_workspace_section',
-			esc_html__( 'Workspace and Site', 'the-shorthand-editor' ),
+			$this->get_workspace_section_title(),
 			null,
 			$this->settings_page_slug
 		);
@@ -144,6 +144,20 @@ class GeneralSettingsPage extends SettingsPage {
 				'cols'      => 80,
 			)
 		);
+	}
+
+	/**
+	 * Titles the section without promising conditional fields.
+	 *
+	 * The site field is absent for organisation tokens, and both identity
+	 * fields are absent before a connection exists.
+	 */
+	private function get_workspace_section_title(): string {
+		if ( ! $this->options->is_verified() ) {
+			return esc_html__( 'Shorthand Connection', 'the-shorthand-editor' );
+		}
+
+		return esc_html__( 'Shorthand Workspace', 'the-shorthand-editor' );
 	}
 
 	/**

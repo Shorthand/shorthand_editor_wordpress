@@ -116,6 +116,8 @@ function tests_wp_reset_state(): void {
 		'transient_ttls'       => array(),
 		'site_transients'      => array(),
 		'settings_errors'      => array(),
+		'settings_sections'    => array(),
+		'settings_fields'      => array(),
 		'remote_requests'      => array(),
 		'remote_get_response'  => array(
 			'response' => array(
@@ -487,6 +489,46 @@ function add_settings_error( string $setting, string $code, $message ): void {
 		'code'    => $code,
 		'message' => (string) $message,
 	);
+}
+
+/**
+ * @param callable|null        $callback
+ * @param array<string, mixed> $args
+ */
+function add_settings_section( string $id, string $title, $callback, string $page, array $args = array() ): void {
+	$GLOBALS['tests_wp_state']['settings_sections'][] = array(
+		'id'    => $id,
+		'title' => $title,
+		'page'  => $page,
+	);
+}
+
+/**
+ * @param callable|null        $callback
+ * @param array<string, mixed> $args
+ */
+function add_settings_field( string $id, string $title, $callback, string $page, string $section = 'default', array $args = array() ): void {
+	$GLOBALS['tests_wp_state']['settings_fields'][] = array(
+		'id'      => $id,
+		'title'   => $title,
+		'page'    => $page,
+		'section' => $section,
+		'args'    => $args,
+	);
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_get_settings_sections(): array {
+	return $GLOBALS['tests_wp_state']['settings_sections'];
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_get_settings_fields(): array {
+	return $GLOBALS['tests_wp_state']['settings_fields'];
 }
 
 /**
