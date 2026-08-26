@@ -7,6 +7,7 @@ namespace Shorthand\Tests\Admin;
 use Shorthand\Admin\Actions\EditWithShorthand;
 use Shorthand\Admin\Actions\PostPreview;
 use Shorthand\Admin\Editor;
+use Shorthand\Core\Loader;
 use Shorthand\Core\Version;
 use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Cron;
@@ -48,6 +49,24 @@ final class EditorTest extends WordPressTestCase {
 
 		$editor = $this->make_editor( $post_api );
 		$editor->save_shorthand_story( 7, (object) array( 'post_status' => 'draft' ) );
+	}
+
+	/**
+	 * Overriding `preview_post_link` sent the Preview button at
+	 * admin-post.php, which serves the story without the theme. Core's own URL
+	 * is a story permalink, which the theme templates can dress.
+	 */
+	public function test_the_preview_link_core_builds_is_left_alone(): void {
+		$loader = new Loader();
+		$this->make_editor( $this->createMock( PostAPI::class ) )->init( $loader );
+		$loader->register();
+
+		$this->assertSame( array(), \tests_wp_hook_callbacks( 'preview_post_link' ) );
+		$this->assertNotSame( array(), \tests_wp_hook_callbacks( 'post_row_actions' ) );
+	}
+
+	public function test_the_editor_no_longer_answers_the_preview_link_filter(): void {
+		$this->assertFalse( method_exists( Editor::class, 'preview_post_link' ) );
 	}
 
 	private function make_editor( PostAPI $post_api ): Editor {

@@ -53,14 +53,21 @@ if ( post_password_required( $post->ID ) ) {
 	while ( have_posts() ) :
 		the_post();
 
-		$theshed_story_meta = get_post_meta( $post->ID );
-		if ( isset( $theshed_story_meta['story_body'][0] ) ) {
-			$theshed_story_version = isset( $theshed_story_meta['story_version'][0] ) && is_numeric( $theshed_story_meta['story_version'][0] )
-				? (int) $theshed_story_meta['story_version'][0]
-				: null;
+		/*
+		 * Read each key on its own. The whole-post form of get_post_meta() passes
+		 * an empty key to the `get_post_metadata` filter and expects every key
+		 * back, which the live preview filter cannot serve without calling itself.
+		 */
+		$theshed_story_body    = get_post_meta( $post->ID, 'story_body', true );
+		$theshed_story_version = get_post_meta( $post->ID, 'story_version', true );
+
+		do_action( 'theshed_before_story' );
+
+		if ( '' !== $theshed_story_body ) {
+			$theshed_story_version = is_numeric( $theshed_story_version ) ? (int) $theshed_story_version : null;
 
 			\Shorthand\Services\StoryKses::enable();
-			\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $theshed_story_meta['story_body'][0], $theshed_story_version );
+			\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $theshed_story_body, $theshed_story_version );
 			\Shorthand\Services\StoryKses::disable();
 		}
 

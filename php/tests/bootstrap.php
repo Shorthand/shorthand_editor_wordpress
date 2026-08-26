@@ -140,12 +140,14 @@ function tests_wp_reset_state(): void {
 		'update_post_observer' => null,
 		'post_fields'          => array(),
 		'post_meta'            => array(),
+		'post_meta_reads'      => array(),
 		'is_block_theme'       => false,
 		'template_calls'       => array(),
 		'password_required'    => false,
 		'rewrite_flushes'      => 0,
 		'post_types'           => array(),
 		'post_meta'            => array(),
+		'post_meta_reads'      => array(),
 		'registered_post_meta' => array(),
 		'deleted_post_meta'    => array(),
 		'deleted_files'        => array(),
@@ -161,6 +163,12 @@ function tests_wp_reset_state(): void {
 		'current_user_can'     => true,
 		'verify_nonce'         => true,
 		'safe_redirects'       => array(),
+		'hooks'                => array(),
+		'is_preview'           => false,
+		'singular_post_type'   => null,
+		'queried_object_id'    => 0,
+		'have_posts'           => 0,
+		'actions_done'         => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
 }
@@ -256,9 +264,34 @@ function tests_wp_inline_styles(): array {
 	return $GLOBALS['tests_wp_state']['inline_styles'];
 }
 
-function add_action( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {}
+function add_action( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {
+	tests_wp_record_hook( $hook_name, $callback, $priority, $accepted_args );
+}
 
-function add_filter( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {}
+function add_filter( string $hook_name, $callback, int $priority = 10, int $accepted_args = 1 ): void {
+	tests_wp_record_hook( $hook_name, $callback, $priority, $accepted_args );
+}
+
+/**
+ * @param callable|array<int, mixed> $callback
+ */
+function tests_wp_record_hook( string $hook_name, $callback, int $priority, int $accepted_args ): void {
+	$GLOBALS['tests_wp_state']['hooks'][ $hook_name ][] = array(
+		'callback'      => $callback,
+		'priority'      => $priority,
+		'accepted_args' => $accepted_args,
+	);
+}
+
+/**
+ * Registrations against a hook, in registration order. Each entry holds the
+ * callback, its priority and its accepted argument count.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_hook_callbacks( string $hook_name ): array {
+	return $GLOBALS['tests_wp_state']['hooks'][ $hook_name ] ?? array();
+}
 
 function remove_filter( string $hook_name, $callback, int $priority = 10 ): void {}
 
@@ -940,7 +973,13 @@ function get_the_password_form( $post = 0 ): string {
 }
 
 function have_posts(): bool {
-	return false;
+	if ( $GLOBALS['tests_wp_state']['have_posts'] < 1 ) {
+		return false;
+	}
+
+	--$GLOBALS['tests_wp_state']['have_posts'];
+
+	return true;
 }
 
 function wp_footer(): void {
@@ -949,6 +988,71 @@ function wp_footer(): void {
 
 function get_footer(): void {
 	$GLOBALS['tests_wp_state']['template_calls'][] = 'get_footer';
+}
+
+function tests_wp_set_is_preview( bool $is_preview ): void {
+	$GLOBALS['tests_wp_state']['is_preview'] = $is_preview;
+}
+
+function is_preview(): bool {
+	return $GLOBALS['tests_wp_state']['is_preview'];
+}
+
+function tests_wp_set_singular( ?string $post_type ): void {
+	$GLOBALS['tests_wp_state']['singular_post_type'] = $post_type;
+}
+
+function is_singular( string $post_type = '' ): bool {
+	$singular = $GLOBALS['tests_wp_state']['singular_post_type'];
+
+	if ( null === $singular ) {
+		return false;
+	}
+
+	return '' === $post_type || $post_type === $singular;
+}
+
+function tests_wp_set_queried_object_id( int $post_id ): void {
+	$GLOBALS['tests_wp_state']['queried_object_id'] = $post_id;
+}
+
+function get_queried_object_id(): int {
+	return $GLOBALS['tests_wp_state']['queried_object_id'];
+}
+
+function tests_wp_set_have_posts( int $count ): void {
+	$GLOBALS['tests_wp_state']['have_posts'] = $count;
+}
+
+function the_post(): void {
+	$GLOBALS['tests_wp_state']['template_calls'][] = 'the_post';
+}
+
+/**
+ * @param mixed ...$args
+ */
+function do_action( string $hook_name, ...$args ): void {
+	$GLOBALS['tests_wp_state']['actions_done'][ $hook_name ][] = $args;
+
+	$registrations = $GLOBALS['tests_wp_state']['hooks'][ $hook_name ] ?? array();
+
+	foreach ( $registrations as $registration ) {
+		call_user_func_array(
+			$registration['callback'],
+			array_slice( $args, 0, $registration['accepted_args'] )
+		);
+	}
+}
+
+/**
+ * @return array<int, array<int, mixed>>
+ */
+function tests_wp_actions_done( string $hook_name ): array {
+	return $GLOBALS['tests_wp_state']['actions_done'][ $hook_name ] ?? array();
+}
+
+function esc_html_e( string $text, string $domain = '' ): void {
+	echo esc_html( $text );
 }
 
 
@@ -1012,6 +1116,15 @@ function wp_upload_dir(): array {
 }
 
 /**
+ * Meta keys read this request, in order. An empty key is the whole-post form.
+ *
+ * @return array<int, string>
+ */
+function tests_wp_post_meta_reads(): array {
+	return $GLOBALS['tests_wp_state']['post_meta_reads'];
+}
+
+/**
  * @param mixed $meta_value
  */
 function tests_wp_set_post_meta( int $post_id, string $meta_key, $meta_value ): void {
@@ -1022,6 +1135,8 @@ function tests_wp_set_post_meta( int $post_id, string $meta_key, $meta_value ): 
  * @return mixed
  */
 function get_post_meta( int $post_id, string $meta_key = '', bool $single = false ) {
+	$GLOBALS['tests_wp_state']['post_meta_reads'][] = $meta_key;
+
 	$meta = isset( $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] )
 		? $GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ]
 		: null;

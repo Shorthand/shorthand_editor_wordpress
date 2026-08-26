@@ -90,7 +90,6 @@ class Editor {
 		$loader->add_action( 'edit_form_after_title', $this, 'edit_form_after_title', 10, 1 );
 
 		$loader->add_filter( 'post_row_actions', $this, 'row_action_edit_with_shorthand', 10, 2 );
-		$loader->add_filter( 'preview_post_link', $this, 'preview_post_link', 10, 2 );
 
 		$loader->add_filter( 'admin_enqueue_scripts', $this, 'admin_enqueue_scripts', 10, 1 );
 
@@ -272,14 +271,6 @@ class Editor {
 		return null;
 	}
 
-
-	public function preview_post_link( string $url, WP_Post $post ): string {
-		if ( $post->post_type !== $this->post_type || ! current_user_can( 'edit_post', $post->ID ) ) {
-			return $url;
-		}
-
-		return $this->post_preview->get_preview_url( $post );
-	}
 
 	public function admin_enqueue_scripts( $hook ) {
 		if (
