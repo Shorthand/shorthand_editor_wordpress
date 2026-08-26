@@ -44,7 +44,7 @@ class GeneralSettingsPage extends SettingsPage {
 	protected function build_settings_sections(): void {
 		add_settings_section(
 			'shorthand_workspace_section',
-			esc_html__( 'Workspace and Team', 'the-shorthand-editor' ),
+			$this->get_workspace_section_title(),
 			null,
 			$this->settings_page_slug
 		);
@@ -52,7 +52,7 @@ class GeneralSettingsPage extends SettingsPage {
 		if ( $this->options->is_verified() ) {
 			add_settings_field(
 				'shorthand_v2_token_org',
-				esc_html__( 'Workspace', 'the-shorthand-editor' ),
+				esc_html__( 'Shorthand Workspace', 'the-shorthand-editor' ),
 				array( $this, 'render_partial' ),
 				$this->settings_page_slug,
 				'shorthand_workspace_section',
@@ -69,12 +69,12 @@ class GeneralSettingsPage extends SettingsPage {
 			if ( $this->options->get_token_type() != 'Organisation' ) {
 				add_settings_field(
 					'shorthand_v2_token_team',
-					esc_html__( 'Team Name', 'the-shorthand-editor' ),
+					esc_html__( 'Site name on Shorthand', 'the-shorthand-editor' ),
 					array( $this, 'render_partial' ),
 					$this->settings_page_slug,
 					'shorthand_workspace_section',
 					array(
-						'label_for' => 'shorthand_v2_token_org',
+						'label_for' => 'shorthand_v2_token_team',
 						'value'     => $this->options->get_token_name(),
 						'partial'   => 'partials/option-token.php',
 						'readonly'  => true,
@@ -144,6 +144,20 @@ class GeneralSettingsPage extends SettingsPage {
 				'cols'      => 80,
 			)
 		);
+	}
+
+	/**
+	 * Titles the section without promising conditional fields.
+	 *
+	 * The site field is absent for organisation tokens, and both identity
+	 * fields are absent before a connection exists.
+	 */
+	private function get_workspace_section_title(): string {
+		if ( ! $this->options->is_verified() ) {
+			return esc_html__( 'Shorthand Connection', 'the-shorthand-editor' );
+		}
+
+		return esc_html__( 'Shorthand Workspace', 'the-shorthand-editor' );
 	}
 
 	/**
