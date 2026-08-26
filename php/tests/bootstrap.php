@@ -146,8 +146,6 @@ function tests_wp_reset_state(): void {
 		'password_required'    => false,
 		'rewrite_flushes'      => 0,
 		'post_types'           => array(),
-		'post_meta'            => array(),
-		'post_meta_reads'      => array(),
 		'registered_post_meta' => array(),
 		'deleted_post_meta'    => array(),
 		'deleted_files'        => array(),
@@ -1034,14 +1032,41 @@ function the_post(): void {
 function do_action( string $hook_name, ...$args ): void {
 	$GLOBALS['tests_wp_state']['actions_done'][ $hook_name ][] = $args;
 
-	$registrations = $GLOBALS['tests_wp_state']['hooks'][ $hook_name ] ?? array();
-
-	foreach ( $registrations as $registration ) {
+	foreach ( tests_wp_hook_callbacks_in_order( $hook_name ) as $registration ) {
 		call_user_func_array(
 			$registration['callback'],
 			array_slice( $args, 0, $registration['accepted_args'] )
 		);
 	}
+}
+
+/**
+ * Registrations in the order WordPress would run them: lowest priority first,
+ * and registration order within a priority.
+ *
+ * @param string $hook_name Hook name.
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_hook_callbacks_in_order( string $hook_name ): array {
+	$registrations = $GLOBALS['tests_wp_state']['hooks'][ $hook_name ] ?? array();
+
+	/* usort() is only stable from PHP 8.0, so registration order is the tiebreak. */
+	$order = array_keys( $registrations );
+	usort(
+		$order,
+		static function ( int $a, int $b ) use ( $registrations ): int {
+			$by_priority = $registrations[ $a ]['priority'] <=> $registrations[ $b ]['priority'];
+
+			return 0 !== $by_priority ? $by_priority : $a <=> $b;
+		}
+	);
+
+	return array_map(
+		static function ( int $index ) use ( $registrations ): array {
+			return $registrations[ $index ];
+		},
+		$order
+	);
 }
 
 /**

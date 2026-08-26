@@ -51,6 +51,20 @@ final class LivePreviewTest extends WordPressTestCase {
 		$this->assertNull( $live_preview->filter_meta( null, self::POST_ID, '', false ) );
 	}
 
+	/**
+	 * WordPress reads plenty of unrelated meta on a story request. None of it
+	 * should cost a call to Shorthand.
+	 */
+	public function test_keys_the_plugin_does_not_own_cost_no_api_call(): void {
+		$live_preview = $this->make_live_preview( $this->never_called_post_api() );
+		$this->put_request_on_preview();
+		$live_preview->resolve();
+
+		$this->assertNull( $live_preview->filter_meta( null, self::POST_ID, '_thumbnail_id', true ) );
+		$this->assertNull( $live_preview->filter_meta( null, self::POST_ID, 'story_id', true ) );
+		$this->assertNull( $live_preview->filter_meta( null, self::POST_ID, '', false ) );
+	}
+
 	public function test_another_post_keeps_its_saved_content(): void {
 		$live_preview = $this->resolve_on_preview_request();
 
