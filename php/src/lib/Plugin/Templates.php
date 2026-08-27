@@ -54,45 +54,52 @@ class Templates {
 	public function single_template( $template ) {
 		global $post;
 
-		if ( $post->post_type === $this->post_type ) {
-			// Check if a custom page template is selected.
-			$custom_template = get_post_meta( $post->ID, '_wp_page_template', true );
+		if ( $post->post_type !== $this->post_type ) {
+			return $template;
+		}
 
-			// If custom template is set and not 'default', try to locate it.
-			if ( $custom_template && 'default' !== $custom_template ) {
-				$located = locate_template( $custom_template );
-				if ( $located ) {
-					return $located;
-				}
-			}
+		$story_template = $this->resolve_story_template( (int) $post->ID );
 
-			// If no custom template or 'default' is selected, use the plugin's template logic.
+		return '' !== $story_template ? $story_template : $template;
+	}
 
-			// Look for themes or overrides.
+	/**
+	 * Finds the template that should render a story.
+	 *
+	 * Resolution order: the story's own page template, a theme override, then
+	 * the template shipped with the plugin.
+	 *
+	 * @param int $post_id The story to resolve a template for.
+	 * @return string The template path, or an empty string when none is found.
+	 */
+	private function resolve_story_template( int $post_id ): string {
+		$custom_template = get_post_meta( $post_id, '_wp_page_template', true );
 
-			$theme_template = locate_template(
-				array(
-					'single-tse-story.php',
-					'templates/single-tse-story.php',
-					'template-parts/single-tse-story.php',
-					'single-tse_story.php',
-					'templates/single-tse_story.php',
-					'template-parts/single-tse_story.php',
-				)
-			);
-
-			if ( $theme_template ) {
-				return $theme_template;
-			}
-
-			// Fallback to plugin template if theme template doesn't exist.
-			$plugin_template = $this->version->get_plugin_path( 'templates/single-tse-story.php' );
-			if ( file_exists( $plugin_template ) ) {
-				return $plugin_template;
+		if ( $custom_template && 'default' !== $custom_template ) {
+			$located = locate_template( $custom_template );
+			if ( $located ) {
+				return $located;
 			}
 		}
 
-		return $template;
+		$theme_template = locate_template(
+			array(
+				'single-tse-story.php',
+				'templates/single-tse-story.php',
+				'template-parts/single-tse-story.php',
+				'single-tse_story.php',
+				'templates/single-tse_story.php',
+				'template-parts/single-tse_story.php',
+			)
+		);
+
+		if ( $theme_template ) {
+			return $theme_template;
+		}
+
+		$plugin_template = $this->version->get_plugin_path( 'templates/single-tse-story.php' );
+
+		return file_exists( $plugin_template ) ? $plugin_template : '';
 	}
 
 	/**
@@ -119,40 +126,34 @@ class Templates {
 	}
 
 	/**
-	 * Use the plugin's story template when a tse_story is the static front page.
+	 * Uses the story template when a story is the static front page.
 	 *
-	 * WordPress's single_template filter does not fire for the front page, so a
-	 * tse_story set as the home page renders with the theme's front-page template
-	 * which only outputs the title. This filter ensures the plugin's story
-	 * template is used instead.
+	 * A front page request is a page request, so core resolves it through
+	 * get_page_template() and the `single_template` filter never fires. Left
+	 * alone, a story set as the home page renders through the theme's page
+	 * template, which prints the title and no story body.
 	 *
 	 * @param string $template The resolved template path.
 	 * @return string
 	 */
 	public function front_page_template( $template ) {
-		if ( is_admin() ) {
-			return $template;
-		}
-
-		if ( ! is_front_page() ) {
+		/*
+		 * `page_on_front` keeps its value after the site switches back to
+		 * showing latest posts, and is_front_page() is true for the blog index,
+		 * so the stale option would otherwise capture the blog index.
+		 */
+		if ( ! is_front_page() || 'page' !== get_option( 'show_on_front' ) ) {
 			return $template;
 		}
 
 		$front_page_id = (int) get_option( 'page_on_front' );
-		if ( ! $front_page_id ) {
+		if ( ! $front_page_id || get_post_type( $front_page_id ) !== $this->post_type ) {
 			return $template;
 		}
 
-		if ( get_post_type( $front_page_id ) !== $this->post_type ) {
-			return $template;
-		}
+		$story_template = $this->resolve_story_template( $front_page_id );
 
-		$plugin_template = $this->version->get_plugin_path( 'templates/single-tse-story.php' );
-		if ( file_exists( $plugin_template ) ) {
-			return $plugin_template;
-		}
-
-		return $template;
+		return '' !== $story_template ? $story_template : $template;
 	}
 
 	/**
@@ -161,8 +162,6 @@ class Templates {
 	 * Scripts and stylesheets are enqueued separately in enqueue_scripts().
 	 */
 	public function single_head() {
-		global $post;
-
 		if ( ! is_singular( $this->post_type ) ) {
 			return;
 		}
