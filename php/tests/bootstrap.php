@@ -163,7 +163,10 @@ function tests_wp_reset_state(): void {
 		'safe_redirects'       => array(),
 		'hooks'                => array(),
 		'is_preview'           => false,
+		'is_front_page'        => false,
 		'singular_post_type'   => null,
+		'post_type_by_id'      => array(),
+		'located_templates'    => array(),
 		'queried_object_id'    => 0,
 		'have_posts'           => 0,
 		'actions_done'         => array(),
@@ -1008,6 +1011,47 @@ function is_singular( string $post_type = '' ): bool {
 	}
 
 	return '' === $post_type || $post_type === $singular;
+}
+
+function tests_wp_set_front_page( bool $is_front_page ): void {
+	$GLOBALS['tests_wp_state']['is_front_page'] = $is_front_page;
+}
+
+function is_front_page(): bool {
+	return $GLOBALS['tests_wp_state']['is_front_page'];
+}
+
+function tests_wp_set_post_type( int $post_id, string $post_type ): void {
+	$GLOBALS['tests_wp_state']['post_type_by_id'][ $post_id ] = $post_type;
+}
+
+/**
+ * @param mixed $post
+ * @return string|false
+ */
+function get_post_type( $post = null ) {
+	$post_id = is_object( $post ) ? (int) $post->ID : (int) $post;
+	return $GLOBALS['tests_wp_state']['post_type_by_id'][ $post_id ] ?? false;
+}
+
+/**
+ * Maps a template name a theme provides to the path locate_template() returns.
+ */
+function tests_wp_set_located_template( string $template_name, string $path ): void {
+	$GLOBALS['tests_wp_state']['located_templates'][ $template_name ] = $path;
+}
+
+/**
+ * @param string|string[] $template_names
+ */
+function locate_template( $template_names, bool $load = false, bool $load_once = true, array $args = array() ): string {
+	foreach ( (array) $template_names as $template_name ) {
+		if ( isset( $GLOBALS['tests_wp_state']['located_templates'][ $template_name ] ) ) {
+			return $GLOBALS['tests_wp_state']['located_templates'][ $template_name ];
+		}
+	}
+
+	return '';
 }
 
 function tests_wp_set_queried_object_id( int $post_id ): void {
