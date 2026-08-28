@@ -27,6 +27,7 @@ class Options {
 	}
 
 	public function register() {
+		/* Source: Shorthand API, /v2/connect `apiToken`.  At rest: JWT, plain text. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_token',
@@ -39,6 +40,7 @@ class Options {
 			)
 		);
 
+		/* Source: settings form; legacy `sh_permalink` on activation.  At rest: plain text. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_permalink',
@@ -51,6 +53,7 @@ class Options {
 			)
 		);
 
+		/* Source: settings form; legacy base64 `sh_regex_list` on activation.  At rest: plain text, one rule per line. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_regex_list',
@@ -61,6 +64,7 @@ class Options {
 			)
 		);
 
+		/* Source: settings form; legacy `sh_css`, else the bundled default stylesheet.  At rest: raw CSS, NULs stripped. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_disable_staging',
@@ -73,6 +77,7 @@ class Options {
 			)
 		);
 
+		/* Source: no writer in this plugin; set out of band (WP-CLI, another plugin).  At rest: bool. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_css',
@@ -83,7 +88,9 @@ class Options {
 			)
 		);
 
-		/* Internal settings, used to persist token information and auth state */
+		/* Internal settings; not exposed to any settings form. */
+
+		/* Source: AuthStateManager.  At rest: state constant, timestamp, flag. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_auth_state',
@@ -94,6 +101,11 @@ class Options {
 			)
 		);
 
+		/*
+		 * Source: Shorthand API, /v2/token-info.  At rest: HTML-escaped — the API
+		 * returns entity-encoded workspace and team names, so the getters decode
+		 * before the output layer escapes them again (PLA-2464).
+		 */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_token_info',
@@ -104,6 +116,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_signing_key',
@@ -114,6 +127,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_verifying_key',
@@ -124,6 +138,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair, pending rotation.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_next_signing_key',
@@ -134,6 +149,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair, pending rotation.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_next_verifying_key',
