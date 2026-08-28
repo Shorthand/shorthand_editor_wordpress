@@ -40,7 +40,7 @@ class Options {
 			)
 		);
 
-		/* Source: settings form; legacy `sh_permalink` on activation.  At rest: plain text. */
+		/* Source: settings form; legacy `sh_permalink` on activation.  At rest: URL path, slugged per segment. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_permalink',
@@ -48,7 +48,7 @@ class Options {
 				'type'              => 'string',
 				'label'             => __( 'Permalink structure', 'the-shorthand-editor' ),
 				'description'       => __( 'Set the permalink structure for published Shorthand story posts', 'the-shorthand-editor' ),
-				'sanitize_callback' => 'sanitize_text_field',
+				'sanitize_callback' => array( $this, 'sanitize_permalink' ),
 				'default'           => 'story',
 			)
 		);
@@ -64,7 +64,7 @@ class Options {
 			)
 		);
 
-		/* Source: settings form; legacy `sh_css`, else the bundled default stylesheet.  At rest: raw CSS, NULs stripped. */
+		/* Source: settings form checkbox.  At rest: bool; forced on where uploads are remote. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_disable_staging',
@@ -77,7 +77,7 @@ class Options {
 			)
 		);
 
-		/* Source: no writer in this plugin; set out of band (WP-CLI, another plugin).  At rest: bool. */
+		/* Source: settings form; legacy `sh_css`, else the bundled default stylesheet.  At rest: raw CSS, NULs stripped. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_css',
@@ -216,16 +216,41 @@ class Options {
 		);
 	}
 
+	/**
+	 * Reduces a token-info payload to the fields the plugin stores.
+	 *
+	 * @param mixed $token_info Decoded /v2/token-info response.
+	 * @return array<string, string>|null Stored fields, or null for a payload that is not an array.
+	 */
 	public function sanitize_v2_token_info( $token_info ) {
-		$result = array(
-			'team_id'         => sanitize_text_field( $token_info['team_id'] ),
-			'organisation_id' => sanitize_text_field( $token_info['organisation_id'] ),
-			'workspace'       => sanitize_text_field( $token_info['workspace'] ),
-			'name'            => sanitize_text_field( $token_info['name'] ),
-			'logo'            => sanitize_text_field( $token_info['logo'] ),
-			'token_type'      => sanitize_text_field( $token_info['token_type'] ),
-		);
+		if ( ! is_array( $token_info ) ) {
+			return null;
+		}
+
+		$fields = array( 'team_id', 'organisation_id', 'workspace', 'name', 'logo', 'token_type' );
+		$result = array();
+
+		/* A field the API omits is stored empty, so the getters stay total. */
+		foreach ( $fields as $field ) {
+			$result[ $field ] = isset( $token_info[ $field ] ) ? sanitize_text_field( (string) $token_info[ $field ] ) : '';
+		}
+
 		return $result;
+	}
+
+	/**
+	 * Reduces the permalink setting to a URL path.
+	 *
+	 * The value becomes a post type rewrite slug, so it may span segments but
+	 * must survive a URL.  Each segment is slugged and empty ones are dropped;
+	 * a value with nothing left falls back to the default.
+	 *
+	 * @param mixed $permalink Submitted permalink structure.
+	 */
+	public function sanitize_permalink( $permalink ): string {
+		$segments = array_filter( array_map( 'sanitize_title', explode( '/', (string) $permalink ) ) );
+
+		return empty( $segments ) ? 'story' : implode( '/', $segments );
 	}
 
 	public function sanitize_regex_list( $regex_list ) {
@@ -261,7 +286,7 @@ class Options {
 		if ( false == $token_info ) {
 			return '';
 		}
-		return isset( $token_info['workspace'] ) ? wp_specialchars_decode( $token_info['workspace'] ) : '';
+		return isset( $token_info['workspace'] ) ? wp_specialchars_decode( $token_info['workspace'], ENT_QUOTES ) : '';
 	}
 
 	public function get_token_team_id() {
@@ -285,7 +310,7 @@ class Options {
 		if ( false == $token_info ) {
 			return '';
 		}
-		return isset( $token_info['name'] ) ? wp_specialchars_decode( $token_info['name'] ) : '';
+		return isset( $token_info['name'] ) ? wp_specialchars_decode( $token_info['name'], ENT_QUOTES ) : '';
 	}
 
 	public function get_permalink(): string {

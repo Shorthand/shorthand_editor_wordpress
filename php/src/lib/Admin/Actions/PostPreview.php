@@ -126,7 +126,7 @@ class PostPreview {
 
 		wp_register_style( 'theshed-preview-user-style', false, array(), md5( $user_style ) );
 		wp_enqueue_style( 'theshed-preview-user-style' );
-		wp_add_inline_style( 'theshed-preview-user-style', wp_kses( $user_style, array(), array() ) );
+		wp_add_inline_style( 'theshed-preview-user-style', StoryKses::sanitize_inline_css( $user_style ) );
 
 		// Register handle for story scripts extracted during KSES filtering.
 		// This is an inline script and does not have a version.
