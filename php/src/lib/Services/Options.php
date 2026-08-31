@@ -270,12 +270,14 @@ class Options {
 	}
 
 	private function get_token_info_block(): ?array {
-		return get_option( 'shorthand_v2_token_info' );
+		$token_info = get_option( 'shorthand_v2_token_info', null );
+
+		return is_array( $token_info ) ? $token_info : null;
 	}
 
 	public function get_token_org_id() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['organisation_id'] ) ? ( $token_info['organisation_id'] ) : '';
@@ -283,7 +285,7 @@ class Options {
 
 	public function get_token_org_name() {
 		$token_info = $this->get_token_info_block();
-		if ( false == $token_info ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['workspace'] ) ? wp_specialchars_decode( $token_info['workspace'], ENT_QUOTES ) : '';
@@ -291,7 +293,7 @@ class Options {
 
 	public function get_token_team_id() {
 		$token_info = $this->get_token_info_block();
-		if ( false == $token_info ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['team_id'] ) ? ( $token_info['team_id'] ) : '';
@@ -299,7 +301,7 @@ class Options {
 
 	public function get_token_type() {
 		$token_info = $this->get_token_info_block();
-		if ( false == $token_info ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['token_type'] ) ? ( $token_info['token_type'] ) : '';
@@ -307,7 +309,7 @@ class Options {
 
 	public function get_token_name() {
 		$token_info = $this->get_token_info_block();
-		if ( false == $token_info ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['name'] ) ? wp_specialchars_decode( $token_info['name'], ENT_QUOTES ) : '';

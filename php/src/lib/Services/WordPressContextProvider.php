@@ -27,7 +27,7 @@ class WordPressContextProvider {
 	 * `get_bloginfo()` returns the stored value untouched, so the entities
 	 * would otherwise reach Shorthand verbatim (PLA-2464).
 	 *
-	 * @return string[]
+	 * @return array<string, string>
 	 */
 	public function get_context(): array {
 		return array(
