@@ -62,7 +62,7 @@ class GeneralSettingsPage extends SettingsPage {
 					'partial'   => 'partials/option-token.php',
 					'readonly'  => true,
 					'link'      => $this->options->get_dashboard_url(),
-					'link_text' => esc_html__( '&rarr; Shorthand Dashboard', 'the-shorthand-editor' ),
+					'link_text' => __( '→ Shorthand Dashboard', 'the-shorthand-editor' ),
 				)
 			);
 
@@ -74,7 +74,7 @@ class GeneralSettingsPage extends SettingsPage {
 					$this->settings_page_slug,
 					'shorthand_workspace_section',
 					array(
-						'label_for' => 'shorthand_v2_token_org',
+						'label_for' => 'shorthand_v2_token_team',
 						'value'     => $this->options->get_token_name(),
 						'partial'   => 'partials/option-token.php',
 						'readonly'  => true,
@@ -167,10 +167,10 @@ class GeneralSettingsPage extends SettingsPage {
 				'value'       => $can_disable && ! $this->options->is_staging_enabled(),
 				'partial'     => 'partials/option-checkbox.php',
 				'disabled'    => ! $can_disable,
-				'label'       => esc_html__( 'Unpack stories straight into the uploads directory', 'the-shorthand-editor' ),
+				'label'       => __( 'Unpack stories straight into the uploads directory', 'the-shorthand-editor' ),
 				'description' => $can_disable
-					? esc_html__( 'Stories are unpacked in a temporary directory and then copied into uploads. Turn this on only if that extra copy is a problem.', 'the-shorthand-editor' )
-					: esc_html( UploadsHostNotice::get_message() ),
+					? __( 'Stories are unpacked in a temporary directory and then copied into uploads. Turn this on only if that extra copy is a problem.', 'the-shorthand-editor' )
+					: UploadsHostNotice::get_message(),
 			)
 		);
 	}

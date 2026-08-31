@@ -27,6 +27,7 @@ class Options {
 	}
 
 	public function register() {
+		/* Source: Shorthand API, /v2/connect `apiToken`.  At rest: JWT, plain text. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_token',
@@ -39,6 +40,7 @@ class Options {
 			)
 		);
 
+		/* Source: settings form; legacy `sh_permalink` on activation.  At rest: URL path, slugged per segment. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_permalink',
@@ -46,11 +48,12 @@ class Options {
 				'type'              => 'string',
 				'label'             => __( 'Permalink structure', 'the-shorthand-editor' ),
 				'description'       => __( 'Set the permalink structure for published Shorthand story posts', 'the-shorthand-editor' ),
-				'sanitize_callback' => 'sanitize_text_field',
+				'sanitize_callback' => array( $this, 'sanitize_permalink' ),
 				'default'           => 'story',
 			)
 		);
 
+		/* Source: settings form; legacy base64 `sh_regex_list` on activation.  At rest: plain text, one rule per line. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_regex_list',
@@ -61,6 +64,7 @@ class Options {
 			)
 		);
 
+		/* Source: settings form checkbox.  At rest: bool; forced on where uploads are remote. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_disable_staging',
@@ -73,6 +77,7 @@ class Options {
 			)
 		);
 
+		/* Source: settings form; legacy `sh_css`, else the bundled default stylesheet.  At rest: raw CSS, NULs stripped. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_css',
@@ -83,7 +88,9 @@ class Options {
 			)
 		);
 
-		/* Internal settings, used to persist token information and auth state */
+		/* Internal settings; not exposed to any settings form. */
+
+		/* Source: AuthStateManager.  At rest: state constant, timestamp, flag. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_auth_state',
@@ -94,6 +101,11 @@ class Options {
 			)
 		);
 
+		/*
+		 * Source: Shorthand API, /v2/token-info.  At rest: HTML-escaped — the API
+		 * returns entity-encoded workspace and team names, so the getters decode
+		 * before the output layer escapes them again (PLA-2464).
+		 */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_token_info',
@@ -104,6 +116,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_signing_key',
@@ -114,6 +127,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_verifying_key',
@@ -124,6 +138,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair, pending rotation.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_next_signing_key',
@@ -134,6 +149,7 @@ class Options {
 			)
 		);
 
+		/* Source: generated locally, sodium Ed25519 keypair, pending rotation.  At rest: JSON-encoded JWK. */
 		register_setting(
 			'theshed-internal-options-group',
 			'shorthand_v2_next_verifying_key',
@@ -200,16 +216,41 @@ class Options {
 		);
 	}
 
+	/**
+	 * Reduces a token-info payload to the fields the plugin stores.
+	 *
+	 * @param mixed $token_info Decoded /v2/token-info response.
+	 * @return array<string, string>|null Stored fields, or null for a payload that is not an array.
+	 */
 	public function sanitize_v2_token_info( $token_info ) {
-		$result = array(
-			'team_id'         => sanitize_text_field( $token_info['team_id'] ),
-			'organisation_id' => sanitize_text_field( $token_info['organisation_id'] ),
-			'workspace'       => sanitize_text_field( $token_info['workspace'] ),
-			'name'            => sanitize_text_field( $token_info['name'] ),
-			'logo'            => sanitize_text_field( $token_info['logo'] ),
-			'token_type'      => sanitize_text_field( $token_info['token_type'] ),
-		);
+		if ( ! is_array( $token_info ) ) {
+			return null;
+		}
+
+		$fields = array( 'team_id', 'organisation_id', 'workspace', 'name', 'logo', 'token_type' );
+		$result = array();
+
+		/* A field the API omits is stored empty, so the getters stay total. */
+		foreach ( $fields as $field ) {
+			$result[ $field ] = isset( $token_info[ $field ] ) ? sanitize_text_field( (string) $token_info[ $field ] ) : '';
+		}
+
 		return $result;
+	}
+
+	/**
+	 * Reduces the permalink setting to a URL path.
+	 *
+	 * The value becomes a post type rewrite slug, so it may span segments but
+	 * must survive a URL.  Each segment is slugged and empty ones are dropped;
+	 * a value with nothing left falls back to the default.
+	 *
+	 * @param mixed $permalink Submitted permalink structure.
+	 */
+	public function sanitize_permalink( $permalink ): string {
+		$segments = array_filter( array_map( 'sanitize_title', explode( '/', (string) $permalink ) ) );
+
+		return empty( $segments ) ? 'story' : implode( '/', $segments );
 	}
 
 	public function sanitize_regex_list( $regex_list ) {
@@ -229,12 +270,14 @@ class Options {
 	}
 
 	private function get_token_info_block(): ?array {
-		return get_option( 'shorthand_v2_token_info' );
+		$token_info = get_option( 'shorthand_v2_token_info', null );
+
+		return is_array( $token_info ) ? $token_info : null;
 	}
 
 	public function get_token_org_id() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['organisation_id'] ) ? ( $token_info['organisation_id'] ) : '';
@@ -242,15 +285,15 @@ class Options {
 
 	public function get_token_org_name() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( null === $token_info ) {
 			return '';
 		}
-		return isset( $token_info['workspace'] ) ? ( $token_info['workspace'] ) : '';
+		return isset( $token_info['workspace'] ) ? wp_specialchars_decode( $token_info['workspace'], ENT_QUOTES ) : '';
 	}
 
 	public function get_token_team_id() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['team_id'] ) ? ( $token_info['team_id'] ) : '';
@@ -258,7 +301,7 @@ class Options {
 
 	public function get_token_type() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( null === $token_info ) {
 			return '';
 		}
 		return isset( $token_info['token_type'] ) ? ( $token_info['token_type'] ) : '';
@@ -266,10 +309,10 @@ class Options {
 
 	public function get_token_name() {
 		$token_info = $this->get_token_info_block();
-		if ( $token_info == false ) {
+		if ( null === $token_info ) {
 			return '';
 		}
-		return isset( $token_info['name'] ) ? ( $token_info['name'] ) : '';
+		return isset( $token_info['name'] ) ? wp_specialchars_decode( $token_info['name'], ENT_QUOTES ) : '';
 	}
 
 	public function get_permalink(): string {

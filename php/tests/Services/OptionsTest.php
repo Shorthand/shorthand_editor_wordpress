@@ -145,4 +145,83 @@ final class OptionsTest extends WordPressTestCase {
 		$this->assertFalse( $options->sanitize_checkbox( '' ) );
 		$this->assertFalse( $options->sanitize_checkbox( null ) );
 	}
+
+	/**
+	 * The settings screen escapes on output, so the getters owe it plain text.
+	 *
+	 * @dataProvider entity_encoded_names
+	 */
+	public function test_workspace_and_team_names_are_returned_as_plain_text( string $stored, string $expected ): void {
+		\tests_wp_set_option(
+			'shorthand_v2_token_info',
+			array(
+				'workspace' => $stored,
+				'name'      => $stored,
+			)
+		);
+
+		$options = new Options( new Version() );
+
+		$this->assertSame( $expected, $options->get_token_org_name() );
+		$this->assertSame( $expected, $options->get_token_name() );
+	}
+
+	/**
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public static function entity_encoded_names(): array {
+		return array(
+			'apostrophe' => array( 'Don&#039;t Call Me', "Don't Call Me" ),
+			'ampersand'  => array( 'Rock &amp; Roll', 'Rock & Roll' ),
+			'quotes'     => array( '&quot;Scare&quot; Quotes', '"Scare" Quotes' ),
+			'plain text' => array( 'Newsroom', 'Newsroom' ),
+		);
+	}
+
+	public function test_token_info_getters_tolerate_a_partial_api_payload(): void {
+		$options = new Options( new Version() );
+
+		$this->assertSame(
+			array(
+				'team_id'         => '',
+				'organisation_id' => '',
+				'workspace'       => 'Newsroom',
+				'name'            => '',
+				'logo'            => '',
+				'token_type'      => '',
+			),
+			$options->sanitize_v2_token_info( array( 'workspace' => 'Newsroom' ) )
+		);
+	}
+
+	public function test_token_info_rejects_a_non_array_payload(): void {
+		$options = new Options( new Version() );
+
+		$this->assertNull( $options->sanitize_v2_token_info( 'nonsense' ) );
+	}
+
+	/**
+	 * The permalink becomes a rewrite slug, so it has to survive a URL.
+	 *
+	 * @dataProvider permalink_values
+	 */
+	public function test_permalink_is_reduced_to_a_url_path( string $submitted, string $expected ): void {
+		$options = new Options( new Version() );
+
+		$this->assertSame( $expected, $options->sanitize_permalink( $submitted ) );
+	}
+
+	/**
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public static function permalink_values(): array {
+		return array(
+			'default'         => array( 'story', 'story' ),
+			'nested path'     => array( 'stories/features', 'stories/features' ),
+			'spaces'          => array( 'my stories', 'my-stories' ),
+			'punctuation'     => array( "Don't Call Me", 'dont-call-me' ),
+			'stray slashes'   => array( '/stories//features/', 'stories/features' ),
+			'nothing usable'  => array( '///', 'story' ),
+		);
+	}
 }
