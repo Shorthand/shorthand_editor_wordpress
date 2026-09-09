@@ -21,6 +21,8 @@ use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\ShorthandHttpTransport;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryTextExtractor;
+use Shorthand\Services\StoryTaxonomyPlaceholders;
+use Shorthand\Services\StoryTaxonomyResolver;
 use Shorthand\Services\TokenManager;
 use Shorthand\Services\WordPressContextProvider;
 use Shorthand\Admin\AdminController;
@@ -77,6 +79,18 @@ class Dependencies {
 	 * @var \Shorthand\Services\LivePreview
 	 */
 	protected $live_preview;
+	/**
+	 * Resolves taxonomies and assigned terms for Shorthand stories.
+	 *
+	 * @var \Shorthand\Services\StoryTaxonomyResolver
+	 */
+	protected $story_taxonomy_resolver;
+	/**
+	 * Replaces taxonomy placeholders in rendered Shorthand stories.
+	 *
+	 * @var \Shorthand\Services\StoryTaxonomyPlaceholders
+	 */
+	protected $story_taxonomy_placeholders;
 
 	/**
 	 * @var bool
@@ -107,6 +121,10 @@ class Dependencies {
 
 		$this->post_type = $this->create_post_type( $this->options, $this->version );
 		$this->post_type->init();
+
+		$this->story_taxonomy_resolver     = $this->create_story_taxonomy_resolver( $this->post_type->post_type );
+		$this->story_taxonomy_placeholders = $this->create_story_taxonomy_placeholders( $this->story_taxonomy_resolver );
+		$this->story_taxonomy_placeholders->init();
 
 		$this->templates = $this->create_templates( $this->post_type->post_type, $this->options, $this->version );
 		$this->templates->init();
@@ -147,9 +165,28 @@ class Dependencies {
 	protected function create_templates( string $post_type, Options $options, Version $version ): Templates {
 		return new Templates( $post_type, $options, $version );
 	}
-
 	protected function create_live_preview( string $post_type, AuthStateManager $auth_state_manager, Version $version, Dependencies $dependencies ): LivePreview {
 		return new LivePreview( $post_type, $auth_state_manager, $version, $dependencies );
+	}
+
+	/**
+	 * Creates the service that resolves taxonomies assigned to stories.
+	 *
+	 * @param string $post_type The Shorthand story post type slug.
+	 * @return StoryTaxonomyResolver Story taxonomy resolver.
+	 */
+	protected function create_story_taxonomy_resolver( string $post_type ): StoryTaxonomyResolver {
+		return new StoryTaxonomyResolver( $post_type );
+	}
+
+	/**
+	 * Creates the integration that replaces story taxonomy placeholders.
+	 *
+	 * @param StoryTaxonomyResolver $taxonomy_resolver Resolves story taxonomy data.
+	 * @return StoryTaxonomyPlaceholders Story taxonomy placeholder integration.
+	 */
+	protected function create_story_taxonomy_placeholders( StoryTaxonomyResolver $taxonomy_resolver ): StoryTaxonomyPlaceholders {
+		return new StoryTaxonomyPlaceholders( $taxonomy_resolver );
 	}
 
 	protected function create_cron( Dependencies $dependencies ): Cron {
@@ -172,6 +209,16 @@ class Dependencies {
 	public function get_templates(): Templates {
 		$this->boot();
 		return $this->templates;
+	}
+
+	/**
+	 * Returns the service that resolves taxonomies assigned to stories.
+	 *
+	 * @return StoryTaxonomyResolver Story taxonomy resolver.
+	 */
+	public function get_story_taxonomy_resolver(): StoryTaxonomyResolver {
+		$this->boot();
+		return $this->story_taxonomy_resolver;
 	}
 
 	public function get_post_api(): PostAPI {
