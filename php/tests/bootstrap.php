@@ -1291,6 +1291,20 @@ class Tests_WP_Filesystem extends WP_Filesystem_Base {
 		return rmdir( $path );
 	}
 
+	/**
+	 * @return string|false
+	 */
+	public function get_contents( string $path ) {
+		return is_file( $path ) ? file_get_contents( $path ) : false;
+	}
+
+	/**
+	 * @param string|int $mode
+	 */
+	public function put_contents( string $path, string $contents, $mode = false ): bool {
+		return false !== file_put_contents( $path, $contents );
+	}
+
 	public function copy( string $source, string $destination, bool $overwrite = false ): bool {
 		$failure = $GLOBALS['tests_wp_state']['copy_error'];
 

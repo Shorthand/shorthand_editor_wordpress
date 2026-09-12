@@ -30,10 +30,6 @@ class StoryUpdateTask {
 	 * @var string
 	 */
 	public $download_url;
-	/**
-	 * @var string
-	 */
-	public $storage_path;
 
 	/**
 	 * @var int|null
@@ -66,15 +62,13 @@ class StoryUpdateTask {
 		string $story_id,
 		string $request_nonce,
 		string $prior_status,
-		string $download_url,
-		string $storage_path
+		string $download_url
 	) {
 		$this->post_id       = $post_id;
 		$this->story_id      = $story_id;
 		$this->request_nonce = $request_nonce;
 		$this->prior_status  = $prior_status;
 		$this->download_url  = $download_url;
-		$this->storage_path  = $storage_path;
 	}
 
 	public function ensure_chunk_window(): void {
@@ -121,9 +115,6 @@ class StoryUpdateTask {
 		if ( ! isset( $data['download_url'] ) || ! is_string( $data['download_url'] ) ) {
 			return null;
 		}
-		if ( ! isset( $data['storage_path'] ) || ! is_string( $data['storage_path'] ) ) {
-			return null;
-		}
 
 		// Create instance with required fields
 		$task = new StoryUpdateTask(
@@ -131,8 +122,7 @@ class StoryUpdateTask {
 			$data['story_id'],
 			$data['request_nonce'],
 			$data['prior_status'],
-			$data['download_url'],
-			$data['storage_path']
+			$data['download_url']
 		);
 
 		// Set optional fields if present

@@ -5,33 +5,36 @@ declare(strict_types=1);
 namespace Shorthand\Tests\Services;
 
 use Shorthand\Services\AuthStateManager;
-use Shorthand\Services\FileSystemService;
+use Shorthand\Services\Files\BundleStore;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryTextExtractor;
-use Shorthand\Tests\Support\FakeRemoteFileSystem;
+use Shorthand\Tests\Support\FakeUploads;
 use Shorthand\Tests\WordPressTestCase;
 use ZipArchive;
 
 /**
- * Unpacking a story archive where the uploads directory is an object store.
+ * Publishing a story where the uploads directory is an object store.
  *
- * `ZipArchive::extractTo()` uses native syscalls, so the only way this works
- * is if it never targets uploads.
+ * A publish reads its chunks back out of uploads, assembles and unpacks them
+ * locally, and copies the difference in. `ZipArchive::extractTo()` uses native
+ * syscalls, so the only way this works is if it never targets uploads.
  */
 final class PostAPIUnpackTest extends WordPressTestCase {
+
+	/**
+	 * Bundle directory every assertion is written against.
+	 */
+	const BUNDLE = 'vip://wp-content/uploads/shorthand/7/aBc123';
 
 	/** @var string */
 	private $temp_root;
 
-	/** @var string */
-	private $staging_path;
-
-	/** @var \Shorthand\Tests\Support\FakeRemoteFileSystem */
-	private $file_system;
+	/** @var \Shorthand\Tests\Support\FakeUploads */
+	private $uploads;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -42,10 +45,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		mkdir( $this->temp_root, 0777, true );
 		tests_wp_set_temp_dir( $this->temp_root );
 
-		$this->staging_path = $this->temp_root . '/sh_pull_1';
-		mkdir( $this->staging_path, 0777, true );
-
-		$this->file_system = new FakeRemoteFileSystem();
+		$this->uploads = new FakeUploads();
 	}
 
 	protected function tearDown(): void {
@@ -54,8 +54,9 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		parent::tearDown();
 	}
 
-	public function test_the_archive_is_unpacked_under_staging_and_copied_into_the_bundle(): void {
-		$archive = $this->make_archive(
+	public function test_the_archive_is_unpacked_locally_and_copied_into_the_bundle(): void {
+		$result = $this->publish(
+			'pull1',
 			array(
 				'head.html'              => '<link rel="stylesheet" href="assets/theme.css">',
 				'article.html'           => '<h1>Story</h1>',
@@ -64,49 +65,58 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			)
 		);
 
-		$result = $this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
-
 		$this->assertNull( $result );
-
-		$bundle = 'vip://wp-content/uploads/shorthand/7/aBc123';
 
 		$this->assertSame(
 			array(
-				$bundle . '/assets/media/photo.jpg'  => 'binary',
-				$bundle . '/assets/theme.css'        => 'body{}',
-				$bundle . '/docs/pull1/article.html' => '<h1>Story</h1>',
-				$bundle . '/docs/pull1/head.html'    => '<link rel="stylesheet" href="assets/theme.css">',
+				self::BUNDLE . '/assets/media/photo.jpg'  => 'binary',
+				self::BUNDLE . '/assets/theme.css'        => 'body{}',
+				self::BUNDLE . '/docs/pull1/article.html' => '<h1>Story</h1>',
+				self::BUNDLE . '/docs/pull1/head.html'    => '<link rel="stylesheet" href="assets/theme.css">',
 			),
-			$this->file_system->objects()
+			$this->bundle_objects()
 		);
-		$this->assertSame( 4, $this->file_system->writes() );
+		$this->assertSame( 4, $this->uploads->writes() );
 	}
 
 	/**
-	 * The unpacked tree is local, so `extractTo()` has a real directory to write to.
+	 * The chunks are the one thing read back out of uploads, and a publish
+	 * cannot start until they are one archive again.
 	 */
-	public function test_the_unpacked_tree_lands_in_the_staging_directory(): void {
-		$archive = $this->make_archive(
-			array(
-				'head.html'    => 'head',
-				'article.html' => 'article',
-			)
+	public function test_the_chunks_of_a_download_are_assembled_in_order(): void {
+		$archive = $this->make_archive( array( 'article.html' => 'article' ) );
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		$bytes = file_get_contents( $archive );
+		$half  = (int) ( strlen( $bytes ) / 2 );
+
+		$this->uploads->put( self::BUNDLE . '_pull1_0.part', substr( $bytes, 0, $half ) );
+		$this->uploads->put( self::BUNDLE . '_pull1_1.part', substr( $bytes, $half ) );
+
+		$this->assertNull( $this->make_post_api()->publish_story_bundle( 7, 'aBc123', 'pull1', 2 ) );
+
+		$this->assertSame(
+			array( self::BUNDLE . '/docs/pull1/article.html' ),
+			array_keys( $this->bundle_objects() )
 		);
+	}
 
-		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
+	public function test_a_missing_chunk_fails_the_publish(): void {
+		$result = $this->make_post_api()->publish_story_bundle( 7, 'aBc123', 'pull1', 1 );
 
-		$this->assertFileExists( $this->staging_path . '/unpacked/article.html' );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertContains( 'file', $result->get_error_codes() );
+		$this->assertSame( array(), $this->bundle_objects() );
 	}
 
 	public function test_the_two_documents_are_stored_as_post_meta(): void {
-		$archive = $this->make_archive(
+		$this->publish(
+			'pull1',
 			array(
 				'head.html'    => 'head markup',
 				'article.html' => 'article markup',
 			)
 		);
-
-		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
 
 		$this->assertSame( 'head markup', get_post_meta( 7, 'story_head', true ) );
 		$this->assertSame( 'article markup', get_post_meta( 7, 'story_body', true ) );
@@ -126,23 +136,20 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			'assets/media/photo.jpg' => 'binary',
 		);
 
-		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull1' );
-		$this->file_system->reset_counts();
+		$this->publish( 'pull1', $entries );
+		$this->uploads->reset_counts();
 
-		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull2' );
+		$this->publish( 'pull2', $entries );
 
-		$this->assertSame( 2, $this->file_system->writes() );
-		$this->assertSame( 2, $this->file_system->deletes() );
-
-		$bundle = 'vip://wp-content/uploads/shorthand/7/aBc123';
+		$this->assertSame( 2, $this->uploads->writes() );
 
 		$this->assertSame(
 			array(
-				$bundle . '/assets/media/photo.jpg'  => 'binary',
-				$bundle . '/docs/pull2/article.html' => 'article',
-				$bundle . '/docs/pull2/head.html'    => 'head',
+				self::BUNDLE . '/assets/media/photo.jpg'  => 'binary',
+				self::BUNDLE . '/docs/pull2/article.html' => 'article',
+				self::BUNDLE . '/docs/pull2/head.html'    => 'head',
 			),
-			$this->file_system->objects()
+			$this->bundle_objects()
 		);
 	}
 
@@ -155,20 +162,18 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			'article.html' => 'article',
 		);
 
-		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull1' );
-		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull2' );
-		$this->make_post_api()->extract_story_content( $this->make_archive( $entries ), 7, 'aBc123', $this->staging_path, 'pull3' );
-
-		$bundle = 'vip://wp-content/uploads/shorthand/7/aBc123';
+		$this->publish( 'pull1', $entries );
+		$this->publish( 'pull2', $entries );
+		$this->publish( 'pull3', $entries );
 
 		$this->assertSame(
 			array(
-				$bundle . '/docs/pull3/article.html',
-				$bundle . '/docs/pull3/head.html',
+				self::BUNDLE . '/docs/pull3/article.html',
+				self::BUNDLE . '/docs/pull3/head.html',
 			),
-			array_keys( $this->file_system->objects() )
+			array_keys( $this->bundle_objects() )
 		);
-		$this->assertSame( 6, $this->file_system->writes() );
+		$this->assertSame( 6, $this->uploads->writes() );
 	}
 
 	/**
@@ -176,23 +181,20 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	 * document actually is.
 	 */
 	public function test_the_post_processing_filters_receive_the_versioned_document_paths(): void {
-		$archive = $this->make_archive(
+		$this->publish(
+			'pull1',
 			array(
 				'head.html'    => 'head',
 				'article.html' => 'article',
 			)
 		);
 
-		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
-
-		$bundle = 'vip://wp-content/uploads/shorthand/7/aBc123';
-
 		$this->assertSame(
-			array( array( $bundle, $bundle . '/docs/pull1/article.html' ) ),
+			array( array( self::BUNDLE, self::BUNDLE . '/docs/pull1/article.html' ) ),
 			tests_wp_get_filter_args( 'theshed_post_process_body' )
 		);
 		$this->assertSame(
-			array( array( $bundle, $bundle . '/docs/pull1/head.html' ) ),
+			array( array( self::BUNDLE, self::BUNDLE . '/docs/pull1/head.html' ) ),
 			tests_wp_get_filter_args( 'theshed_post_process_head' )
 		);
 	}
@@ -201,81 +203,58 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	 * A nonce is interpolated into a path, so it is validated like a story ID.
 	 */
 	public function test_an_unusable_nonce_leaves_the_documents_at_the_bundle_root(): void {
-		$archive = $this->make_archive( array( 'article.html' => 'article' ) );
-
-		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, '../../etc' );
+		$this->publish( '../../etc', array( 'article.html' => 'article' ) );
 
 		$this->assertSame(
-			array( 'vip://wp-content/uploads/shorthand/7/aBc123/article.html' ),
-			array_keys( $this->file_system->objects() )
+			array( self::BUNDLE . '/article.html' ),
+			array_keys( $this->bundle_objects() )
 		);
 	}
 
 	public function test_a_republish_writes_only_the_files_that_changed(): void {
-		$this->make_post_api()->extract_story_content(
-			$this->make_archive(
-				array(
-					'head.html'              => 'head',
-					'article.html'           => 'article',
-					'assets/media/photo.jpg' => 'binary',
-				)
-			),
-			7,
-			'aBc123',
-			$this->staging_path,
-			'pull1'
+		$this->publish(
+			'pull1',
+			array(
+				'head.html'              => 'head',
+				'article.html'           => 'article',
+				'assets/media/photo.jpg' => 'binary',
+			)
 		);
-		$this->file_system->reset_counts();
+		$this->uploads->reset_counts();
 
-		$this->make_post_api()->extract_story_content(
-			$this->make_archive(
-				array(
-					'head.html'              => 'head',
-					'article.html'           => 'article, edited',
-					'assets/media/photo.jpg' => 'binary, edited',
-				)
-			),
-			7,
-			'aBc123',
-			$this->staging_path,
-			'pull2'
+		$this->publish(
+			'pull2',
+			array(
+				'head.html'              => 'head',
+				'article.html'           => 'article, edited',
+				'assets/media/photo.jpg' => 'binary, edited',
+			)
 		);
 
-		$objects = $this->file_system->objects();
+		$objects = $this->bundle_objects();
 
-		$this->assertSame( 3, $this->file_system->writes() );
-		$this->assertSame( 'article, edited', $objects['vip://wp-content/uploads/shorthand/7/aBc123/docs/pull2/article.html'] );
-		$this->assertSame( 'binary, edited', $objects['vip://wp-content/uploads/shorthand/7/aBc123/assets/media/photo.jpg'] );
+		$this->assertSame( 3, $this->uploads->writes() );
+		$this->assertSame( 'article, edited', $objects[ self::BUNDLE . '/docs/pull2/article.html' ] );
+		$this->assertSame( 'binary, edited', $objects[ self::BUNDLE . '/assets/media/photo.jpg' ] );
 	}
 
 	public function test_a_file_that_left_the_story_is_deleted_from_the_bundle(): void {
-		$this->make_post_api()->extract_story_content(
-			$this->make_archive(
-				array(
-					'article.html'         => 'article',
-					'assets/media/old.jpg' => 'binary',
-				)
-			),
-			7,
-			'aBc123',
-			$this->staging_path,
-			'pull1'
+		$this->publish(
+			'pull1',
+			array(
+				'article.html'         => 'article',
+				'assets/media/old.jpg' => 'binary',
+			)
 		);
-		$this->file_system->reset_counts();
+		$this->uploads->reset_counts();
 
-		$this->make_post_api()->extract_story_content(
-			$this->make_archive( array( 'article.html' => 'article' ) ),
-			7,
-			'aBc123',
-			$this->staging_path,
-			'pull2'
-		);
+		$this->publish( 'pull2', array( 'article.html' => 'article' ) );
 
-		/* The departed asset, and the documents of the previous publish. */
-		$this->assertSame( 2, $this->file_system->deletes() );
+		/* The departed asset, and the document of the previous publish. */
+		$this->assertSame( 2, $this->uploads->deletes() );
 		$this->assertSame(
-			array( 'vip://wp-content/uploads/shorthand/7/aBc123/docs/pull2/article.html' ),
-			array_keys( $this->file_system->objects() )
+			array( self::BUNDLE . '/docs/pull2/article.html' ),
+			array_keys( $this->bundle_objects() )
 		);
 		$this->assertSame( array( 'docs/pull2/article.html' ), array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
 	}
@@ -287,25 +266,21 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	public function test_deleting_the_bundle_removes_every_file_the_manifest_names(): void {
 		$post_api = $this->make_post_api();
 
-		$post_api->extract_story_content(
-			$this->make_archive(
-				array(
-					'head.html'              => 'head',
-					'article.html'           => 'article',
-					'assets/media/photo.jpg' => 'binary',
-				)
+		$this->publish(
+			'pull1',
+			array(
+				'head.html'              => 'head',
+				'article.html'           => 'article',
+				'assets/media/photo.jpg' => 'binary',
 			),
-			7,
-			'aBc123',
-			$this->staging_path,
-			'pull1'
+			$post_api
 		);
-		$this->file_system->reset_counts();
+		$this->uploads->reset_counts();
 
 		$post_api->delete_story_bundle( 7, 'aBc123' );
 
-		$this->assertSame( array(), $this->file_system->objects() );
-		$this->assertSame( 3, $this->file_system->deletes() );
+		$this->assertSame( array(), $this->bundle_objects() );
+		$this->assertSame( 3, $this->uploads->deletes() );
 		$this->assertSame( '', get_post_meta( 7, 'story_manifest', true ) );
 	}
 
@@ -313,54 +288,73 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	 * An interrupted publish must not leave a manifest claiming files were copied.
 	 */
 	public function test_a_failed_copy_leaves_the_previous_manifest_in_place(): void {
-		$post_api = $this->make_post_api();
-
-		$post_api->extract_story_content(
-			$this->make_archive( array( 'article.html' => 'article' ) ),
-			7,
-			'aBc123',
-			$this->staging_path,
-			'pull1'
-		);
+		$this->publish( 'pull1', array( 'article.html' => 'article' ) );
 
 		$stored = get_post_meta( 7, 'story_manifest', true );
 
-		$failing = $this->createMock( FileSystemService::class );
-		$failing->method( 'copy_tree' )->willReturn( new \WP_Error( 'file', 'Could not write the story file.' ) );
+		$this->uploads->fail_writes( new \WP_Error( 'file', 'Could not write the story file.' ) );
 
-		$result = $this->make_post_api( $failing )->extract_story_content(
-			$this->make_archive(
-				array(
-					'article.html'           => 'article, edited',
-					'assets/media/photo.jpg' => 'binary',
-				)
-			),
-			7,
-			'aBc123',
-			$this->staging_path,
-			'pull2'
+		$result = $this->publish(
+			'pull2',
+			array(
+				'article.html'           => 'article, edited',
+				'assets/media/photo.jpg' => 'binary',
+			)
 		);
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( $stored, get_post_meta( 7, 'story_manifest', true ) );
 	}
 
-	public function test_an_unusable_story_id_reaches_no_file_system_call(): void {
-		$archive = $this->make_archive( array( 'article.html' => 'article' ) );
-
-		$file_system = $this->createMock( FileSystemService::class );
-		$file_system->expects( $this->never() )->method( 'make_dir' );
-		$file_system->expects( $this->never() )->method( 'copy_tree' );
-
-		$result = $this->make_post_api( $file_system )->extract_story_content( $archive, 7, '../../etc', $this->staging_path, 'pull1' );
+	public function test_an_unusable_story_id_reaches_no_uploads_call(): void {
+		$result = $this->make_post_api()->publish_story_bundle( 7, '../../etc', 'pull1', 1 );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertContains( 'story_id', $result->get_error_codes() );
+		$this->assertSame( 0, $this->uploads->writes() );
+		$this->assertSame( 0, $this->uploads->make_dir_calls() );
 	}
 
-	private function make_post_api( ?FileSystemService $file_system = null ): PostAPI {
+	/**
+	 * The bundle's files, without the chunks the download left in uploads.
+	 *
+	 * Chunks are removed by `pull_story_cleanup()`, one step further out than
+	 * these tests reach.
+	 *
+	 * @return array<string, string>
+	 */
+	private function bundle_objects(): array {
+		$objects = array();
+
+		foreach ( $this->uploads->objects() as $path => $contents ) {
+			if ( 0 === strpos( $path, self::BUNDLE . '/' ) ) {
+				$objects[ $path ] = $contents;
+			}
+		}
+
+		return $objects;
+	}
+
+	/**
+	 * Publishes an archive as the single chunk of one download.
+	 *
+	 * @param string                $nonce    Request nonce of the pull.
+	 * @param array<string, string> $entries  Archive contents.
+	 * @param \Shorthand\Services\PostAPI|null $post_api Instance to publish through.
+	 */
+	private function publish( string $nonce, array $entries, ?PostAPI $post_api = null ): ?\WP_Error {
+		$archive = $this->make_archive( $entries );
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		$this->uploads->put( self::BUNDLE . '_' . $nonce . '_0.part', file_get_contents( $archive ) );
+
+		$post_api = $post_api ?? $this->make_post_api();
+
+		return $post_api->publish_story_bundle( 7, 'aBc123', $nonce, 1 );
+	}
+
+	private function make_post_api(): PostAPI {
 		$options = $this->createMock( Options::class );
-		$options->method( 'is_staging_enabled' )->willReturn( true );
 		$options->method( 'get_post_regex_list' )->willReturn( '' );
 
 		$transformer = $this->createMock( StoryContentTransformer::class );
@@ -385,7 +379,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			'tse_story',
 			$this->createMock( AuthStateManager::class ),
 			$transformer,
-			$file_system ?? $this->file_system,
+			new BundleStore( $this->uploads ),
 			new StoryTextExtractor()
 		);
 	}

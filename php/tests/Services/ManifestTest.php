@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Shorthand\Tests\Services;
 
-use Shorthand\Services\BundleManifest;
+use Shorthand\Services\Files\Manifest;
 use Shorthand\Tests\WordPressTestCase;
 use ZipArchive;
 
 /**
  * Reading a bundle manifest out of a story archive index.
  */
-final class BundleManifestTest extends WordPressTestCase {
+final class ManifestTest extends WordPressTestCase {
 
 	/** @var string */
 	private $temp_root;
@@ -34,7 +34,7 @@ final class BundleManifestTest extends WordPressTestCase {
 	}
 
 	public function test_the_manifest_records_the_size_and_crc_of_every_entry(): void {
-		$manifest = BundleManifest::from_archive(
+		$manifest = Manifest::from_archive(
 			$this->open_archive(
 				array(
 					'article.html'           => 'article',
@@ -71,13 +71,13 @@ final class BundleManifestTest extends WordPressTestCase {
 		$zip = new ZipArchive();
 		$zip->open( $this->temp_root . '/archive.zip' );
 
-		$this->assertSame( array( 'assets/theme.css' ), array_keys( BundleManifest::from_archive( $zip ) ) );
+		$this->assertSame( array( 'assets/theme.css' ), array_keys( Manifest::from_archive( $zip ) ) );
 
 		$zip->close();
 	}
 
 	public function test_entries_are_ordered_by_name(): void {
-		$manifest = BundleManifest::from_archive(
+		$manifest = Manifest::from_archive(
 			$this->open_archive(
 				array(
 					'head.html'        => 'head',
@@ -108,7 +108,7 @@ final class BundleManifestTest extends WordPressTestCase {
 			),
 		);
 
-		$this->assertSame( array( 'assets/media/old.jpg' ), array_keys( BundleManifest::removed( $stored, $current ) ) );
+		$this->assertSame( array( 'assets/media/old.jpg' ), array_keys( Manifest::removed( $stored, $current ) ) );
 	}
 
 	/**
@@ -120,7 +120,7 @@ final class BundleManifestTest extends WordPressTestCase {
 	 * @param mixed $value Value read back from post meta.
 	 */
 	public function test_an_unusable_meta_value_reads_as_an_empty_manifest( $value ): void {
-		$this->assertSame( array(), BundleManifest::from_meta( $value ) );
+		$this->assertSame( array(), Manifest::from_meta( $value ) );
 	}
 
 	/**
@@ -143,11 +143,11 @@ final class BundleManifestTest extends WordPressTestCase {
 			),
 		);
 
-		$this->assertSame( $manifest, BundleManifest::from_meta( $manifest ) );
+		$this->assertSame( $manifest, Manifest::from_meta( $manifest ) );
 	}
 
 	public function test_relocating_the_documents_moves_only_the_documents(): void {
-		$manifest = BundleManifest::relocate_documents(
+		$manifest = Manifest::relocate_documents(
 			array(
 				'article.html'           => array(
 					'size' => 7,
@@ -178,7 +178,7 @@ final class BundleManifestTest extends WordPressTestCase {
 	 * A story with no head material still publishes.
 	 */
 	public function test_relocating_the_documents_tolerates_an_absent_one(): void {
-		$manifest = BundleManifest::relocate_documents(
+		$manifest = Manifest::relocate_documents(
 			array(
 				'article.html' => array(
 					'size' => 7,

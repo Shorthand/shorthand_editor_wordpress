@@ -1,6 +1,6 @@
 <?php
 
-namespace Shorthand\Services;
+namespace Shorthand\Services\Files;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -18,7 +18,7 @@ use ZipArchive;
  * CRC32 with size detects change between two exports of one story. It is not
  * a security boundary.
  */
-class BundleManifest {
+class Manifest {
 
 	/**
 	 * The two files rewritten on every publish.
@@ -105,8 +105,8 @@ class BundleManifest {
 	 * a host that caps modifications per path would eventually refuse them.
 	 *
 	 * The entry keeps a `from` key naming where the file was unpacked, which
-	 * is what `Shorthand\Services\FileSystemService::copy_tree()` reads from.
-	 * The previous directory is removed by the next publish's manifest diff.
+	 * is what `Shorthand\Services\Files\Bundle` copies from. The previous
+	 * directory is removed by the next publish's manifest diff.
 	 *
 	 * @param array  $manifest Manifest read out of the archive index.
 	 * @param string $prefix   Directory to move the documents into, relative to the bundle.

@@ -1,100 +1,139 @@
 ---
 title: File system service
-purpose: How the plugin writes into the WordPress uploads directory on any host, disk or object store.
-updated: 2026-08-25
+purpose: How the plugin writes story files into the WordPress uploads directory on any host, disk or object store.
+updated: 2026-09-01
 ---
 
 # File system service
 
-Every file system call in the story publish path goes through one service, so
-that an uploads directory backed by an object store behaves like one backed by
-a disk.
+Every file operation in the story publish path goes through
+`Shorthand\Services\Files`. Calling code asks for a publish; it never names a
+path, opens an archive, or chooses between hosts.
 
-`Shorthand\Services\PostAPI` receives a `FileSystemService` as a constructor
-argument and calls no file system function directly.
+There is one implementation of the uploads directory, used everywhere. It is
+the implementation an object store needs, and an ordinary disk tolerates it
+without noticing.
+
+`Shorthand\Services\PostAPI` receives a
+`Shorthand\Services\Files\BundleStore` as a constructor argument and calls no
+file system function directly.
 
 ## Classes
 
+Source: `php/src/lib/Services/Files/`.
+
 | Class | Role |
 | --- | --- |
-| `Shorthand\Services\FileSystemService` | The interface: staging directories, directory creation, chunk joining, tree copy, file and manifest deletion |
-| `Shorthand\Services\BaseFileSystem` | Everything independent of the uploads host, including the copy diff |
-| `Shorthand\Services\LocalFileSystem` | Uploads are a plain path; trees can be enumerated and removed |
-| `Shorthand\Services\RemoteFileSystem` | Uploads are an object store; `delete_dir()` succeeds without acting, `delete_tree()` is refused |
-| `Shorthand\Services\FileSystem` | Boots `WP_Filesystem`, reports the uploads scheme, and picks an implementation in `create()` |
+| `Shorthand\Services\Files\Uploads` | The interface: `write()`, `read_into()`, `delete()`, `make_dir()` |
+| `Shorthand\Services\Files\WpUploads` | The only implementation, over `WP_Filesystem` |
+| `Shorthand\Services\Files\FileSystem` | Boots `WP_Filesystem` once, and nothing else |
+| `Shorthand\Services\Files\BundleStore` | Opens a bundle for a post, validating the story ID |
+| `Shorthand\Services\Files\Bundle` | One story's files: paths, chunks, publish, delete |
+| `Shorthand\Services\Files\Staging` | A scratch directory on local disk, for one request |
+| `Shorthand\Services\Files\Archive` | A story ZIP: index, documents, unpack |
+| `Shorthand\Services\Files\Manifest` | The name, size, and CRC32 of every bundle file |
 
-Source: `php/src/lib/Services/`.
+## The four operations
 
-## Decision: detect a remote uploads directory by URL scheme
+`Uploads` offers four calls and no way to ask what is present.
 
-`Shorthand\Services\FileSystem::get_uploads_scheme()` tests
-`wp_upload_dir()['basedir']` for a URL scheme, and is the only place the
-pattern appears:
-
-```php
-preg_match( '#^([a-z][a-z0-9+.\-]*)://#i', $basedir )
-```
-
-A match selects `Shorthand\Services\RemoteFileSystem`, forces the staging
-directory on, and disables the staging checkbox on the settings screen.
-
-Do not decide behaviour from `VIP_GO_APP_ENVIRONMENT`, from the presence of a
-named plugin, or from any other host or vendor identity.
-
-The property that matters is whether uploads are served through a PHP stream
-wrapper, not which vendor hosts the site. Every host that redirects uploads
-does so through the `upload_dir` filter, and every one produces a scheme:
-
-| Host | `wp_upload_dir()['basedir']` |
+| Call | Contract |
 | --- | --- |
-| WordPress VIP | `vip://wp-content/uploads` |
-| WP Stateless, `stateless` mode | `gs://{bucket}/{root_dir}` |
-| WP Offload Media, server offload | `s3://{bucket}/{path}` |
-| Ordinary hosting | `/var/www/html/wp-content/uploads` |
+| `write( $source_path, $dest_path )` | Copies a local file into uploads, overwriting. Returns `true`, `false`, or a `WP_Error` the host named |
+| `read_into( $path, $local_path )` | Appends a file held in uploads to a local file |
+| `delete( $path )` | Removes one named file |
+| `make_dir( $path )` | Creates a directory and its parents, or reports success without acting |
 
-A vendor allowlist is wrong in both directions. It is too broad: WP Stateless
-applies the filter in one of its five modes, so detecting the plugin would
-force staging on for sites whose uploads are local. It is too narrow: it misses
-WP Offload Media, and every host that does not exist yet.
+`read_into()` is the only read, and downloaded chunks are the only thing it
+reads. Nothing else in the plugin reads a file back out of uploads.
 
-A host serving uploads through a scheme that WordPress resolves back to a local
-path would be misclassified. No such host is known.
+## Decision: one uploads implementation, no host detection
 
-## Decision: vendor identity produces messages, never behaviour
+Nothing in this plugin asks what host it is on. There is no scheme test, no
+`VIP_GO_APP_ENVIRONMENT`, no plugin sniffing, no allowlist, and no vendor name
+outside a documentation comment. `Shorthand\Tests\Services\FilesTest` asserts
+this by scanning the source.
 
-The settings screen must say why the staging checkbox is disabled, and a
-specific sentence is better than a generic one. `Shorthand\Admin\UploadsHostNotice`
-is the only place in this codebase that names a vendor. It carries named cases
-for WordPress VIP, WP Stateless in `stateless` mode, and WP Offload Media, and
-falls back to naming the scheme it found.
+The behaviours an object store forces are all safe on a disk:
 
-A missing vendor message degrades to a generic sentence. A missing vendor in a
-behaviour allowlist corrupts a story bundle.
+| Behaviour | On an object store | On a disk |
+| --- | --- | --- |
+| Delete by manifest, never by listing | Required; a directory cannot be listed | Correct; the manifest names every file the bundle holds |
+| Never call `rmdir()` | Required; it does not work | Leaves empty directories, which cost nothing |
+| Unpack locally, then copy | Required; `ZipArchive` ignores stream wrappers | One extra local copy, on a local disk |
+| Skip files whose size and CRC32 match | Saves an HTTP round trip each | Saves a disk write each |
+| Treat a refused write as an author-facing error | Required past 2000 modifications | Never fires; the match cannot succeed |
+
+An implementation per host would be two code paths, one of which nobody runs
+locally, differing in the step most likely to corrupt a story. One path that is
+correct on the stricter host is worth more than an optimisation for the looser
+one.
+
+The earlier design selected a `RemoteFileSystem` by testing
+`wp_upload_dir()['basedir']` for a URL scheme. It was removed with the
+implementations it selected.
 
 ## Decision: boot WP_Filesystem lazily
 
-`Shorthand\Services\FileSystem::init()` does not run when a service is
-constructed. Booting `WP_Filesystem` loads an admin include, raises the memory
-limit, and can ask for credentials, and a service is constructed on every admin
-request.
+`FileSystem::boot()` is not called when a service is constructed. Booting
+`WP_Filesystem` loads an admin include, raises the memory limit, and can ask
+for credentials; services are constructed on every admin request.
 
 The boot happens on the first call that touches `$wp_filesystem`, and
-explicitly at `make_temp_dir()`, where a publish starts its local work and the
+explicitly in `Staging::open()`, where a publish starts its local work and the
 memory raise must come before extraction.
 
-## Decision: nothing enumerates a directory
+`FileSystem` holds one static flag and one method. It is not a service, is
+never injected, and carries no host knowledge.
 
-Neither implementation lists a directory. `copy_tree()` takes the manifest of
-the incoming archive and the manifest of the last publish, copies from the
-first, and skips every entry the second already matches.
+## Decision: nothing enumerates or removes a directory
 
-`Shorthand\Services\BundleManifest` builds both: `from_archive()` reads the
-archive index, `from_meta()` reads the `story_manifest` post meta key.
+No `scandir()`, `glob()`, `opendir()`, `readdir()`, `list_files()`, `dirlist()`
+or `rmdir()` appears in `Shorthand\Services` or `Shorthand\Services\Files`.
+`Shorthand\Tests\Services\FilesTest::test_nothing_enumerates_or_removes_a_directory`
+asserts it, ignoring comments.
 
-## Remote uploads constraints
+Every file the plugin has to find again is named, not discovered:
 
-Observed on WordPress VIP, where the uploads directory is an object store
-behind a PHP stream wrapper.
+| Files | Named by |
+| --- | --- |
+| Bundle files, on republish and on delete | `story_manifest` post meta |
+| Download chunks, on assembly and on cleanup | `story_pulls` post meta, as a count |
+
+An empty directory is therefore never removed. Chunks are named beside the
+bundle directory rather than inside a directory of their own, so that a
+download leaves nothing behind that would have to be removed.
+
+## Sidecar plugins
+
+WP Stateless support is not in this plugin and will not be. A sidecar plugin
+mirrors the bundle wherever it needs to, driven by four actions and one filter.
+
+| Hook | Fires |
+| --- | --- |
+| `theshed_story_file_written( $path, $name, $post_id )` | Per file written into the bundle |
+| `theshed_story_file_deleted( $path, $name, $post_id )` | Per file removed from the bundle |
+| `theshed_story_bundle_published( $manifest, $path, $post_id, $story_id )` | Once per publish, after the copy, before the markup is stored |
+| `theshed_story_bundle_deleted( $path, $post_id, $story_id )` | Once, after a bundle is removed |
+| `theshed_get_story_url( $url )` | Filters the URL the bundle is served from |
+
+Two properties a sidecar can rely on.
+
+A skipped file does not fire `theshed_story_file_written`. The copy is a diff
+against the last publish, so a skipped file is already in uploads, unchanged.
+A sidecar that mirrors on the file hook alone stays correct across republishes;
+one that needs the whole bundle takes it from
+`theshed_story_bundle_published`, whose first argument is the complete
+manifest.
+
+Chunk writes announce nothing. A `.part` file is a fragment of a ZIP, is read
+back within the same publish, and is deleted when the publish ends. Mirroring
+one would move bytes twice for no reader.
+
+## Object store constraints
+
+Observed on WordPress VIP, where uploads are an object store behind a PHP
+stream wrapper. These shape every decision above.
 
 | Operation | Behaviour |
 | --- | --- |
@@ -107,16 +146,12 @@ behind a PHP stream wrapper.
 | One path, more than 2000 modifications | Refused |
 | File names | Case-insensitive |
 
-Two consequences shape the publish path. Nothing can be enumerated, so deletion
-needs a manifest. Every write and every delete is an HTTP round-trip, so the
-copy step skips unchanged files rather than rewriting the tree.
-
 Reference: https://docs.wpvip.com/vip-file-system/media-uploads/
 
 ## Reporting a refused write
 
-`Shorthand\Services\RemoteFileSystem::write_file()` turns a refused write into
-a `WP_Error` carrying a `pretty` message for the author, which
+`WpUploads::write()` turns a refused write into a `WP_Error` carrying a
+`pretty` message for the author, which
 `Shorthand\Services\PostAPI::set_story_update_error()` stores in
 `story_update_error` like any other publish failure.
 
@@ -124,9 +159,13 @@ The refusal does not arrive as a status code. The uploads host's API client has
 no branch for it: it returns a generic `upload_file-failed` error with the
 status embedded in the message as `(response code: 405)`.
 `WP_Filesystem::copy()` leaves that error on its public `errors` property and
-answers false. `Shorthand\Services\RemoteFileSystem::is_write_cap_refusal()`
-reads it there, and is the only place in this codebase that depends on that
-text. When the match fails, the plain write failure surfaces unchanged.
+answers false. `WpUploads::is_write_cap_refusal()` reads it there, and is the
+only place in this codebase that depends on that text. When the match fails,
+the plain write failure surfaces unchanged.
+
+The match runs on every host. On a host that cannot produce this error it
+cannot succeed, so it costs one string comparison per failed write and needs no
+host test to guard it.
 
 The 2000-modification limit is documented; the status code is not. It appears
 in no WordPress VIP document and in no line of `vip-go-mu-plugins`. Treat `405`
@@ -146,17 +185,14 @@ Sources:
 - https://github.com/Automattic/vip-go-mu-plugins/blob/9e4e16ee1b03519883166d9d5febdaa3b32bc895/files/init-filesystem.php#L26-L45 — the host installing `WP_Filesystem_VIP` as `$wp_filesystem`.
 - https://github.com/Automattic/vip-go-mu-plugins/blob/0f890e4d326833a6e23514442f4113d7fc6d41e0/files/class-vip-filesystem-local-stream-wrapper.php#L412-L417 — the stream wrapper path, which this plugin does not use.
 
-## Testing without a remote host
+## Testing without an object store
 
-`Shorthand\Tests\Support\FileSystemContractTestCase` states the contract, and
-runs against both implementations:
+`Shorthand\Tests\Support\FakeUploads` implements `Uploads` as an in-memory
+object store: keys and bytes, no directories, and counters for writes, deletes
+and `make_dir()` calls. `fail_writes()` makes every later write return a given
+`WP_Error`.
 
-- `Shorthand\Tests\Services\LocalFileSystemTest` uses `CountingLocalFileSystem`,
-  a `LocalFileSystem` writing to a real temp tree, with counters added.
-- `Shorthand\Tests\Services\RemoteFileSystemTest` uses `FakeRemoteFileSystem`,
-  a `RemoteFileSystem` whose uploads directory is an in-memory object store.
-  `make_dir()` reports success without creating anything, and every write and
-  delete is counted.
-
-The counts are the assertion that matters: a republish with no edits performs
-zero writes and zero deletes on both.
+The counts are the assertion that matters. A republish with no edits performs
+two writes and two deletes — the two documents, which move each publish —
+whatever the size of the story. See
+`Shorthand\Tests\Services\PostAPIUnpackTest`.

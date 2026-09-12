@@ -1,7 +1,7 @@
 ---
 title: Story post meta
 purpose: The post meta keys a Shorthand story post carries, and the shape of the structured ones.
-updated: 2026-08-25
+updated: 2026-09-01
 ---
 
 # Story post meta
@@ -22,7 +22,7 @@ rendered page is built from `story_body`.
 | `story_manifest` | object | Name, size, and CRC32 per bundle file |
 | `story_update_nonce` | string | Nonce of the in-flight pull |
 | `story_update_state` | object | Progress of the in-flight pull |
-| `story_pulls` | object | Pull directories awaiting cleanup |
+| `story_pulls` | object | Download chunks awaiting cleanup |
 | `story_excerpt` | string | The excerpt last generated from the story body |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
 
@@ -54,35 +54,45 @@ array(
 )
 ```
 
-Built by `Shorthand\Services\BundleManifest`: `from_archive()` from
+Built by `Shorthand\Services\Files\Manifest`: `from_archive()` from
 `ZipArchive::statIndex()`, `from_meta()` from the stored value.
 
 Keys are bundle paths, not archive paths. The two differ for `article.html` and
 `head.html`, which the archive names at its root and the bundle holds under
 `docs/{nonce}/`. During a publish those entries carry an extra `from` key
-naming the archive path; `Shorthand\Services\BaseFileSystem::copy_tree()` reads it,
-then strips it before storage, so the stored manifest describes the bundle only.
+naming the archive path, added by
+`Shorthand\Services\Files\Manifest::relocate_documents()`. The copy step
+reads it, then strips it before storage, so the stored manifest describes the
+bundle only.
 
 An absent `story_manifest` means copy every file. That is the state after
 upgrading from a plugin version that did not write one, and it needs no
 migration.
 
-The key is written only after a successful copy. See `docs/flows/publishing.md`.
+The key is written only after a successful copy, and is the only record of
+what the bundle holds. It says what to skip on republish, what to delete when
+the story changes, and what to remove when the post is deleted. Nothing lists
+the bundle directory. See `docs/services/file-system.md`.
 
 ## story_pulls
 
-One entry per in-flight request nonce, recording what that pull left in the
-uploads directory:
+One entry per in-flight request nonce, holding the number of download chunks
+written so far:
 
 ```php
 array(
-    '9f2c…' => array( 'path' => 'shorthand/12/abc123_9f2c…/', 'files' => 3 ),
+    '9f2c…' => 3,
 )
 ```
 
-A pull directory cannot be listed on a remote uploads host, so this is the only
-record of which chunk files exist. `files` is the count of `file-N.part`
-entries written so far.
+Uploads cannot be listed, so this is the only record of which chunk files
+exist. The paths follow from the post ID, the story ID, the nonce and the
+count, and are rebuilt by
+`Shorthand\Services\Files\Bundle::chunk_path()`.
+
+Entries written by a plugin version that stored `array( 'path' => …, 'files' =>
+… )` are still read for their count. `Shorthand\Services\PostAPI` accepts both
+shapes and writes the count.
 
 ## story_excerpt
 

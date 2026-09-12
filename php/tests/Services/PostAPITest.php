@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Shorthand\Tests\Services;
 
 use Shorthand\Services\AuthStateManager;
-use Shorthand\Services\FileSystemService;
+use Shorthand\Services\Files\BundleStore;
+use Shorthand\Services\Files\Uploads;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
@@ -32,7 +33,7 @@ final class PostAPITest extends WordPressTestCase {
 		$this->callPrivateMethod( $post_api, 'store_story_text', array( $post_id, $article ) );
 	}
 
-	private function make_post_api( Shorthand $shorthand, ?AuthStateManager $auth_state_manager = null, ?FileSystemService $file_system = null ): PostAPI {
+	private function make_post_api( Shorthand $shorthand, ?AuthStateManager $auth_state_manager = null, ?Uploads $uploads = null ): PostAPI {
 		return new PostAPI(
 			$shorthand,
 			$this->createMock( Options::class ),
@@ -40,7 +41,7 @@ final class PostAPITest extends WordPressTestCase {
 			'tse_story',
 			$auth_state_manager ?? $this->createMock( AuthStateManager::class ),
 			$this->createMock( StoryContentTransformer::class ),
-			$file_system ?? $this->createMock( FileSystemService::class ),
+			new BundleStore( $uploads ?? $this->createMock( Uploads::class ) ),
 			new StoryTextExtractor()
 		);
 	}
@@ -129,36 +130,16 @@ final class PostAPITest extends WordPressTestCase {
 	}
 
 	/**
-	 * @dataProvider path_shaped_story_ids
-	 */
-	public function test_bundle_paths_are_withheld_for_a_story_id_that_is_not_a_path_segment( string $story_id ): void {
-		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
-
-		$this->assertNull( $post_api->get_story_bundle_path( 7, $story_id ) );
-		$this->assertNull( $post_api->get_story_bundle_url( 7, $story_id ) );
-	}
-
-	public function test_bundle_paths_keep_the_case_of_the_story_id(): void {
-		tests_wp_set_upload_dir( '/uploads', 'https://example.test/uploads' );
-
-		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
-
-		$this->assertSame( '/uploads/shorthand/7/aBc123', $post_api->get_story_bundle_path( 7, 'aBc123' ) );
-		$this->assertSame( 'https://example.test/uploads/shorthand/7/aBc123', $post_api->get_story_bundle_url( 7, 'aBc123' ) );
-	}
-
-	/**
 	 * Deleting a post whose stored story ID is unusable must delete nothing,
-	 * and must not reach the file system at all.
+	 * and must not reach the uploads directory at all.
 	 *
 	 * @dataProvider path_shaped_story_ids
 	 */
 	public function test_delete_story_bundle_does_nothing_for_a_story_id_that_is_not_a_path_segment( string $story_id ): void {
-		$file_system = $this->createMock( FileSystemService::class );
-		$file_system->expects( $this->never() )->method( 'delete_tree' );
-		$file_system->expects( $this->never() )->method( 'delete_dir' );
+		$uploads = $this->createMock( Uploads::class );
+		$uploads->expects( $this->never() )->method( 'delete' );
 
-		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ), null, $file_system );
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ), null, $uploads );
 		$post_api->delete_story_bundle( 7, $story_id );
 	}
 

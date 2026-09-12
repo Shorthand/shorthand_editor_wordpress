@@ -26,7 +26,7 @@ final class EditorTest extends WordPressTestCase {
 	 */
 	public function test_saving_a_published_post_does_not_publish_the_story( string $post_status ): void {
 		$post_api = $this->createMock( PostAPI::class );
-		$post_api->expects( $this->never() )->method( 'extract_story_content' );
+		$post_api->expects( $this->never() )->method( 'publish_story_bundle' );
 		$post_api->expects( $this->never() )->method( 'set_post_story_version' );
 
 		$editor = $this->make_editor( $post_api );
