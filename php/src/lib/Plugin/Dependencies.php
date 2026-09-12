@@ -12,7 +12,8 @@ use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\ConnectionFailureClassifier;
-use Shorthand\Services\FileSystem;
+use Shorthand\Services\Files\BundleStore;
+use Shorthand\Services\Files\WpUploads;
 use Shorthand\Services\LivePreview;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
@@ -193,7 +194,7 @@ class Dependencies {
 	public function get_post_api(): PostAPI {
 		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), FileSystem::create(), new StoryTextExtractor(), $this->get_story_cover() );
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), new BundleStore( new WpUploads() ), new StoryTextExtractor(), $this->get_story_cover() );
 		}
 		return $this->post_api;
 	}

@@ -48,6 +48,10 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 		$this->assertTrue( $task->is_download_complete() );
 	}
 
+	/**
+	 * A task queued before the chunk paths became derivable carries a
+	 * `storage_path` this class no longer has. It must still decode.
+	 */
 	public function test_from_json_restores_serialised_state(): void {
 		$task = StoryUpdateTask::from_json(
 			'{"post_id":7,"story_id":"story-123","request_nonce":"abc","prior_status":"draft","download_url":"https:\/\/example.test\/download","storage_path":"\/tmp\/story","content_version":4,"file_url":"https:\/\/example.test\/file.zip","size":2048,"start":1024,"end":2048,"files":2}'
@@ -68,8 +72,7 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 			'story-123',
 			'abc',
 			'draft',
-			'https://example.test/download',
-			'/tmp/story'
+			'https://example.test/download'
 		);
 	}
 }
