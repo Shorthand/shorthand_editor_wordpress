@@ -6,6 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+use Shorthand\Core\Loader;
 use Shorthand\Core\Version;
 use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
@@ -21,6 +22,7 @@ use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\ShorthandHttpTransport;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryTextExtractor;
+use Shorthand\Services\StoryTitleSync;
 use Shorthand\Services\TokenManager;
 use Shorthand\Services\WordPressContextProvider;
 use Shorthand\Admin\AdminController;
@@ -77,6 +79,10 @@ class Dependencies {
 	 * @var \Shorthand\Services\LivePreview
 	 */
 	protected $live_preview;
+	/**
+	 * @var \Shorthand\Services\StoryTitleSync
+	 */
+	protected $title_sync;
 
 	/**
 	 * @var bool
@@ -116,6 +122,11 @@ class Dependencies {
 
 		$this->cron = $this->create_cron( $this );
 		$this->cron->init();
+
+		$this->title_sync = new StoryTitleSync( $this->shorthand, $this->auth_state_manager, $this->post_type->post_type );
+		$loader           = new Loader();
+		$this->title_sync->init( $loader );
+		$loader->register();
 
 		$this->booted = true;
 	}
@@ -193,7 +204,8 @@ class Dependencies {
 				$this->get_permissions(),
 				$this->version,
 				$this->get_post_type()->post_type,
-				$this->get_auth_state_manager()
+				$this->get_auth_state_manager(),
+				$this->get_title_sync()
 			);
 			$this->admin->init();
 		}
@@ -228,5 +240,10 @@ class Dependencies {
 	public function get_live_preview(): LivePreview {
 		$this->boot();
 		return $this->live_preview;
+	}
+
+	public function get_title_sync(): StoryTitleSync {
+		$this->boot();
+		return $this->title_sync;
 	}
 }

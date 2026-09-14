@@ -13,6 +13,7 @@ use Shorthand\Services\Options;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\StorySyncState;
+use Shorthand\Services\StoryTitleSync;
 use Shorthand\Admin\Actions\PostPreview;
 use Shorthand\Admin\Actions\EditWithShorthand;
 use Shorthand\Services\Cron;
@@ -60,6 +61,11 @@ class Editor {
 	 */
 	private $auth_state_manager;
 
+	/**
+	 * @var \Shorthand\Services\StoryTitleSync
+	 */
+	private $title_sync;
+
 	public function __construct(
 		Options $options,
 		Shorthand $shorthand,
@@ -69,7 +75,8 @@ class Editor {
 		PostPreview $post_preview,
 		EditWithShorthand $edit_with_shorthand,
 		string $post_type,
-		AuthStateManager $auth_state_manager
+		AuthStateManager $auth_state_manager,
+		StoryTitleSync $title_sync
 	) {
 		$this->post_type           = $post_type;
 		$this->options             = $options;
@@ -80,6 +87,7 @@ class Editor {
 		$this->post_preview        = $post_preview;
 		$this->edit_with_shorthand = $edit_with_shorthand;
 		$this->auth_state_manager  = $auth_state_manager;
+		$this->title_sync          = $title_sync;
 	}
 
 	public function init( Loader $loader ) {
@@ -115,6 +123,15 @@ class Editor {
 		$this->post_api->delete_story_bundle( $post_id, $story_id );
 	}
 
+	/**
+	 * Saves WordPress properties in every auth state. A lost connection
+	 * blocks one thing only: fetching a new story bundle from Shorthand.
+	 *
+	 * @param array<string, mixed> $data
+	 * @param array<string, mixed> $postarr
+	 * @param array<string, mixed> $unsanitized_postarr
+	 * @return array<string, mixed>
+	 */
 	public function wp_insert_post_data( array $data, array $postarr, array $unsanitized_postarr, bool $update ): array {
 		if ( ! $this->is_story_type( $data['post_type'] ) ) {
 			return $data;
@@ -129,28 +146,29 @@ class Editor {
 			return $data;
 		}
 
-		$post_id = $postarr['ID'];
+		$post_id      = (int) $postarr['ID'];
+		$prior_status = get_post_status( $post_id );
 
-		$old_title = get_post_field( 'post_title', $postarr['ID'], 'raw' );
-		$new_title = stripslashes( $data['post_title'] );
-
-		if ( $old_title !== $new_title && $this->auth_state_manager->is_connected() ) {
-			$story_id = get_post_meta( $post_id, 'story_id', true );
-			if ( isset( $story_id ) && $story_id ) {
-				$this->shorthand->set_story_title( $story_id, $new_title );
-			}
-		}
+		$this->sync_title( $post_id, stripslashes( $data['post_title'] ) );
 
 		if ( ! $this->is_publishing_status( $data['post_status'] ) ) {
 			return $data;
 		}
 
+		$publishing = ! $this->is_publishing_status( $prior_status );
+
 		if ( ! $this->auth_state_manager->is_connected() ) {
-			$this->post_api->set_story_update_error(
-				$post_id,
-				new WP_Error( 'auth', __( 'Cannot publish: the Shorthand connection is not active.', 'the-shorthand-editor' ) )
-			);
-			$data['post_status'] = PostAPI::get_restore_status( get_post_status( $post_id ) );
+			if ( $publishing && ! $this->has_story_content( $post_id ) ) {
+				$this->post_api->set_story_update_error(
+					$post_id,
+					new WP_Error( 'auth', __( 'Cannot fetch the story content from Shorthand: the connection is not active. Reconnect the workspace, then publish again.', 'the-shorthand-editor' ) )
+				);
+				$data['post_status'] = PostAPI::get_restore_status( $prior_status );
+			}
+			return $data;
+		}
+
+		if ( ! $publishing && ! $this->needs_pull( $post_id ) ) {
 			return $data;
 		}
 
@@ -158,15 +176,70 @@ class Editor {
 		$this->post_api->set_story_update_error( $post_id );
 
 		$result = $this->cron->schedule_pull_story( $post_id );
-
 		if ( is_wp_error( $result ) || ! $result ) {
-			/* if the cron job fails, it should fall back to the original status */
-			$this->post_api->set_story_update_error( $post_id, $result );
-			$data['post_status'] = PostAPI::get_restore_status( get_post_status( $post_id ) );
-			return $data;
+			$error = is_wp_error( $result ) ? $result : new WP_Error( 'cron', __( 'The story download could not be scheduled.', 'the-shorthand-editor' ) );
+			$this->post_api->set_story_update_error( $post_id, $error );
+			$data['post_status'] = PostAPI::get_restore_status( $prior_status );
 		}
 
 		return $data;
+	}
+
+	/**
+	 * The WordPress title always saves; Shorthand receives it when it can.
+	 */
+	private function sync_title( int $post_id, string $title ): void {
+		if ( ! $post_id ) {
+			return;
+		}
+
+		$story_id = get_post_meta( $post_id, 'story_id', true );
+		if ( ! $story_id ) {
+			return;
+		}
+
+		$changed = get_post_field( 'post_title', $post_id, 'raw' ) !== $title;
+		if ( ! $changed && null === $this->title_sync->get_pending( $post_id ) ) {
+			return;
+		}
+
+		$this->title_sync->push( $post_id, (string) $story_id, $title );
+	}
+
+	private function has_story_content( int $post_id ): bool {
+		return '' !== (string) get_post_meta( $post_id, 'story_body', true );
+	}
+
+	/**
+	 * A published post pulls again only when it has no bundle, the last
+	 * pull failed, or Shorthand holds a different content version. A pull
+	 * already in flight is left to finish.
+	 */
+	private function needs_pull( int $post_id ): bool {
+		if ( null !== $this->post_api->get_story_update_error( $post_id ) ) {
+			return true;
+		}
+
+		if ( null !== $this->post_api->get_story_update_progress( $post_id ) ) {
+			return false;
+		}
+
+		$live_version = $this->post_api->get_post_story_version( $post_id );
+		if ( null === $live_version ) {
+			return true;
+		}
+
+		$story_id = get_post_meta( $post_id, 'story_id', true );
+		if ( ! $story_id ) {
+			return true;
+		}
+
+		$remote_version = $this->shorthand->get_story_version( (string) $story_id );
+		if ( is_wp_error( $remote_version ) ) {
+			return true;
+		}
+
+		return $remote_version !== $live_version;
 	}
 
 	/**
@@ -345,10 +418,11 @@ class Editor {
 	}
 
 	public function get_post_story_state( int $post_id ): ?array {
-		$live_version = $this->post_api->get_post_story_version( $post_id );
-		$error = $this->post_api->get_story_update_error( $post_id );
-		$state = $error ? null : $this->post_api->get_story_update_progress( $post_id );
+		$live_version  = $this->post_api->get_post_story_version( $post_id );
+		$error         = $this->post_api->get_story_update_error( $post_id );
+		$state         = $error ? null : $this->post_api->get_story_update_progress( $post_id );
+		$pending_title = $this->title_sync->get_pending( $post_id );
 
-		return ( new StorySyncState( $live_version, $error, $state ) )->to_array();
+		return ( new StorySyncState( $live_version, $error, $state, $pending_title ) )->to_array();
 	}
 }

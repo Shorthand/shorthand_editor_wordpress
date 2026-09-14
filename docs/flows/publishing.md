@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-08-25
+updated: 2026-09-14
 ---
 
 # Publishing a story
@@ -10,7 +10,62 @@ Publishing downloads a story archive from Shorthand in chunks, unpacks it, and
 copies only the changed files into the uploads directory. It is driven by
 WP-Cron and is always asynchronous.
 
-Entry point: `Shorthand\Services\PostAPI::pull_story_begin()`.
+Entry point: `Shorthand\Services\PostAPI::pull_story_begin()`, scheduled from
+`Shorthand\Admin\Editor::wp_insert_post_data()`.
+
+## When a pull is scheduled
+
+`Shorthand\Admin\Editor::wp_insert_post_data()` runs on every save of a story
+post. It schedules a pull only in these cases, and only while the auth state
+is `connected`:
+
+| Save | Pull |
+| --- | --- |
+| Status moves into `publish` or `future` from any other status | Always |
+| Already published, `story_update_error` post meta is set | Always, as a retry |
+| Already published, `story_version` post meta is absent | Always |
+| Already published, `story_update_state` post meta is set | Never; the pull in flight is left to finish |
+| Already published, Shorthand reports a different `contentVersion` | Always |
+| Already published, Shorthand reports the same `contentVersion` | Never |
+| Already published, the version check itself fails | Always; the pull reports the real failure |
+| Status leaves `publish` and `future` | Never |
+
+The content version is read from `GET /v2/stories/{id}/settings` by
+`Shorthand\Services\Shorthand::get_story_version()`. That request generates no
+archive, so it does not count against the workspace's concurrent build cap.
+
+## Decision: a save without a connection blocks one thing only
+
+When the auth state is not `connected`, a save writes every WordPress property
+as normal: title, slug, author, excerpt, featured image, taxonomies, custom
+fields, publish date, and status. No `story_update_error` is written and
+`post_status` is not rewritten, with one exception.
+
+The exception is a status moving into `publish` or `future` on a post whose
+`story_body` post meta is empty. There is no bundle to serve, and none can be
+fetched, so the save records an `auth` error reading "Cannot fetch the story
+content from Shorthand" and restores the prior status through
+`Shorthand\Services\PostAPI::get_restore_status()`.
+
+A draft whose `story_body` is present publishes while disconnected, without a
+pull. Its `story_version` stays absent, so the next connected save pulls a
+fresh bundle.
+
+Unpublishing never needs a connection.
+
+## Decision: the title always saves, and Shorthand catches up
+
+The WordPress title is the one property Shorthand also holds. A title change
+is handed to `Shorthand\Services\StoryTitleSync::push()`:
+
+- Connected and accepted: sent to `POST /v2/stories/{id}/settings`.
+- Disconnected, or refused: held in `story_title_pending` post meta and shown
+  in the editor toolbar as a known divergence.
+
+A held title is pushed again on the next save of that post while connected,
+and by `Shorthand\Services\StoryTitleSync::sweep()` when the auth state
+changes to `connected`, which the `shorthand_auth_state_changed` action
+announces. The sweep pushes the post's current title, not the held one.
 
 ## Directories
 

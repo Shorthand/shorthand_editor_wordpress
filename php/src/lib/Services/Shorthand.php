@@ -233,7 +233,37 @@ class Shorthand {
 			array( 'meta' => array( 'title' => $title ) )
 		);
 
-		return is_wp_error( $response ) ? $response : null;
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$status = wp_remote_retrieve_response_code( $response );
+		if ( 200 !== $status && 204 !== $status ) {
+			return new WP_Error( 'status', "Received HTTP status code {$status}.", $status );
+		}
+
+		return null;
+	}
+
+	/**
+	 * The content version Shorthand currently holds for a story, read from
+	 * its settings. Cheaper than a build: no archive is generated.
+	 *
+	 * @return int|\WP_Error
+	 */
+	public function get_story_version( string $story_id ) {
+		$settings = $this->get_story_settings( $story_id );
+
+		if ( is_wp_error( $settings ) ) {
+			return $settings;
+		}
+
+		$version = $settings['meta']['contentVersion'] ?? null;
+		if ( ! is_numeric( $version ) ) {
+			return new WP_Error( 'story', "The Shorthand story ID is {$story_id}.", $story_id );
+		}
+
+		return (int) $version;
 	}
 
 	/**

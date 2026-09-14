@@ -9,6 +9,7 @@ use Shorthand\Core\Loader;
 use Shorthand\Core\Version;
 
 use Shorthand\Services\AuthStateManager;
+use Shorthand\Services\StoryTitleSync;
 use Shorthand\Services\Options;
 use Shorthand\Services\PostApi;
 use Shorthand\Services\Permissions;
@@ -71,6 +72,10 @@ class AdminController {
 	 */
 	private $auth_state_manager;
 	/**
+	 * @var \Shorthand\Services\StoryTitleSync
+	 */
+	private $title_sync;
+	/**
 	 * @var \Shorthand\Admin\AdminGateway
 	 */
 	private $admin_gateway;
@@ -83,7 +88,8 @@ class AdminController {
 		Permissions $permissions,
 		Version $version,
 		string $post_type,
-		AuthStateManager $auth_state_manager
+		AuthStateManager $auth_state_manager,
+		StoryTitleSync $title_sync
 	) {
 		$this->settings_page_slug = 'theshed-settings';
 
@@ -95,6 +101,7 @@ class AdminController {
 		$this->permissions        = $permissions;
 		$this->post_type          = $post_type;
 		$this->auth_state_manager = $auth_state_manager;
+		$this->title_sync         = $title_sync;
 		$this->admin_gateway      = new AdminGateway( $this->settings_page_slug );
 	}
 
@@ -220,7 +227,7 @@ class AdminController {
 		$redirect_to_shorthand_story->define_redirect_and_return_pages( $loader );
 		$post_preview->define_preview_page( $loader );
 
-		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager );
+		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager, $this->title_sync );
 		$post->init( $loader );
 
 		$loader->add_filter(
