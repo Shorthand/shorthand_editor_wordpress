@@ -88,11 +88,14 @@ array(
 Uploads cannot be listed, so this is the only record of which chunk files
 exist. The paths follow from the post ID, the story ID, the nonce and the
 count, and are rebuilt by
-`Shorthand\Services\Files\Bundle::chunk_path()`.
+`Shorthand\Services\Files\Download::chunk_path()`.
 
 Entries written by a plugin version that stored `array( 'path' => …, 'files' =>
-… )` are still read for their count. `Shorthand\Services\PostAPI` accepts both
-shapes and writes the count.
+… )` are kept in that shape. Those chunks were written at the older naming, a
+directory beside the bundle, so the shape is what tells the sweep which paths
+to remove: `Shorthand\Services\Files\Download::discard_legacy()` rather than
+`Download::discard()`. `Shorthand\Services\PostAPI` reads both shapes and
+writes the count for a new pull.
 
 ## story_excerpt
 

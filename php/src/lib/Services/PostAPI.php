@@ -260,7 +260,7 @@ class PostAPI {
 			return $download_url;
 		}
 
-		$bundle->start_download();
+		$bundle->download( $request_nonce )->start();
 
 		$this->record_story_pull( $post_id, $request_nonce, 0 );
 
@@ -434,7 +434,7 @@ class PostAPI {
 		$bundle = $this->bundles->open( $args->post_id, $args->story_id );
 
 		if ( null !== $bundle ) {
-			$bundle->discard_legacy_download( $args->request_nonce, $args->stale_chunks );
+			$bundle->download( $args->request_nonce )->discard_legacy( $args->stale_chunks );
 		}
 
 		$args->stale_chunks = 0;
@@ -449,7 +449,7 @@ class PostAPI {
 			return $this->get_invalid_story_id_error( $args->story_id );
 		}
 
-		$file_path = $bundle->chunk_path( $args->request_nonce, $args->files );
+		$file_path = $bundle->download( $args->request_nonce )->chunk_path( $args->files );
 
 		$url      = $args->file_url;
 		$start    = $args->start;
@@ -514,17 +514,21 @@ class PostAPI {
 	private function pull_story_cleanup( StoryUpdateTask $args ): void {
 		$bundle = $this->bundles->open( $args->post_id, $args->story_id );
 		if ( null !== $bundle ) {
-			$bundle->discard_download( $args->request_nonce, $args->files );
+			$bundle->download( $args->request_nonce )->discard( $args->files );
 		}
 
 		$this->forget_story_pull( $args->post_id, $args->request_nonce );
 	}
 
 	/**
-	 * Chunk counts of the in-flight pulls for a post, keyed by request nonce.
+	 * The in-flight pulls of a post, keyed by request nonce.
+	 *
+	 * A pull recorded in the older shape also wrote its chunks at the older
+	 * naming, so the shape is carried through rather than flattened away: it
+	 * is what tells the sweep which paths to remove.
 	 *
 	 * @param int $post_id Post being published.
-	 * @return array<string, int>
+	 * @return array<string, array{files: int, legacy: bool}>
 	 */
 	private function get_story_pulls( int $post_id ): array {
 		$pulls = get_post_meta( $post_id, 'story_pulls', true );
@@ -533,17 +537,41 @@ class PostAPI {
 			return array();
 		}
 
-		$counts = array();
+		$records = array();
 		foreach ( $pulls as $nonce => $files ) {
-			/* Pulls recorded before the chunk paths became derivable. */
-			if ( is_array( $files ) ) {
+			$legacy = is_array( $files );
+
+			if ( $legacy ) {
 				$files = isset( $files['files'] ) ? $files['files'] : 0;
 			}
 
-			$counts[ (string) $nonce ] = (int) $files;
+			$records[ (string) $nonce ] = array(
+				'files'  => (int) $files,
+				'legacy' => $legacy,
+			);
 		}
 
-		return $counts;
+		return $records;
+	}
+
+	/**
+	 * Writes the pull records back, each in the shape it was read in.
+	 *
+	 * @param int   $post_id Post being published.
+	 * @param array $pulls   Records keyed by request nonce.
+	 */
+	private function store_story_pulls( int $post_id, array $pulls ): void {
+		if ( array() === $pulls ) {
+			delete_post_meta( $post_id, 'story_pulls' );
+			return;
+		}
+
+		$stored = array();
+		foreach ( $pulls as $nonce => $pull ) {
+			$stored[ $nonce ] = $pull['legacy'] ? array( 'files' => $pull['files'] ) : $pull['files'];
+		}
+
+		update_post_meta( $post_id, 'story_pulls', $stored );
 	}
 
 	/**
@@ -559,9 +587,12 @@ class PostAPI {
 	private function record_story_pull( int $post_id, string $nonce, int $files ): void {
 		$pulls = $this->get_story_pulls( $post_id );
 
-		$pulls[ $nonce ] = $files;
+		$pulls[ $nonce ] = array(
+			'files'  => $files,
+			'legacy' => false,
+		);
 
-		update_post_meta( $post_id, 'story_pulls', $pulls );
+		$this->store_story_pulls( $post_id, $pulls );
 	}
 
 	/**
@@ -575,12 +606,7 @@ class PostAPI {
 
 		unset( $pulls[ $nonce ] );
 
-		if ( array() === $pulls ) {
-			delete_post_meta( $post_id, 'story_pulls' );
-			return;
-		}
-
-		update_post_meta( $post_id, 'story_pulls', $pulls );
+		$this->store_story_pulls( $post_id, $pulls );
 	}
 
 	/**
@@ -592,12 +618,19 @@ class PostAPI {
 	private function sweep_story_pulls( Bundle $bundle, string $nonce ): void {
 		$post_id = $bundle->post_id();
 
-		foreach ( $this->get_story_pulls( $post_id ) as $stale_nonce => $files ) {
+		foreach ( $this->get_story_pulls( $post_id ) as $stale_nonce => $pull ) {
 			if ( $stale_nonce === $nonce ) {
 				continue;
 			}
 
-			$bundle->discard_download( $stale_nonce, $files );
+			$download = $bundle->download( (string) $stale_nonce );
+
+			if ( $pull['legacy'] ) {
+				$download->discard_legacy( $pull['files'] );
+				continue;
+			}
+
+			$download->discard( $pull['files'] );
 		}
 
 		delete_post_meta( $post_id, 'story_pulls' );

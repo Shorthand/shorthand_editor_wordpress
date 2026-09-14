@@ -73,15 +73,21 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 
 	/**
 	 * A pull already in flight when the plugin was upgraded is recorded in the
-	 * older shape, and still has to be swept.
+	 * older shape, and wrote its chunks at the older naming: a directory beside
+	 * the bundle. Sweeping it at the current naming would delete nothing.
 	 */
-	public function test_a_pull_recorded_before_the_paths_became_derivable_is_still_counted(): void {
+	public function test_a_pull_recorded_before_the_paths_became_derivable_is_swept_at_the_old_naming(): void {
+		$stale = 'vip://wp-content/uploads/shorthand/7/aBc123_11111';
+
+		$this->uploads->put( $stale . '/file-0.part', 'first' );
+		$this->uploads->put( $stale . '/file-1.part', 'second' );
+
 		tests_wp_set_post_meta(
 			7,
 			'story_pulls',
 			array(
 				'11111' => array(
-					'path'  => 'vip://wp-content/uploads/shorthand/7/aBc123_11111',
+					'path'  => $stale,
 					'files' => 2,
 				),
 			)
@@ -89,7 +95,7 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 
 		$this->begin_pull();
 
-		$this->assertSame( 2, $this->uploads->deletes() );
+		$this->assertSame( array(), $this->uploads->objects() );
 	}
 
 	private function begin_pull(): StoryUpdateTask {

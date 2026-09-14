@@ -150,9 +150,10 @@ pull left behind: a chunk count per request nonce.
 - `pull_story_cleanup()` deletes the chunks and drops the entry, on both a
   successful and a failed pull.
 
-Both call `Shorthand\Services\Files\Bundle::discard_download()`, which
-rebuilds the chunk paths from the nonce and the count. An entry written by a
-plugin version that stored `{path, files}` is still read for its count.
+Both call `Shorthand\Services\Files\Download::discard()`, which rebuilds the
+chunk paths from the nonce and the count. An entry written by a plugin version
+that stored `{path, files}` names chunks at the older layout, and is swept by
+`Download::discard_legacy()` instead.
 
 A superseded pull returns early without cleaning up. Its entry survives until
 the next `pull_story_begin()` sweeps it.
