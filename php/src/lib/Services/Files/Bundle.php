@@ -31,16 +31,22 @@ class Bundle {
 	const MANIFEST_META = 'story_manifest';
 
 	/**
+	 * Uploads directory the bundle is written to.
+	 *
 	 * @var \Shorthand\Services\Files\Uploads
 	 */
 	private $uploads;
 
 	/**
+	 * Post the bundle belongs to, and holds the manifest.
+	 *
 	 * @var int
 	 */
 	private $post_id;
 
 	/**
+	 * Shorthand story ID, already validated as a path segment.
+	 *
 	 * @var string
 	 */
 	private $story_id;
@@ -56,6 +62,13 @@ class Bundle {
 		$this->uploads  = $uploads;
 		$this->post_id  = $post_id;
 		$this->story_id = $story_id;
+	}
+
+	/**
+	 * Post the bundle belongs to.
+	 */
+	public function post_id(): int {
+		return $this->post_id;
 	}
 
 	/**
@@ -86,6 +99,18 @@ class Bundle {
 	 */
 	public function manifest(): array {
 		return Manifest::from_meta( get_post_meta( $this->post_id, self::MANIFEST_META, true ) );
+	}
+
+	/**
+	 * Records what the bundle holds.
+	 *
+	 * Called last in a publish, so that a failure while storing the story's
+	 * documents leaves the previous manifest in place.
+	 *
+	 * @param array $manifest Every file the bundle holds, to size and CRC32.
+	 */
+	public function commit( array $manifest ): void {
+		update_post_meta( $this->post_id, self::MANIFEST_META, $manifest );
 	}
 
 	/**
@@ -129,6 +154,27 @@ class Bundle {
 	}
 
 	/**
+	 * Removes the chunks of a download queued before the chunk rename.
+	 *
+	 * Those went into a directory beside the bundle, `{bundle}_{nonce}`, which
+	 * is derived here rather than read back from the task: no path out of
+	 * stored JSON should reach a delete loop. The directory itself is left, as
+	 * an empty one cannot be removed on every host.
+	 *
+	 * Remove once no task queued against the previous release can still run.
+	 *
+	 * @param string $nonce  Request nonce identifying the download.
+	 * @param int    $chunks Number of chunks it had written.
+	 */
+	public function discard_legacy_download( string $nonce, int $chunks ): void {
+		$dir = $this->path() . '_' . $nonce;
+
+		for ( $idx = 0; $idx < $chunks; $idx++ ) {
+			$this->uploads->delete( $dir . '/file-' . $idx . '.part' );
+		}
+	}
+
+	/**
 	 * Assembles a download, unpacks it, and copies what changed into uploads.
 	 *
 	 * Everything expensive is hidden here. The archive is assembled and
@@ -140,7 +186,7 @@ class Bundle {
 	 *
 	 * @param string $nonce  Request nonce identifying the download.
 	 * @param int    $chunks Number of chunks downloaded.
-	 * @return array{head: string, article: string, head_path: string, article_path: string}|\WP_Error
+	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array}|\WP_Error
 	 */
 	public function publish( string $nonce, int $chunks ) {
 		$staging = Staging::open( $this->uploads, 'sh_pull_' . $this->safe_nonce( $nonce ) . '_' );
@@ -179,7 +225,7 @@ class Bundle {
 	 * @param \Shorthand\Services\Files\Staging $staging Scratch directory for this publish.
 	 * @param string                            $nonce   Request nonce identifying the download.
 	 * @param int                               $chunks  Number of chunks downloaded.
-	 * @return array{head: string, article: string, head_path: string, article_path: string}|\WP_Error
+	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array}|\WP_Error
 	 */
 	private function unpack( Staging $staging, string $nonce, int $chunks ) {
 		$archive_path = $staging->gather( $this->chunk_paths( $nonce, $chunks ), 'archive.zip' );
@@ -213,12 +259,16 @@ class Bundle {
 		$copied = $this->copy( $unpacked, $manifest, $stored );
 
 		if ( is_wp_error( $copied ) ) {
+			$written = $copied->get_error_data( 'partial_manifest' );
+
+			if ( ! empty( $written ) ) {
+				$this->commit( array_merge( $stored, $written ) );
+			}
+
 			return $copied;
 		}
 
 		$this->prune( Manifest::removed( $stored, $copied ) );
-
-		update_post_meta( $this->post_id, self::MANIFEST_META, $copied );
 
 		/**
 		 * Fires once a story's files are in uploads, before its markup is stored.
@@ -241,6 +291,7 @@ class Bundle {
 			'article'      => $archive->document( 'article.html' ),
 			'head_path'    => $documents_path . '/head.html',
 			'article_path' => $documents_path . '/article.html',
+			'manifest'     => $copied,
 		);
 	}
 
@@ -258,6 +309,7 @@ class Bundle {
 	private function copy( string $source_dir, array $manifest, array $stored ) {
 		$bundle_path = $this->path();
 		$made        = array();
+		$written     = array();
 
 		foreach ( $manifest as $name => $entry ) {
 			if ( $this->is_unchanged( $stored, $name, $entry ) ) {
@@ -269,7 +321,7 @@ class Bundle {
 
 			if ( ! isset( $made[ $parent_path ] ) ) {
 				if ( ! $this->uploads->make_dir( $parent_path ) ) {
-					return new WP_Error( 'file', "Could not create the bundle directory {$parent_path}.", $parent_path );
+					return self::partial( new WP_Error( 'file', "Could not create the bundle directory {$parent_path}.", $parent_path ), $written );
 				}
 
 				$made[ $parent_path ] = true;
@@ -277,15 +329,17 @@ class Bundle {
 
 			$source_path = $source_dir . '/' . ( isset( $entry['from'] ) ? $entry['from'] : $name );
 
-			$written = $this->uploads->write( $source_path, $dest_path );
+			$result = $this->uploads->write( $source_path, $dest_path );
 
-			if ( is_wp_error( $written ) ) {
-				return $written;
+			if ( is_wp_error( $result ) ) {
+				return self::partial( $result, $written );
 			}
 
-			if ( ! $written ) {
-				return new WP_Error( 'file', "Could not write the story file {$dest_path}.", $dest_path );
+			if ( ! $result ) {
+				return self::partial( new WP_Error( 'file', "Could not write the story file {$dest_path}.", $dest_path ), $written );
 			}
+
+			$written[ $name ] = $entry;
 
 			/**
 			 * Fires for each story file written into uploads.
@@ -300,7 +354,22 @@ class Bundle {
 			do_action( 'theshed_story_file_written', $dest_path, $name, $this->post_id );
 		}
 
-		return $this->without_sources( $manifest );
+		return self::without_sources( $manifest );
+	}
+
+	/**
+	 * Attaches to an error the files that reached uploads before it.
+	 *
+	 * A file no manifest names can never be removed: `prune()` and `delete()`
+	 * both work from the manifest, because uploads cannot be listed.
+	 *
+	 * @param \WP_Error $error   Failure that ended the copy.
+	 * @param array     $written Entries written before it, keyed by bundle path.
+	 */
+	private static function partial( WP_Error $error, array $written ): WP_Error {
+		$error->add( 'partial_manifest', 'Files written before the failure.', self::without_sources( $written ) );
+
+		return $error;
 	}
 
 	/**
@@ -355,7 +424,7 @@ class Bundle {
 	 * @param array $manifest Manifest that drove the copy.
 	 * @return array<string, array{size: int, crc: int}>
 	 */
-	private function without_sources( array $manifest ): array {
+	private static function without_sources( array $manifest ): array {
 		foreach ( $manifest as $name => $entry ) {
 			if ( ! isset( $entry['from'] ) ) {
 				continue;

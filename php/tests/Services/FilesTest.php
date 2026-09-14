@@ -52,8 +52,8 @@ final class FilesTest extends WordPressTestCase {
 	public function test_no_service_names_a_vendor(): void {
 		foreach ( $this->sources() as $source ) {
 			$this->assertDoesNotMatchRegularExpression(
-				'/VIP_GO_APP_ENVIRONMENT|wpcomvip|WPCOM_VIP|Automattic\\\\|stateless|amazonS3|as3cf/i',
-				(string) file_get_contents( $source ),
+				'/VIP_GO_APP_ENVIRONMENT|wpcomvip|WPCOM_VIP|Automattic\\\\|stateless|amazonS3|as3cf|\bvip\b/i',
+				$this->code_of( $source ),
 				basename( $source ) . ' names a vendor.'
 			);
 		}
@@ -98,15 +98,29 @@ final class FilesTest extends WordPressTestCase {
 	}
 
 	/**
-	 * Every service source file, including the file system abstraction.
+	 * Every source file of the plugin.
+	 *
+	 * The whole tree, not the services alone: a vendor name or a directory
+	 * listing is as much a breach in a controller or a view as in a service.
 	 *
 	 * @return string[]
 	 */
 	private function sources(): array {
-		return array_merge(
-			(array) glob( __DIR__ . '/../../src/lib/Services/*.php' ),
-			(array) glob( __DIR__ . '/../../src/lib/Services/Files/*.php' )
+		$sources = array();
+
+		$tree = new \RecursiveIteratorIterator(
+			new \RecursiveDirectoryIterator( __DIR__ . '/../../src/lib', \FilesystemIterator::SKIP_DOTS )
 		);
+
+		foreach ( $tree as $file ) {
+			if ( 'php' === $file->getExtension() ) {
+				$sources[] = $file->getPathname();
+			}
+		}
+
+		sort( $sources );
+
+		return $sources;
 	}
 
 	/**

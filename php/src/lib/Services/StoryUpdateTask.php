@@ -56,6 +56,12 @@ class StoryUpdateTask {
 	 * @var int
 	 */
 	public $files = 0;
+	/**
+	 * Chunks left behind by a download queued before the chunk rename.
+	 *
+	 * @var int
+	 */
+	public $stale_chunks = 0;
 
 	public function __construct(
 		int $post_id,
@@ -135,6 +141,19 @@ class StoryUpdateTask {
 		if ( isset( $data['size'] ) && is_int( $data['size'] ) ) {
 			$task->size = $data['size'];
 		}
+
+		/*
+		 * A task holding `storage_path` was queued before chunk paths became
+		 * derivable from the bundle, and its chunks are under that path. The
+		 * progress counters would point the download at paths nothing wrote,
+		 * so it restarts and the old chunks are counted for removal.
+		 */
+		if ( isset( $data['storage_path'] ) ) {
+			$task->stale_chunks = isset( $data['files'] ) && is_int( $data['files'] ) ? $data['files'] : 0;
+
+			return $task;
+		}
+
 		if ( isset( $data['start'] ) && is_int( $data['start'] ) ) {
 			$task->start = $data['start'];
 		}

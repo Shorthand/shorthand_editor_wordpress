@@ -19,16 +19,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Staging {
 
 	/**
+	 * Uploads directory the chunks are read back from.
+	 *
 	 * @var \Shorthand\Services\Files\Uploads
 	 */
 	private $uploads;
 
 	/**
+	 * Local directory this instance owns and discards.
+	 *
 	 * @var string
 	 */
 	private $path;
 
 	/**
+	 * Opened through `open()`, which creates the directory.
+	 *
 	 * @param \Shorthand\Services\Files\Uploads $uploads Uploads directory to read chunks from.
 	 * @param string                            $path    Directory this instance owns.
 	 */

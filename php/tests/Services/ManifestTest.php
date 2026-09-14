@@ -112,6 +112,31 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
+	 * The host folds case, so deleting the old name would delete the file the
+	 * new name was just written to.
+	 */
+	public function test_a_name_that_only_changed_case_is_kept(): void {
+		$stored  = array(
+			'assets/media/Photo.JPG' => array(
+				'size' => 6,
+				'crc'  => 2,
+			),
+			'assets/media/gone.jpg'  => array(
+				'size' => 4,
+				'crc'  => 5,
+			),
+		);
+		$current = array(
+			'assets/media/photo.jpg' => array(
+				'size' => 6,
+				'crc'  => 2,
+			),
+		);
+
+		$this->assertSame( array( 'assets/media/gone.jpg' ), array_keys( Manifest::removed( $stored, $current ) ) );
+	}
+
+	/**
 	 * An absent manifest means copy everything, which is correct on the first
 	 * publish after upgrading.
 	 *
@@ -133,6 +158,39 @@ final class ManifestTest extends WordPressTestCase {
 			'null'          => array( null ),
 			'a string'      => array( 'article.html' ),
 		);
+	}
+
+	/**
+	 * Nothing the plugin stores has an unreadable entry, so one means the meta
+	 * was written by something else. The file it names survives every prune
+	 * and delete, both of which work from the manifest alone.
+	 */
+	public function test_an_unreadable_entry_is_reported(): void {
+		$manifest = Manifest::from_meta(
+			array(
+				'article.html'     => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+				'assets/theme.css' => array( 'size' => 6 ),
+			)
+		);
+
+		$this->assertSame( array( 'article.html' ), array_keys( $manifest ) );
+
+		$reports = tests_wp_doing_it_wrong();
+
+		$this->assertCount( 1, $reports );
+		$this->assertStringContainsString( 'assets/theme.css', $reports[0]['message'] );
+	}
+
+	/**
+	 * A first publish after upgrading reads a manifest that was never written.
+	 */
+	public function test_an_unusable_meta_value_is_not_reported(): void {
+		Manifest::from_meta( '' );
+
+		$this->assertSame( array(), tests_wp_doing_it_wrong() );
 	}
 
 	public function test_a_stored_manifest_reads_back_unchanged(): void {
@@ -189,6 +247,63 @@ final class ManifestTest extends WordPressTestCase {
 		);
 
 		$this->assertSame( array( 'docs/pull1/article.html' ), array_keys( $manifest ) );
+	}
+
+	/**
+	 * Entry names become path segments of the bundle, the same way a story ID
+	 * and a nonce do, and unlike those two they arrive from outside. PLA-2720.
+	 *
+	 * @dataProvider escaping_entry_names
+	 *
+	 * @param string $name Archive entry name.
+	 */
+	public function test_an_entry_that_escapes_the_bundle_is_refused( string $name ): void {
+		$zip = $this->open_archive( array( $name => 'payload' ) );
+
+		$result = Manifest::from_archive( $zip );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $name, $result->get_error_data( 'file' ) );
+
+		$zip->close();
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function escaping_entry_names(): array {
+		return array(
+			'parent directory'   => array( '../../escaped.txt' ),
+			'parent mid path'    => array( 'x/../../escaped.txt' ),
+			'absolute path'      => array( '/etc/passwd' ),
+			'backslash'          => array( 'abc\\def' ),
+			'windows drive'      => array( 'C:/Windows/x' ),
+		);
+	}
+
+	/**
+	 * Dots and slashes are ordinary in a story's asset names.
+	 *
+	 * @dataProvider ordinary_entry_names
+	 *
+	 * @param string $name Archive entry name.
+	 */
+	public function test_an_ordinary_entry_name_is_kept( string $name ): void {
+		$manifest = Manifest::from_archive( $this->open_archive( array( $name => 'payload' ) ) );
+
+		$this->assertSame( array( $name ), array_keys( $manifest ) );
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function ordinary_entry_names(): array {
+		return array(
+			'nested'         => array( 'assets/media/photo.jpg' ),
+			'leading dot'    => array( 'assets/.htaccess' ),
+			'dot segment'    => array( 'assets/./theme.css' ),
+			'double dot name' => array( 'assets/..photo.jpg' ),
+		);
 	}
 
 	/**

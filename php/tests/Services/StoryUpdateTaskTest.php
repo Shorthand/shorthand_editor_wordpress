@@ -48,13 +48,9 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 		$this->assertTrue( $task->is_download_complete() );
 	}
 
-	/**
-	 * A task queued before the chunk paths became derivable carries a
-	 * `storage_path` this class no longer has. It must still decode.
-	 */
 	public function test_from_json_restores_serialised_state(): void {
 		$task = StoryUpdateTask::from_json(
-			'{"post_id":7,"story_id":"story-123","request_nonce":"abc","prior_status":"draft","download_url":"https:\/\/example.test\/download","storage_path":"\/tmp\/story","content_version":4,"file_url":"https:\/\/example.test\/file.zip","size":2048,"start":1024,"end":2048,"files":2}'
+			'{"post_id":7,"story_id":"story-123","request_nonce":"abc","prior_status":"draft","download_url":"https:\/\/example.test\/download","content_version":4,"file_url":"https:\/\/example.test\/file.zip","size":2048,"start":1024,"end":2048,"files":2}'
 		);
 
 		$this->assertInstanceOf( StoryUpdateTask::class, $task );
@@ -64,6 +60,27 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 		$this->assertSame( 1024, $task->start );
 		$this->assertSame( 2048, $task->end );
 		$this->assertSame( 2, $task->files );
+		$this->assertSame( 0, $task->stale_chunks );
+	}
+
+	/**
+	 * A task queued before the chunk paths became derivable carries a
+	 * `storage_path`, and its chunks are under it. They cannot be resumed from
+	 * a path this class no longer holds, so the download starts again and the
+	 * old chunks are counted for removal.
+	 */
+	public function test_from_json_restarts_a_download_that_predates_the_chunk_naming(): void {
+		$task = StoryUpdateTask::from_json(
+			'{"post_id":7,"story_id":"story-123","request_nonce":"abc","prior_status":"draft","download_url":"https:\/\/example.test\/download","storage_path":"\/tmp\/story","content_version":4,"file_url":"https:\/\/example.test\/file.zip","size":2048,"start":1024,"end":2048,"files":2}'
+		);
+
+		$this->assertInstanceOf( StoryUpdateTask::class, $task );
+		$this->assertSame( 2, $task->stale_chunks );
+		$this->assertSame( 0, $task->files );
+		$this->assertSame( 0, $task->start );
+		$this->assertSame( 0, $task->end );
+		$this->assertSame( 2048, $task->size );
+		$this->assertSame( 'https://example.test/file.zip', $task->file_url );
 	}
 
 	private function make_task(): StoryUpdateTask {

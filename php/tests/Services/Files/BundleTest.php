@@ -89,6 +89,21 @@ final class BundleTest extends WordPressTestCase {
 		$this->assertSame( array(), $this->uploads->objects() );
 	}
 
+	/**
+	 * A download queued before the chunk rename wrote into a directory beside
+	 * the bundle. The path is derived, never taken from the stored task.
+	 */
+	public function test_discarding_a_legacy_download_removes_chunks_at_the_old_naming(): void {
+		$bundle = $this->open();
+
+		$this->uploads->put( '/uploads/shorthand/7/aBc123_44444/file-0.part', 'first' );
+		$this->uploads->put( '/uploads/shorthand/7/aBc123_44444/file-1.part', 'second' );
+
+		$bundle->discard_legacy_download( '44444', 2 );
+
+		$this->assertSame( array(), $this->uploads->objects() );
+	}
+
 	private function store(): BundleStore {
 		return new BundleStore( $this->uploads );
 	}
