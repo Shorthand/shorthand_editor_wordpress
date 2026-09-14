@@ -6,7 +6,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-use Shorthand\Services\StoryId;
 use WP_Error;
 
 /**
@@ -114,64 +113,12 @@ class Bundle {
 	}
 
 	/**
-	 * Prepares uploads for the chunks of a download.
-	 *
-	 * Only the directory the bundle itself sits in is created. Chunks are
-	 * named beside the bundle rather than inside a directory of their own,
-	 * because an empty directory cannot be removed on every host, and one
-	 * would be left behind by every publish.
-	 */
-	public function start_download(): bool {
-		return $this->uploads->make_dir( dirname( $this->path() ) );
-	}
-
-	/**
-	 * Where one chunk of a download is written.
-	 *
-	 * Chunks arrive one WP Cron request at a time, so they are held in uploads
-	 * rather than in a temp directory that the next request would not find.
+	 * The transfer that fills this bundle, by the nonce identifying it.
 	 *
 	 * @param string $nonce Request nonce identifying the download.
-	 * @param int    $index Position of the chunk in the archive.
 	 */
-	public function chunk_path( string $nonce, int $index ): string {
-		return $this->path() . '_' . $nonce . '_' . $index . '.part';
-	}
-
-	/**
-	 * Removes the chunks of one download.
-	 *
-	 * The chunks are named, not listed: a download directory cannot be
-	 * enumerated on every host.
-	 *
-	 * @param string $nonce  Request nonce identifying the download.
-	 * @param int    $chunks Number of chunks downloaded into it.
-	 */
-	public function discard_download( string $nonce, int $chunks ): void {
-		for ( $idx = 0; $idx < $chunks; $idx++ ) {
-			$this->uploads->delete( $this->chunk_path( $nonce, $idx ) );
-		}
-	}
-
-	/**
-	 * Removes the chunks of a download queued before the chunk rename.
-	 *
-	 * Those went into a directory beside the bundle, `{bundle}_{nonce}`, which
-	 * is derived here rather than read back from the task: no path out of
-	 * stored JSON should reach a delete loop. The directory itself is left, as
-	 * an empty one cannot be removed on every host.
-	 *
-	 * Remove once no task queued against the previous release can still run.
-	 *
-	 * @param string $nonce  Request nonce identifying the download.
-	 * @param int    $chunks Number of chunks it had written.
-	 */
-	public function discard_legacy_download( string $nonce, int $chunks ): void {
-		$dir = $this->path() . '_' . $nonce;
-
-		for ( $idx = 0; $idx < $chunks; $idx++ ) {
-			$this->uploads->delete( $dir . '/file-' . $idx . '.part' );
-		}
+	public function download( string $nonce ): Download {
+		return new Download( $this->uploads, $this->path(), $nonce );
 	}
 
 	/**
@@ -189,10 +136,11 @@ class Bundle {
 	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array}|\WP_Error
 	 */
 	public function publish( string $nonce, int $chunks ) {
-		$staging = Staging::open( $this->uploads, 'sh_pull_' . $this->safe_nonce( $nonce ) . '_' );
+		$download = $this->download( $nonce );
+		$staging  = Staging::open( $this->uploads, 'sh_pull_' . $download->segment() . '_' );
 
 		try {
-			return $this->unpack( $staging, $nonce, $chunks );
+			return $this->unpack( $staging, $download, $chunks );
 		} finally {
 			$staging->discard();
 		}
@@ -222,13 +170,13 @@ class Bundle {
 	/**
 	 * The publish, with the staging directory already open.
 	 *
-	 * @param \Shorthand\Services\Files\Staging $staging Scratch directory for this publish.
-	 * @param string                            $nonce   Request nonce identifying the download.
-	 * @param int                               $chunks  Number of chunks downloaded.
+	 * @param \Shorthand\Services\Files\Staging  $staging  Scratch directory for this publish.
+	 * @param \Shorthand\Services\Files\Download $download Transfer the archive arrived in.
+	 * @param int                                $chunks   Number of chunks downloaded.
 	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array}|\WP_Error
 	 */
-	private function unpack( Staging $staging, string $nonce, int $chunks ) {
-		$archive_path = $staging->gather( $this->chunk_paths( $nonce, $chunks ), 'archive.zip' );
+	private function unpack( Staging $staging, Download $download, int $chunks ) {
+		$archive_path = $staging->gather( $download->chunk_paths( $chunks ), 'archive.zip' );
 
 		if ( null === $archive_path ) {
 			return new WP_Error( 'file', 'Failed to assemble story download.', $staging->file( 'archive.zip' ) );
@@ -248,7 +196,7 @@ class Bundle {
 			return $extracted;
 		}
 
-		$documents_dir = $this->documents_dir( $nonce );
+		$documents_dir = self::documents_dir( $download->segment() );
 		$manifest      = $archive->manifest();
 
 		if ( '' !== $documents_dir ) {
@@ -439,48 +387,15 @@ class Bundle {
 	}
 
 	/**
-	 * Every chunk path of one download, in order.
-	 *
-	 * @param string $nonce  Request nonce identifying the download.
-	 * @param int    $chunks Number of chunks downloaded.
-	 * @return string[]
-	 */
-	private function chunk_paths( string $nonce, int $chunks ): array {
-		$paths = array();
-
-		for ( $idx = 0; $idx < $chunks; $idx++ ) {
-			$paths[] = $this->chunk_path( $nonce, $idx );
-		}
-
-		return $paths;
-	}
-
-	/**
 	 * Bundle-relative directory holding the documents of one publish.
 	 *
 	 * A nonce that cannot be a path segment leaves the documents at the root
 	 * of the bundle, which is where they were before they were versioned.
 	 *
-	 * @param string $nonce Request nonce identifying the download.
+	 * @param string $segment Download nonce, where it can be part of a path.
 	 * @return string Directory relative to the bundle, or an empty string.
 	 */
-	private function documents_dir( string $nonce ): string {
-		$safe = $this->safe_nonce( $nonce );
-
-		return '' === $safe ? '' : "docs/{$safe}";
-	}
-
-	/**
-	 * The nonce, where it can be part of a path.
-	 *
-	 * A nonce is generated, not received, so this never fires in practice. It
-	 * is validated the same way a story ID is because both are interpolated
-	 * into directory names, and neither is worth trusting on that account.
-	 *
-	 * @param string $nonce Request nonce identifying the download.
-	 * @return string The nonce, or an empty string.
-	 */
-	private function safe_nonce( string $nonce ): string {
-		return StoryId::is_valid( $nonce ) ? $nonce : '';
+	private static function documents_dir( string $segment ): string {
+		return '' === $segment ? '' : "docs/{$segment}";
 	}
 }

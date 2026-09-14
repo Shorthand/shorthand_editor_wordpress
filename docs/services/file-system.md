@@ -28,7 +28,8 @@ Source: `php/src/lib/Services/Files/`.
 | `Shorthand\Services\Files\WpUploads` | The only implementation, over `WP_Filesystem` |
 | `Shorthand\Services\Files\FileSystem` | Boots `WP_Filesystem` once, and nothing else |
 | `Shorthand\Services\Files\BundleStore` | Opens a bundle for a post, validating the story ID |
-| `Shorthand\Services\Files\Bundle` | One story's files: paths, chunks, publish, delete |
+| `Shorthand\Services\Files\Bundle` | One story's files: paths, publish, delete |
+| `Shorthand\Services\Files\Download` | The chunks of one transfer, until the archive is assembled |
 | `Shorthand\Services\Files\Staging` | A scratch directory on local disk, for one request |
 | `Shorthand\Services\Files\Archive` | A story ZIP: index, documents, unpack |
 | `Shorthand\Services\Files\Manifest` | The name, size, and CRC32 of every bundle file |
@@ -181,7 +182,7 @@ stream wrapper. These shape every decision above.
 | Operation | Behaviour |
 | --- | --- |
 | `scandir()`, `glob()`, `opendir()`, `list_files()` | Return an empty array or `false` |
-| `rmdir()` | Does not work as expected. Clearest case in code: `Shorthand\Services\Files\Bundle::start_download()` |
+| `rmdir()` | Does not work as expected. Clearest case in code: `Shorthand\Services\Files\Download::start()` |
 | `mkdir()` | Returns `true` without creating a directory |
 | `unlink()` | One HTTP `DELETE` per file |
 | `rename()` | Implemented as copy then delete |

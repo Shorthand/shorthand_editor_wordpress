@@ -61,49 +61,6 @@ final class BundleTest extends WordPressTestCase {
 		$this->assertCount( 1, tests_wp_get_filter_args( 'theshed_get_story_url' ) );
 	}
 
-	/**
-	 * Chunks are named beside the bundle, not inside a directory of their own:
-	 * an empty directory cannot be removed on every host.
-	 */
-	public function test_chunks_are_named_beside_the_bundle(): void {
-		$bundle = $this->open();
-
-		$this->assertSame( '/uploads/shorthand/7/aBc123_44444_0.part', $bundle->chunk_path( '44444', 0 ) );
-		$this->assertSame( '/uploads/shorthand/7/aBc123_44444_3.part', $bundle->chunk_path( '44444', 3 ) );
-	}
-
-	public function test_starting_a_download_creates_only_the_permanent_parent(): void {
-		$this->open()->start_download();
-
-		$this->assertSame( 1, $this->uploads->make_dir_calls() );
-	}
-
-	public function test_discarding_a_download_removes_every_chunk_it_named(): void {
-		$bundle = $this->open();
-
-		$this->uploads->put( $bundle->chunk_path( '44444', 0 ), 'first' );
-		$this->uploads->put( $bundle->chunk_path( '44444', 1 ), 'second' );
-
-		$bundle->discard_download( '44444', 2 );
-
-		$this->assertSame( array(), $this->uploads->objects() );
-	}
-
-	/**
-	 * A download queued before the chunk rename wrote into a directory beside
-	 * the bundle. The path is derived, never taken from the stored task.
-	 */
-	public function test_discarding_a_legacy_download_removes_chunks_at_the_old_naming(): void {
-		$bundle = $this->open();
-
-		$this->uploads->put( '/uploads/shorthand/7/aBc123_44444/file-0.part', 'first' );
-		$this->uploads->put( '/uploads/shorthand/7/aBc123_44444/file-1.part', 'second' );
-
-		$bundle->discard_legacy_download( '44444', 2 );
-
-		$this->assertSame( array(), $this->uploads->objects() );
-	}
-
 	private function store(): BundleStore {
 		return new BundleStore( $this->uploads );
 	}
