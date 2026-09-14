@@ -42,6 +42,7 @@ final class UploadsWriteCapTest extends WordPressTestCase {
 
 	protected function tearDown(): void {
 		tests_wp_set_copy_error( null );
+		tests_wp_set_copy_failure( false );
 
 		foreach ( array_diff( scandir( $this->temp_root ), array( '.', '..' ) ) as $entry ) {
 			unlink( $this->temp_root . '/' . $entry );
@@ -108,6 +109,22 @@ final class UploadsWriteCapTest extends WordPressTestCase {
 			'another operation' => array( 'get_file-failed', 'Failed to get file `/wp-content/uploads/a` (response code: 405)' ),
 			'no error left'     => array( '', '' ),
 		);
+	}
+
+	/**
+	 * `WP_Filesystem` is booted once per request and never clears `errors`, so
+	 * a refusal stays readable long after the write it belongs to. A later
+	 * write that fails for its own reason must not inherit it.
+	 */
+	public function test_a_later_plain_failure_is_not_the_earlier_refusal(): void {
+		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
+
+		$this->assertInstanceOf( \WP_Error::class, $this->write() );
+
+		tests_wp_set_copy_error( null );
+		tests_wp_set_copy_failure();
+
+		$this->assertFalse( $this->write() );
 	}
 
 	private function dest_path(): string {

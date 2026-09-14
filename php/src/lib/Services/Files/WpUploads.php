@@ -29,9 +29,17 @@ class WpUploads implements Uploads {
 	 * @return bool|\WP_Error True on success, false on a plain failure, or an error the host named.
 	 */
 	public function write( string $source_path, string $dest_path ) {
-		$written = FileSystem::boot()->copy( $source_path, $dest_path, true );
+		$file_system = FileSystem::boot();
 
-		if ( false !== $written || ! $this->is_write_cap_refusal() ) {
+		if ( null === $file_system ) {
+			return new WP_Error( 'file', "No file system is available to write {$dest_path}.", $dest_path );
+		}
+
+		$refusals = self::count_upload_refusals( $file_system );
+
+		$written = $file_system->copy( $source_path, $dest_path, true );
+
+		if ( false !== $written || ! self::is_write_cap_refusal( $file_system, $refusals ) ) {
 			return $written;
 		}
 
@@ -55,7 +63,13 @@ class WpUploads implements Uploads {
 	 * @return bool True when the whole file was appended.
 	 */
 	public function read_into( string $path, string $local_path ): bool {
-		$contents = FileSystem::boot()->get_contents( $path );
+		$file_system = FileSystem::boot();
+
+		if ( null === $file_system ) {
+			return false;
+		}
+
+		$contents = $file_system->get_contents( $path );
 
 		if ( false === $contents ) {
 			return false;
@@ -72,7 +86,9 @@ class WpUploads implements Uploads {
 	 * @return bool True when the file is gone.
 	 */
 	public function delete( string $path ): bool {
-		return FileSystem::boot()->delete( $path, false, 'f' );
+		$file_system = FileSystem::boot();
+
+		return null !== $file_system && $file_system->delete( $path, false, 'f' );
 	}
 
 	/**
@@ -104,8 +120,9 @@ class WpUploads implements Uploads {
 	 * host with the cap can produce the error it matches. When the match
 	 * fails, the plain write failure surfaces untouched.
 	 *
-	 * The error code is checked as well as the text, because `errors` is not
-	 * cleared between calls. Only the upload branch sets that code.
+	 * `errors` is never cleared and the file system is booted once per
+	 * request, so only the messages the write itself added are read: whatever
+	 * stood before it belongs to an earlier call.
 	 *
 	 * @link https://docs.wpvip.com/vip-file-system/media-uploads/
 	 *       The 2000-modification limit.
@@ -114,15 +131,44 @@ class WpUploads implements Uploads {
 	 * @link https://github.com/Automattic/vip-go-mu-plugins/blob/968d6196fe98dfd570e09a6271f34b2bb84d085e/files/class-wp-filesystem-vip.php#L243-L247
 	 *       `WP_Filesystem_VIP::copy()` leaving it on `errors`.
 	 *
+	 * @param \WP_Filesystem_Base $file_system File system the write went through.
+	 * @param int                 $refusals    Refusals already on it before the write.
 	 * @return bool True when the write was refused for exceeding the cap.
 	 */
-	private function is_write_cap_refusal(): bool {
-		$errors = FileSystem::boot()->errors;
+	private static function is_write_cap_refusal( $file_system, int $refusals ): bool {
+		$messages = array_slice( self::upload_refusals( $file_system ), $refusals );
 
-		if ( ! is_wp_error( $errors ) || 'upload_file-failed' !== $errors->get_error_code() ) {
-			return false;
+		foreach ( $messages as $message ) {
+			if ( 1 === preg_match( '/\(\s*response code:\s*405\s*\)/i', $message ) ) {
+				return true;
+			}
 		}
 
-		return 1 === preg_match( '/\(\s*response code:\s*405\s*\)/i', $errors->get_error_message() );
+		return false;
+	}
+
+	/**
+	 * How many upload failures stand before a write is attempted.
+	 *
+	 * @param \WP_Filesystem_Base $file_system File system to read.
+	 */
+	private static function count_upload_refusals( $file_system ): int {
+		return count( self::upload_refusals( $file_system ) );
+	}
+
+	/**
+	 * Every upload failure the file system has recorded this request, in order.
+	 *
+	 * @param \WP_Filesystem_Base $file_system File system to read.
+	 * @return array<int, string>
+	 */
+	private static function upload_refusals( $file_system ): array {
+		$errors = $file_system->errors;
+
+		if ( ! is_wp_error( $errors ) || ! isset( $errors->errors['upload_file-failed'] ) ) {
+			return array();
+		}
+
+		return $errors->errors['upload_file-failed'];
 	}
 }

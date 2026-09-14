@@ -249,7 +249,7 @@ class PostAPI {
 		/* abort any outstanding requests by updating the nonce */
 		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
 
-		$this->sweep_story_pulls( $bundle, $post_id, $request_nonce );
+		$this->sweep_story_pulls( $bundle, $request_nonce );
 
 		$this->set_story_update_error( $post_id );
 		$this->set_story_update_progress( $post_id, new StorySyncProgress( 0, 'Requesting story from Shorthand' ) );
@@ -405,6 +405,10 @@ class PostAPI {
 			return null;
 		}
 
+		if ( $args->stale_chunks > 0 ) {
+			$this->discard_legacy_chunks( $args );
+		}
+
 		$res = $this->check_file_url( $args );
 		if ( is_wp_error( $res ) ) {
 			return $res;
@@ -418,6 +422,22 @@ class PostAPI {
 		}
 
 		return $this->pull_story_chunk( $args );
+	}
+
+	/**
+	 * Clears the chunks of a download queued before the chunk rename.
+	 *
+	 * Those chunks sit at paths this release cannot resume from, so the task
+	 * restarts its download and they are removed once, here.
+	 */
+	private function discard_legacy_chunks( StoryUpdateTask $args ): void {
+		$bundle = $this->bundles->open( $args->post_id, $args->story_id );
+
+		if ( null !== $bundle ) {
+			$bundle->discard_legacy_download( $args->request_nonce, $args->stale_chunks );
+		}
+
+		$args->stale_chunks = 0;
 	}
 
 	/**
@@ -566,11 +586,12 @@ class PostAPI {
 	/**
 	 * Cleans up every pull except the one starting now.
 	 *
-	 * @param \Shorthand\Services\Files\Bundle $bundle  Bundle the pulls belong to.
-	 * @param int                              $post_id Post being published.
-	 * @param string                           $nonce   Request nonce of the pull starting now.
+	 * @param \Shorthand\Services\Files\Bundle $bundle Bundle the pulls belong to.
+	 * @param string                           $nonce  Request nonce of the pull starting now.
 	 */
-	private function sweep_story_pulls( Bundle $bundle, int $post_id, string $nonce ): void {
+	private function sweep_story_pulls( Bundle $bundle, string $nonce ): void {
+		$post_id = $bundle->post_id();
+
 		foreach ( $this->get_story_pulls( $post_id ) as $stale_nonce => $files ) {
 			if ( $stale_nonce === $nonce ) {
 				continue;
@@ -666,6 +687,9 @@ class PostAPI {
 		}
 
 		$this->store_story_content( absint( $post_id ), $bundle, $story );
+
+		/* Last, so that a failure above leaves the previous manifest in place. */
+		$bundle->commit( $story['manifest'] );
 
 		return null;
 	}

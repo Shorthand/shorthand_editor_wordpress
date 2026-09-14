@@ -155,6 +155,9 @@ function tests_wp_reset_state(): void {
 		),
 		'temp_dir'             => sys_get_temp_dir() . '/',
 		'copy_error'           => null,
+		'copy_failure'         => false,
+		'filesystem_available' => true,
+		'doing_it_wrong'       => array(),
 		'wp_rand_calls'        => 0,
 		'status_headers'       => array(),
 		'nocache_calls'        => 0,
@@ -169,6 +172,11 @@ function tests_wp_reset_state(): void {
 		'actions_done'         => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
+
+	/* `WP_Filesystem` is booted once per request, and one test is one request. */
+	if ( isset( $GLOBALS['wp_filesystem'] ) && is_a( $GLOBALS['wp_filesystem'], 'WP_Filesystem_Base' ) ) {
+		$GLOBALS['wp_filesystem']->errors = new WP_Error();
+	}
 }
 
 tests_wp_reset_state();
@@ -216,6 +224,21 @@ function tests_wp_remote_requests(): array {
 /**
  * @return array<int, array<string, string>>
  */
+/**
+ * @return array<int, array{function: string, message: string, version: string}>
+ */
+function tests_wp_doing_it_wrong(): array {
+	return $GLOBALS['tests_wp_state']['doing_it_wrong'];
+}
+
+function _doing_it_wrong( string $function_name, string $message, string $version ): void {
+	$GLOBALS['tests_wp_state']['doing_it_wrong'][] = array(
+		'function' => $function_name,
+		'message'  => $message,
+		'version'  => $version,
+	);
+}
+
 function tests_wp_settings_errors(): array {
 	return $GLOBALS['tests_wp_state']['settings_errors'];
 }
@@ -1318,6 +1341,11 @@ class Tests_WP_Filesystem extends WP_Filesystem_Base {
 			return false;
 		}
 
+		if ( $GLOBALS['tests_wp_state']['copy_failure'] ) {
+			/* A plain failure answers false and leaves `errors` as it found it. */
+			return false;
+		}
+
 		if ( ! $overwrite && file_exists( $destination ) ) {
 			return false;
 		}
@@ -1336,12 +1364,41 @@ function tests_wp_set_copy_error( ?string $code, string $message = '' ): void {
 	$GLOBALS['tests_wp_state']['copy_error'] = null === $code ? null : array( $code, $message );
 }
 
+/**
+ * Makes every `WP_Filesystem::copy()` fail without naming a reason.
+ *
+ * `errors` is left as it stands, which is how a failure after a named one
+ * leaves the earlier error in place.
+ *
+ * @param bool $fails Whether copying fails.
+ */
+function tests_wp_set_copy_failure( bool $fails = true ): void {
+	$GLOBALS['tests_wp_state']['copy_failure'] = $fails;
+}
+
 function WP_Filesystem(): bool {
+	if ( ! $GLOBALS['tests_wp_state']['filesystem_available'] ) {
+		/* A boot without credentials leaves the global unset and answers false. */
+		unset( $GLOBALS['wp_filesystem'] );
+
+		return false;
+	}
+
 	if ( ! isset( $GLOBALS['wp_filesystem'] ) || ! is_a( $GLOBALS['wp_filesystem'], 'WP_Filesystem_Base' ) ) {
 		$GLOBALS['wp_filesystem'] = new Tests_WP_Filesystem();
 	}
 
 	return true;
+}
+
+/**
+ * Whether `WP_Filesystem()` can boot at all.
+ *
+ * @param bool $available False to boot without credentials, as a locked-down
+ *                        host does.
+ */
+function tests_wp_set_filesystem_available( bool $available ): void {
+	$GLOBALS['tests_wp_state']['filesystem_available'] = $available;
 }
 
 function wp_raise_memory_limit( string $context = 'admin' ): bool {

@@ -18,11 +18,15 @@ use ZipArchive;
 class Archive {
 
 	/**
+	 * Open handle to the archive.
+	 *
 	 * @var \ZipArchive
 	 */
 	private $zip;
 
 	/**
+	 * Where the archive was assembled, for the error messages.
+	 *
 	 * @var string
 	 */
 	private $path;
@@ -42,6 +46,8 @@ class Archive {
 	private $documents;
 
 	/**
+	 * Built by `open()`, which has read the index already.
+	 *
 	 * @param \ZipArchive $zip      Open archive.
 	 * @param string      $path     Path the archive was opened from.
 	 * @param array       $manifest Index of the archive.
@@ -75,7 +81,15 @@ class Archive {
 			return $error;
 		}
 
-		return new Archive( $zip, $path, Manifest::from_archive( $zip ) );
+		$manifest = Manifest::from_archive( $zip );
+
+		if ( is_wp_error( $manifest ) ) {
+			$zip->close();
+
+			return $manifest;
+		}
+
+		return new Archive( $zip, $path, $manifest );
 	}
 
 	/**
@@ -134,6 +148,8 @@ class Archive {
 	}
 
 	/**
+	 * How a failure to open reads in an error message.
+	 *
 	 * @param int|bool $err Status `ZipArchive::open()` returned.
 	 */
 	private static function get_zip_error_message( $err ): string {

@@ -260,6 +260,33 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	}
 
 	/**
+	 * The host folds case, so the old name and the new one are one file there.
+	 * Pruning the old name would delete what the copy has just written.
+	 */
+	public function test_a_file_renamed_only_in_case_is_not_pruned(): void {
+		$this->publish(
+			'pull1',
+			array(
+				'article.html'           => 'article',
+				'assets/media/Photo.JPG' => 'binary',
+			)
+		);
+		$this->uploads->reset_counts();
+
+		$this->publish(
+			'pull2',
+			array(
+				'article.html'           => 'article',
+				'assets/media/photo.jpg' => 'binary',
+			)
+		);
+
+		/* Only the document of the previous publish. */
+		$this->assertSame( 1, $this->uploads->deletes() );
+		$this->assertContains( self::BUNDLE . '/assets/media/Photo.JPG', array_keys( $this->bundle_objects() ) );
+	}
+
+	/**
 	 * A bundle directory cannot be listed, so the manifest is the only record
 	 * of what to unlink.
 	 */
@@ -306,11 +333,86 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( $stored, get_post_meta( 7, 'story_manifest', true ) );
 	}
 
+	/**
+	 * A file written before the failure is an orphan unless the manifest names
+	 * it: `prune()` and `delete()` both work from the manifest and never list
+	 * the directory.
+	 */
+	public function test_a_failed_copy_records_the_files_it_wrote(): void {
+		$this->publish( 'pull1', array( 'article.html' => 'article' ) );
+
+		$this->uploads->fail_writes( new \WP_Error( 'file', 'Could not write the story file.' ), 1 );
+
+		$result = $this->publish(
+			'pull2',
+			array(
+				'article.html'           => 'article, edited',
+				'assets/media/photo.jpg' => 'binary',
+			)
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+
+		$names = array_keys( get_post_meta( 7, 'story_manifest', true ) );
+		sort( $names );
+
+		$this->assertSame( array( 'assets/media/photo.jpg', 'docs/pull1/article.html' ), $names );
+
+		$written = array_keys( $this->bundle_objects() );
+		sort( $written );
+
+		$this->assertSame(
+			array(
+				self::BUNDLE . '/assets/media/photo.jpg',
+				self::BUNDLE . '/docs/pull1/article.html',
+			),
+			$written
+		);
+	}
+
+	/**
+	 * The manifest is the record of what the bundle holds, so it is stored
+	 * once the documents are, not before.
+	 */
+	public function test_the_manifest_is_stored_after_the_documents(): void {
+		$this->publish(
+			'pull1',
+			array(
+				'article.html' => 'article',
+				'head.html'    => 'head',
+			)
+		);
+
+		$order = array();
+
+		foreach ( tests_wp_updated_post_meta() as $call ) {
+			if ( in_array( $call['meta_key'], array( 'story_head', 'story_body', 'story_manifest' ), true ) ) {
+				$order[] = $call['meta_key'];
+			}
+		}
+
+		$this->assertSame( array( 'story_head', 'story_body', 'story_manifest' ), $order );
+	}
+
 	public function test_an_unusable_story_id_reaches_no_uploads_call(): void {
 		$result = $this->make_post_api()->publish_story_bundle( 7, '../../etc', 'pull1', 1 );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertContains( 'story_id', $result->get_error_codes() );
+		$this->assertSame( 0, $this->uploads->writes() );
+		$this->assertSame( 0, $this->uploads->make_dir_calls() );
+	}
+
+	/**
+	 * PLA-2720. An entry name is a path segment of the bundle, and the archive
+	 * comes from outside, so a name that escapes ends the publish before a
+	 * directory is created for it.
+	 */
+	public function test_an_archive_entry_that_escapes_the_bundle_publishes_nothing(): void {
+		$result = $this->publish( 'pull1', array( 'x/../../escaped.txt' => 'payload' ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( array(), $this->bundle_objects() );
 		$this->assertSame( 0, $this->uploads->writes() );
 		$this->assertSame( 0, $this->uploads->make_dir_calls() );
 	}

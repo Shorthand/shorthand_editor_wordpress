@@ -18,11 +18,15 @@ use Shorthand\Services\StoryId;
 class BundleStore {
 
 	/**
+	 * Uploads directory every bundle this store opens is written to.
+	 *
 	 * @var \Shorthand\Services\Files\Uploads
 	 */
 	private $uploads;
 
 	/**
+	 * Nothing is read or written here; the store only hands out bundles.
+	 *
 	 * @param \Shorthand\Services\Files\Uploads $uploads Uploads directory of this site.
 	 */
 	public function __construct( Uploads $uploads ) {

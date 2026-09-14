@@ -37,13 +37,16 @@ final class FakeUploads implements Uploads {
 	/** @var \WP_Error|null */
 	private $write_error = null;
 
+	/** @var int */
+	private $writes_before_error = 0;
+
 	/**
 	 * @return bool|\WP_Error
 	 */
 	public function write( string $source_path, string $dest_path ) {
 		++$this->writes;
 
-		if ( null !== $this->write_error ) {
+		if ( null !== $this->write_error && $this->writes > $this->writes_before_error ) {
 			return $this->write_error;
 		}
 
@@ -90,12 +93,14 @@ final class FakeUploads implements Uploads {
 	}
 
 	/**
-	 * Makes every later write fail the way a host that refuses one does.
+	 * Makes later writes fail the way a host that refuses one does.
 	 *
 	 * @param \WP_Error $error Error to answer with.
+	 * @param int       $after Writes to let through first, for a part-written bundle.
 	 */
-	public function fail_writes( \WP_Error $error ): void {
-		$this->write_error = $error;
+	public function fail_writes( \WP_Error $error, int $after = 0 ): void {
+		$this->write_error         = $error;
+		$this->writes_before_error = $this->writes + $after;
 	}
 
 	/**
