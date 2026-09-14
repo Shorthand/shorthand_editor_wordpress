@@ -141,6 +141,10 @@ class AuthStateManager {
 				'pending_upgrade' => false,
 			)
 		);
+
+		if ( $option['state'] !== $state ) {
+			do_action( 'shorthand_auth_state_changed', $state, $option['state'] );
+		}
 	}
 
 	/**

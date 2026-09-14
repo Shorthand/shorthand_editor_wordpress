@@ -24,12 +24,18 @@ class StorySyncState {
 	private $progress;
 
 	/**
+	 * @var string|null
+	 */
+	private $pending_title;
+
+	/**
 	 * @param array<int, array<string, mixed>>|null $publishing_error
 	 */
-	public function __construct( ?int $live_version, ?array $publishing_error, ?StorySyncProgress $progress ) {
+	public function __construct( ?int $live_version, ?array $publishing_error, ?StorySyncProgress $progress, ?string $pending_title = null ) {
 		$this->live_version     = $live_version;
 		$this->publishing_error = $publishing_error;
 		$this->progress         = $progress;
+		$this->pending_title    = $pending_title;
 	}
 
 	/**
@@ -42,6 +48,10 @@ class StorySyncState {
 			),
 			'liveVersion' => $this->live_version,
 		);
+
+		if ( null !== $this->pending_title ) {
+			$state['pendingTitle'] = $this->pending_title;
+		}
 
 		if ( null !== $this->progress ) {
 			$state['progress'] = $this->progress->to_array();
