@@ -12,6 +12,7 @@ use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\ConnectionFailureClassifier;
 use Shorthand\Services\Files\BundleStore;
+use Shorthand\Services\Files\Uploads;
 use Shorthand\Services\Files\WpUploads;
 use Shorthand\Services\LivePreview;
 use Shorthand\Services\Options;
@@ -178,7 +179,24 @@ class Dependencies {
 	public function get_post_api(): PostAPI {
 		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), new BundleStore( new WpUploads() ), new StoryTextExtractor() );
+			$default_uploads = new WpUploads();
+
+			/**
+			 * Filters the uploads directory the story publish pipeline writes through.
+			 *
+			 * A sidecar plugin returns a decorator to redirect, mirror, or annotate every
+			 * write, read and delete. The four methods of the interface are the whole
+			 * surface: nothing else in the plugin touches uploads.
+			 *
+			 * @param \Shorthand\Services\Files\Uploads $uploads The default implementation.
+			 */
+			$uploads = apply_filters( 'theshed_uploads', $default_uploads );
+
+			if ( ! ( $uploads instanceof Uploads ) ) {
+				$uploads = $default_uploads;
+			}
+
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), new BundleStore( $uploads ), new StoryTextExtractor() );
 		}
 		return $this->post_api;
 	}

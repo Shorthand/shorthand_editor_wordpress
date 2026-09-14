@@ -38,6 +38,20 @@ abstract class WordPressTestCase extends TestCase {
 	}
 
 	/**
+	 * @return mixed
+	 */
+	protected function getPrivateProperty( object $object, string $property_name ) {
+		$reflection = new ReflectionClass( $object );
+		$property   = $reflection->getProperty( $property_name );
+
+		if ( method_exists( $property, 'setAccessible' ) ) {
+			$property->setAccessible( true );
+		}
+
+		return $property->getValue( $object );
+	}
+
+	/**
 	 * @param array<int, mixed> $arguments
 	 * @return mixed
 	 */

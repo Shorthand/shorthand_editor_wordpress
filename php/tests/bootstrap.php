@@ -1139,6 +1139,13 @@ function esc_attr( string $text ): string {
 function apply_filters( string $hook_name, $value, ...$args ) {
 	$GLOBALS['tests_wp_state']['filter_args'][ $hook_name ][] = $args;
 
+	foreach ( tests_wp_hook_callbacks_in_order( $hook_name ) as $registration ) {
+		$value = call_user_func_array(
+			$registration['callback'],
+			array_slice( array_merge( array( $value ), $args ), 0, $registration['accepted_args'] )
+		);
+	}
+
 	return $value;
 }
 
