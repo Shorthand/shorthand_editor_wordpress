@@ -151,28 +151,31 @@ incomplete and the manifest naming a file that was never written.
 ## Sidecar plugins
 
 WP Stateless support is not in this plugin and will not be. A sidecar plugin
-mirrors the bundle wherever it needs to, driven by four actions and one filter.
+redirects, mirrors, or annotates uploads by decorating the `Uploads`
+interface, not by hooking individual operations. The coupling is three named
+things; nothing else crosses the boundary.
 
-| Hook | Fires |
-| --- | --- |
-| `theshed_story_file_written( $path, $name, $post_id )` | Per file written into the bundle |
-| `theshed_story_file_deleted( $path, $name, $post_id )` | Per file removed from the bundle |
-| `theshed_story_bundle_published( $manifest, $path, $post_id, $story_id )` | Once per publish, after the copy, before the markup is stored |
-| `theshed_story_bundle_deleted( $path, $post_id, $story_id )` | Once, after a bundle is removed |
-| `theshed_get_story_url( $url )` | Filters the URL the bundle is served from |
+| Item | Owner | Shape |
+| --- | --- | --- |
+| `Shorthand\Services\Files\Uploads` | This plugin | Interface, four methods. Public from 1.0.10: a change to a signature is a breaking change to the sidecar and needs a major version note here |
+| `theshed_uploads` | This plugin | Filter, applied once in `Dependencies::get_post_api()`. Receives the default `WpUploads`; must return an `Uploads` |
+| `theshed_get_story_url` | This plugin | Filter, already applied in `Bundle::url()`. Receives the local bundle URL; returns the URL a browser should use |
 
-Two properties a sidecar can rely on.
+`theshed_uploads` covers every operation `Uploads` exposes, including download
+chunks: `Bundle::chunk_path()` puts them in uploads because they span WP Cron
+requests, and `Staging::gather()` reads them back through
+`Uploads::read_into()`. A decorator sees both; a hook on story files alone
+would not.
 
-A skipped file does not fire `theshed_story_file_written`. The copy is a diff
-against the last publish, so a skipped file is already in uploads, unchanged.
-A sidecar that mirrors on the file hook alone stays correct across republishes;
-one that needs the whole bundle takes it from
-`theshed_story_bundle_published`, whose first argument is the complete
-manifest.
+Rules that follow:
 
-Chunk writes announce nothing. A `.part` file is a fragment of a ZIP, is read
-back within the same publish, and is deleted when the publish ends. Mirroring
-one would move bytes twice for no reader.
+- This plugin never names a sidecar, a specific host, or a storage vendor.
+  `Shorthand\Tests\Services\FilesTest::test_no_service_names_a_vendor` asserts
+  this by scanning the source.
+- A sidecar learns the local uploads prefix from `wp_upload_dir()`, not from
+  this plugin. Paths cross the boundary as absolute strings and nothing else.
+- Either plugin may be absent. This plugin without a sidecar writes wherever
+  `wp_upload_dir()` points.
 
 ## Object store constraints
 

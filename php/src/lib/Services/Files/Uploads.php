@@ -24,7 +24,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - `make_dir()` may do nothing at all. An object store has no directories;
  *   the slashes in a key only imply them.
  *
+ * This is also a public contract: a sidecar plugin returns its own
+ * implementation from the `theshed_uploads` filter to redirect, mirror, or
+ * annotate every write, read and delete.
+ *
  * See `docs/services/file-system.md`.
+ *
+ * @since 1.0.10
  */
 interface Uploads {
 

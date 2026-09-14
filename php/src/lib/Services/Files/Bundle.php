@@ -156,15 +156,6 @@ class Bundle {
 		$this->prune( $this->manifest() );
 
 		delete_post_meta( $this->post_id, self::MANIFEST_META );
-
-		/**
-		 * Fires once a story's files have been removed from uploads.
-		 *
-		 * @param string $path     Bundle directory.
-		 * @param int    $post_id  Post the bundle belonged to.
-		 * @param string $story_id Shorthand story ID.
-		 */
-		do_action( 'theshed_story_bundle_deleted', $this->path(), $this->post_id, $this->story_id );
 	}
 
 	/**
@@ -217,20 +208,6 @@ class Bundle {
 		}
 
 		$this->prune( Manifest::removed( $stored, $copied ) );
-
-		/**
-		 * Fires once a story's files are in uploads, before its markup is stored.
-		 *
-		 * A sidecar plugin mirroring uploads elsewhere has the whole bundle
-		 * here, and each written file individually through
-		 * `theshed_story_file_written`.
-		 *
-		 * @param array  $manifest Every file the bundle now holds, to size and CRC32.
-		 * @param string $path     Bundle directory.
-		 * @param int    $post_id  Post the bundle belongs to.
-		 * @param string $story_id Shorthand story ID.
-		 */
-		do_action( 'theshed_story_bundle_published', $copied, $this->path(), $this->post_id, $this->story_id );
 
 		$documents_path = '' === $documents_dir ? $this->path() : $this->path() . '/' . $documents_dir;
 
@@ -288,18 +265,6 @@ class Bundle {
 			}
 
 			$written[ $name ] = $entry;
-
-			/**
-			 * Fires for each story file written into uploads.
-			 *
-			 * Skipped files do not fire: the copy is a diff against the last
-			 * publish, and what it skips is already there unchanged.
-			 *
-			 * @param string $path    Absolute path in uploads.
-			 * @param string $name    Path relative to the bundle directory.
-			 * @param int    $post_id Post the bundle belongs to.
-			 */
-			do_action( 'theshed_story_file_written', $dest_path, $name, $this->post_id );
 		}
 
 		return self::without_sources( $manifest );
@@ -331,18 +296,7 @@ class Bundle {
 		foreach ( array_keys( $manifest ) as $name ) {
 			$path = $bundle_path . '/' . $name;
 
-			if ( ! $this->uploads->delete( $path ) ) {
-				continue;
-			}
-
-			/**
-			 * Fires for each story file removed from uploads.
-			 *
-			 * @param string $path    Absolute path in uploads.
-			 * @param string $name    Path relative to the bundle directory.
-			 * @param int    $post_id Post the bundle belongs to.
-			 */
-			do_action( 'theshed_story_file_deleted', $path, $name, $this->post_id );
+			$this->uploads->delete( $path );
 		}
 	}
 

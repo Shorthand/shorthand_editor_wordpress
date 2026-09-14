@@ -13,11 +13,14 @@ use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Cron;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
+use Shorthand\Services\Files\Uploads;
+use Shorthand\Services\Files\WpUploads;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\TokenManager;
 use Shorthand\Services\WordPressContextProvider;
+use Shorthand\Tests\Support\FakeUploads;
 use Shorthand\Tests\WordPressTestCase;
 
 final class DependenciesTest extends WordPressTestCase {
@@ -48,6 +51,40 @@ final class DependenciesTest extends WordPressTestCase {
 		$this->assertTrue( $dependencies->test_post_type->init_called );
 		$this->assertTrue( $dependencies->test_templates->init_called );
 		$this->assertTrue( $dependencies->test_cron->init_called );
+	}
+
+	public function test_get_post_api_passes_a_theshed_uploads_filter_result_to_the_bundle_store(): void {
+		$decorator = new FakeUploads();
+
+		add_filter(
+			'theshed_uploads',
+			static function () use ( $decorator ): Uploads {
+				return $decorator;
+			}
+		);
+
+		$post_api = ( new TestDependencies() )->get_post_api();
+
+		$bundles = $this->getPrivateProperty( $post_api, 'bundles' );
+		$uploads = $this->getPrivateProperty( $bundles, 'uploads' );
+
+		$this->assertSame( $decorator, $uploads );
+	}
+
+	public function test_get_post_api_falls_back_to_wp_uploads_when_the_filter_returns_a_non_uploads_value(): void {
+		add_filter(
+			'theshed_uploads',
+			static function () {
+				return 'not an uploads implementation';
+			}
+		);
+
+		$post_api = ( new TestDependencies() )->get_post_api();
+
+		$bundles = $this->getPrivateProperty( $post_api, 'bundles' );
+		$uploads = $this->getPrivateProperty( $bundles, 'uploads' );
+
+		$this->assertInstanceOf( WpUploads::class, $uploads );
 	}
 }
 
