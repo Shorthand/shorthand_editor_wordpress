@@ -8,3 +8,8 @@ data/
 node_modules/
 .DS_Store
 /.codex
+.wp-env.override.json
+.wp-env.*.override.json
+php/tests/integration/vendor/
+php/tests/integration/.phpunit.result.cache
+.cache-keys/

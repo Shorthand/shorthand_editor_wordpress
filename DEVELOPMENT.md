@@ -89,12 +89,7 @@ compatibility rules for the lower language version.
 composer run-script check-7.2
 ```
 
-For the PHP unit tests, run the following command from within the `php`
-directory.
-
-```bash
-composer test
-```
+The PHP test suites are covered in [PHP tests](#php-tests).
 
 #### Third-party dependencies
 
@@ -116,18 +111,29 @@ pinned, and are distributed as a part of the plugin under their declared license
 
 ### Local development
 
-The top-level `docker-compose.yml` file brings up a local WordPress stack at
-`http://localhost:4577/wordpress`.
+The local WordPress site runs in [wp-env](https://github.com/WordPress/gutenberg/tree/trunk/packages/env),
+which needs Docker. `.wp-env.json` describes the site: the latest WordPress
+release on PHP 8.3, with the plugin mounted from `php/src` and `public`.
 
 ```bash
+pnpm install
 pnpm build
-
-docker compose up
+pnpm env
 ```
 
-Interoperation with Shorthand requires SSL, so the container should be proxied,
-although this is not set up in this repository. The home and site URLs set up by
-the container assume the proxy is at `https://localhost:9443/wordpress`.
+The site is served at `http://localhost:8888`. Sign in as `admin` with the
+password `password`. The first start activates the plugin and sets pretty
+permalinks (`bin/wp-env-seed.sh`).
+
+```bash
+pnpm env:xdebug                       # start with Xdebug listening on port 9003
+pnpm env:stop                         # stop the containers, keep the database
+pnpm env:cleanup                      # remove the containers and the database
+pnpm wp-env run cli wp plugin list    # run WP-CLI inside the site
+pnpm wp-env run cli bash              # open a shell inside the site
+```
+
+`.vscode/launch.json` has the matching Xdebug configuration, `wp-env (Xdebug)`.
 
 To generate the `meta.json` file, run
 
@@ -135,8 +141,150 @@ To generate the `meta.json` file, run
 METAFILE=1 pnpm build
 ```
 
-The `docker-compose.yml` file also contains a profile with an older combination
-of WordPress and PHP, `wp60_php72`. This opens up a WordPress instance on port 4578.
+#### Shorthand stack
+
+The site points the plugin at a local Shorthand dev server (`dylan`) on
+`https://localhost:9443`, through these constants in `.wp-env.json`:
+
+| Constant                               | Effect                                                                                    |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `THESHED_API_URL`, `THESHED_APP_URL`   | Where the plugin finds the Shorthand API and app.                                         |
+| `THESHED_NO_SSL_VERIFY`                | The plugin accepts the self-signed certificate of a local API.                            |
+| `THESHED_FIX_CRON_URL`                 | Cron requests to `https://localhost` go to `host.docker.internal` instead, so they reach the host. |
+| `THESHED_BLOCK_UPGRADE`                | WordPress cannot replace the mounted plugin with a released version.                      |
+
+The API URL uses `host.docker.internal` because PHP calls it from inside
+Docker. The app URL is opened by the browser, so it uses `localhost`. A remote
+dev stack is reached the same way from both, so both URLs take its hostname.
+
+#### Per-developer settings
+
+Values that should not be committed go in `.wp-env.override.json`, which git
+ignores. `.wp-env.override.json.example` shows the shape. The `config` and
+`mappings` keys merge into `.wp-env.json`; any other key replaces it. Typical
+uses:
+
+- `THESHED_API_URL` and `THESHED_APP_URL`, to use a remote Shorthand dev stack
+  instead of `dylan`.
+- `port`, so that several checkouts run at the same time. Each config file
+  gets its own wp-env instance, so checkouts do not share a database.
+  `WP_ENV_PORT=8890 pnpm env` does the same for one run.
+- Extra plugins mounted side by side, keyed by plugin slug under `mappings`.
+  Do not use the `plugins` key: it names a plugin after its source directory,
+  and would install `php/src` as `src`.
+
+#### WordPress and PHP versions
+
+Two environment variables override the versions in `.wp-env.json`. Pass
+`--update` so that wp-env downloads the new core. Run the cleanup first when
+moving to an older core, because WordPress does not downgrade its database
+schema.
+
+```bash
+pnpm env:cleanup
+WP_ENV_CORE=https://wordpress.org/wordpress-6.0.11.zip WP_ENV_PHP_VERSION=7.4 pnpm env --update
+```
+
+#### HTTPS
+
+The Shorthand editor only talks to a site over HTTPS, and wp-env serves plain
+HTTP. Either of these puts a TLS proxy in front of it:
+
+1. Caddy, with a certificate from `mkcert`. It listens on 8443, because 443 is
+   often taken by other local proxies; `PROXY_PORT` changes it.
+
+   ```bash
+   mkcert -install
+   mkcert -cert-file docker/proxy/certs/local.pem -key-file docker/proxy/certs/local-key.pem localhost wordpress.local "*.localhost"
+   WP_PORT=8888 docker compose -f docker/proxy/compose.yml up -d
+   ```
+
+   Then browse `https://localhost:8443`. This origin is same-site with a
+   `dylan` on `https://localhost:9443`. To test the cross-site case, browse
+   `https://wordpress.local:8443` (with `127.0.0.1 wordpress.local` in
+   `/etc/hosts`) or any `*.localhost` name, which needs no hosts entry.
+2. The `PROXY_LOCAL` route of `dylan`, which forwards a path on its own
+   origin: `PROXY_LOCAL=/wordpress:8888:/ pnpm local`, then browse
+   `https://localhost:9443/wordpress`.
+
+The must-use plugin `docker/mu-plugins/local-proxy.php` makes WordPress serve
+the proxied origin: it marks forwarded requests as HTTPS and takes the site
+and home URLs from the forwarded host and prefix. Leave `WP_HOME` and
+`WP_SITEURL` unset. wp-env rewrites the port of `WP_SITEURL` to its own, so
+setting them sends `wp-admin` back to plain HTTP.
+
+#### PHP tests
+
+There are two suites. Both run in CI on every branch: the unit suite in the
+`wp-plugin-php-unit` job, the integration suite in `wp-plugin-php-integration`.
+
+Unit tests live in `php/tests` and run on the host, with no Docker, against
+the WordPress stubs in `php/tests/bootstrap.php`:
+
+```bash
+pnpm test:php          # or: composer test, from php/
+```
+
+Integration tests live in `php/tests/integration` and run inside a second
+wp-env instance, `.wp-env.test.json` on port 8889, on top of the WordPress core
+test library. Tests extend `WP_UnitTestCase` and get a real database. The
+instance is separate because the core library resets that database on every
+run. PHPUnit is installed on the host and run in the container:
+
+```bash
+composer install -d php/tests/integration
+pnpm env:test
+pnpm test:php:integration
+```
+
+`pnpm test:php:matrix` runs the integration suite against each WordPress/PHP
+pair listed in `bin/wp-matrix.sh`, starting and removing the test instance for
+each. `MATRIX="6.0.11:7.4" pnpm test:php:matrix` picks other pairs.
+
+##### Integration suite in CI
+
+`wp-plugin-php-integration` in `.circleci/prod-config.yml` runs the same three
+commands on a `machine` executor. Every machine job is a new VM, so the job
+restores three caches before `pnpm env:test`:
+
+| Cache | Path | Key inputs |
+| --- | --- | --- |
+| wp-env instance | `~/.wp-env` | `.wp-env.test.json`, `@wordpress/env` version, latest WordPress release |
+| Docker images | `~/docker-cache/wp-env-images.tar` | same as the instance |
+| Composer vendor | `php/tests/integration/vendor` | `php/tests/integration/composer.lock` |
+
+The instance cache holds WordPress core, the core test library,
+`wp-tests-config.php` and wp-env's config checksum. When the checksum matches,
+`wp-env start` skips image pulls, image builds, downloads and the WordPress
+install. The image tarball holds the two images wp-env builds and
+`mariadb:lts`, loaded with `docker load` so Compose does not rebuild them. The
+database volume is new on every run; the core test library creates its own
+tables. The latest-release key comes from `api.wordpress.org`, written to
+`.cache-keys/wp-latest` (ignored by git), so a WordPress release invalidates
+both caches instead of running against stale core.
+
+The job is not required by `wp-plugin-bundle-and-upload`. A failure shows on
+the pipeline but does not block the master upload.
+
+#### Troubleshooting
+
+- **The plugin's admin pages have no scripts or styles.** `public/scripts` is
+  missing. Run `pnpm build`. The seed script prints this warning on start.
+- **`wp-admin` redirects from HTTPS to HTTP.** `WP_HOME` or `WP_SITEURL` is set
+  in an override file. Remove it and let `local-proxy.php` derive the URLs.
+- **The browser rejects the certificate on 8443.** Run `mkcert -install`, then
+  generate the certificate again.
+- **The plugin cannot connect to a remote dev stack.** `THESHED_API_URL` still
+  points at `host.docker.internal`. Set both URLs in the override file.
+- **Database errors after changing `WP_ENV_CORE`.** The database was created by
+  a newer WordPress. Run `pnpm env:cleanup` and start again.
+- **`WP_TESTS_DIR is not set`.** The integration suite was run on the host.
+  Use `pnpm test:php:integration`.
+- **`Missing vendor/`.** Run `composer install -d php/tests/integration`.
+- **Port 8888 is in use.** Another checkout is running. Set `port` in the
+  override file, or `WP_ENV_PORT`.
+- **Xdebug does not stop at breakpoints.** Start with `pnpm env:xdebug`; a
+  plain `pnpm env` starts without it.
 
 ### Distribution
 

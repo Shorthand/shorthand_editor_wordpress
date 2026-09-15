@@ -1,0 +1,4 @@
+localhost, wordpress.local, *.wp.local, *.localhost {
+	tls /certs/local.pem /certs/local-key.pem
+	reverse_proxy host.docker.internal:{$WP_PORT}
+}

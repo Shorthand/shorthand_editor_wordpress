@@ -5,6 +5,14 @@
     "clean": "rm -rf ./build/@shorthand/wordpress-plugin ./dist ./php/vendor ./public/scripts ./node_modules",
     "build": "./node_modules/.bin/tsc && NODE_PATH=./build node ./build.js",
     "bundle": "./bin/bundle.sh",
+    "env": "wp-env start",
+    "env:xdebug": "wp-env start --xdebug",
+    "env:stop": "wp-env stop",
+    "env:cleanup": "wp-env cleanup",
+    "env:test": "wp-env start --config .wp-env.test.json",
+    "test:php": "composer -d php test",
+    "test:php:integration": "wp-env run --config .wp-env.test.json cli --env-cwd=wp-content/s4w-tests vendor/bin/phpunit",
+    "test:php:matrix": "./bin/wp-matrix.sh",
     "tag:release": "sh -c 'tag=$(grep -m1 \"\\\"version\\\"\" deploy/update.json | awk -F\"\\\"\" \"{print \\$4; exit}\" | tr -d \"\\r\\n[:space:]\"); test -n \"$tag\" || { echo \"Unable to read version from deploy/update.json\"; exit 1; }; git tag -a \"$tag\" -m \"Release $tag\" && git push origin \"$tag\"'"
   },
   "dependencies": {
@@ -20,6 +28,7 @@
     "@types/node": "20.19.6",
     "@types/react": "18.2.55",
     "@types/react-dom": "18.2.17",
+    "@wordpress/env": "11.15.0",
     "esbuild": "^0.25.5",
     "esbuild-plugin-copy-licenses": "0.1.0",
     "esbuild-sass-plugin": "^2.16.1",
