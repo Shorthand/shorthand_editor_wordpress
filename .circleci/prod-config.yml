@@ -328,7 +328,9 @@ jobs:
             echo 'export NVM_DIR="$HOME/.nvm"' >> "$BASH_ENV"
             echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> "$BASH_ENV"
             echo "export PATH=\"$NODE_BIN_DIR:\$PATH\"" >> "$BASH_ENV"
-            npm install -g pnpm@9
+            # pnpm-lock.yaml is written by pnpm 10; pnpm 9 rejects its
+            # patchedDependencies entry under --frozen-lockfile.
+            npm install -g pnpm@10
             pnpm --version
       - run:
           # Cache keys need files in the working directory. The latest
