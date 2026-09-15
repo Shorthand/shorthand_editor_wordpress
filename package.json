@@ -5,7 +5,7 @@
     "clean": "rm -rf ./build/@shorthand/wordpress-plugin ./dist ./php/vendor ./public/scripts ./node_modules",
     "build": "./node_modules/.bin/tsc && NODE_PATH=./build node ./build.js",
     "bundle": "./bin/bundle.sh",
-    "env": "wp-env start",
+    "env:start": "wp-env start",
     "env:xdebug": "wp-env start --xdebug",
     "env:stop": "wp-env stop",
     "env:cleanup": "wp-env cleanup",

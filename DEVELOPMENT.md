@@ -118,7 +118,7 @@ release on PHP 8.3, with the plugin mounted from `php/src` and `public`.
 ```bash
 pnpm install
 pnpm build
-pnpm env
+pnpm env:start
 ```
 
 The site is served at `http://localhost:8888`. Sign in as `admin` with the
@@ -168,7 +168,7 @@ uses:
   instead of `dylan`.
 - `port`, so that several checkouts run at the same time. Each config file
   gets its own wp-env instance, so checkouts do not share a database.
-  `WP_ENV_PORT=8890 pnpm env` does the same for one run.
+  `WP_ENV_PORT=8890 pnpm env:start` does the same for one run.
 - Extra plugins mounted side by side, keyed by plugin slug under `mappings`.
   Do not use the `plugins` key: it names a plugin after its source directory,
   and would install `php/src` as `src`.
@@ -182,7 +182,7 @@ schema.
 
 ```bash
 pnpm env:cleanup
-WP_ENV_CORE=https://wordpress.org/wordpress-6.0.11.zip WP_ENV_PHP_VERSION=7.4 pnpm env --update
+WP_ENV_CORE=https://wordpress.org/wordpress-6.0.11.zip WP_ENV_PHP_VERSION=7.4 pnpm env:start --update
 ```
 
 #### HTTPS
@@ -284,7 +284,7 @@ the pipeline but does not block the master upload.
 - **Port 8888 is in use.** Another checkout is running. Set `port` in the
   override file, or `WP_ENV_PORT`.
 - **Xdebug does not stop at breakpoints.** Start with `pnpm env:xdebug`; a
-  plain `pnpm env` starts without it.
+  plain `pnpm env:start` starts without it.
 
 ### Distribution
 
