@@ -284,6 +284,144 @@ commands:
       - run: sudo ./aws/install --update
 
 jobs:
+  wp-plugin-php-unit:
+    docker:
+      # composer.lock resolves symfony/string 8.x, which needs PHP 8.4.
+      - image: cimg/php:8.4
+        auth:
+          username: $DOCKERHUB_USER
+          password: $DOCKERHUB_PASSWORD
+    resource_class: small
+    steps:
+      - checkout:
+          method: blobless
+      - run:
+          name: Install PHP dev dependencies
+          command: composer -d php install --no-interaction --no-scripts --prefer-dist
+      - run:
+          name: Run PHP unit tests
+          command: composer -d php test
+
+  # Integration suite inside wp-env on a machine executor. Each machine job is
+  # a fresh VM, so the wp-env instance (~/.wp-env: WordPress core, the core test
+  # library, wp-tests-config.php, the config checksum) and the Docker images
+  # wp-env builds are restored from cache. With both present, `wp-env start`
+  # sees an unchanged config checksum and skips pull, build, download and
+  # install; only the MariaDB volume is new, and the core test library installs
+  # its own tables on each run.
+  wp-plugin-php-integration:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: medium
+    steps:
+      - checkout:
+          method: blobless
+      - run:
+          # Each step is a new shell that reads BASH_ENV, not the nvm profile.
+          name: Install Node and pnpm
+          command: |
+            export NVM_DIR="$HOME/.nvm"
+            nvm install 20
+            nvm use 20
+            nvm alias default 20
+            NODE_BIN_DIR=$(dirname "$(nvm which 20)")
+            echo 'export NVM_DIR="$HOME/.nvm"' >> "$BASH_ENV"
+            echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> "$BASH_ENV"
+            echo "export PATH=\"$NODE_BIN_DIR:\$PATH\"" >> "$BASH_ENV"
+            # pnpm-lock.yaml is written by pnpm 10; pnpm 9 rejects its
+            # patchedDependencies entry under --frozen-lockfile.
+            npm install -g pnpm@10
+            pnpm --version
+      - run:
+          # Cache keys need files in the working directory. The latest
+          # WordPress release drives `"core": null`, so a new release invalidates
+          # the instance and image caches instead of running against stale core.
+          name: Write cache keys
+          command: |
+            mkdir -p .cache-keys
+            curl -fsS https://api.wordpress.org/core/version-check/1.7/ \
+              | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).offers[0].version))' \
+              > .cache-keys/wp-latest
+            node -p "require('./package.json').devDependencies['@wordpress/env']" > .cache-keys/wp-env-version
+            cat .cache-keys/*
+      - restore_cache:
+          keys:
+            - wp-plugin-pnpm-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+            - wp-plugin-pnpm-v1-{{ arch }}-
+      - run:
+          name: Install Node dependencies
+          command: pnpm install --frozen-lockfile --store-dir ~/.pnpm-store
+      - save_cache:
+          key: wp-plugin-pnpm-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.pnpm-store
+      - restore_cache:
+          keys:
+            - wp-env-home-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+      - restore_cache:
+          keys:
+            - wp-env-images-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+      - restore_cache:
+          keys:
+            - wp-plugin-integration-vendor-v1-{{ checksum "php/tests/integration/composer.lock" }}
+      - run:
+          name: Load cached Docker images
+          command: |
+            if [[ -f ~/docker-cache/wp-env-images.tar ]]; then
+              docker load -i ~/docker-cache/wp-env-images.tar
+            else
+              echo "No image cache; wp-env will pull and build."
+            fi
+      - run:
+          # Authenticated pulls avoid the Docker Hub anonymous rate limit on a
+          # cache miss.
+          name: Log in to Docker Hub
+          command: |
+            if [[ -n "${DOCKERHUB_USER:-}" && -n "${DOCKERHUB_PASSWORD:-}" ]]; then
+              echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
+            else
+              echo "DOCKERHUB_USER/DOCKERHUB_PASSWORD not set; pulling anonymously."
+            fi
+      - run:
+          name: Start wp-env test instance
+          command: pnpm env:test
+      - run:
+          name: Save Docker images for cache
+          command: |
+            if [[ -f ~/docker-cache/wp-env-images.tar ]]; then
+              echo "Image tarball restored from cache; not rebuilding it."
+              exit 0
+            fi
+            mkdir -p ~/docker-cache
+            IMAGES="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(wp-env-.*|mariadb:lts)$')"
+            echo "$IMAGES"
+            # shellcheck disable=SC2086
+            docker save -o ~/docker-cache/wp-env-images.tar $IMAGES
+            ls -lh ~/docker-cache/wp-env-images.tar
+      - save_cache:
+          key: wp-env-home-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+          paths:
+            - ~/.wp-env
+      - save_cache:
+          key: wp-env-images-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+          paths:
+            - ~/docker-cache
+      - run:
+          # Composer runs in the cli container so the host needs no PHP. The
+          # lock file pins platform PHP 7.4, the oldest version in the matrix.
+          name: Install integration suite dependencies
+          command: |
+            pnpm wp-env run --config .wp-env.test.json cli \
+              --env-cwd=wp-content/s4w-tests \
+              composer install --no-interaction --no-progress --prefer-dist
+      - save_cache:
+          key: wp-plugin-integration-vendor-v1-{{ checksum "php/tests/integration/composer.lock" }}
+          paths:
+            - php/tests/integration/vendor
+      - run:
+          name: Run PHP integration tests
+          command: pnpm test:php:integration
+
   wp-plugin-build:
     docker:
       - image: &node_docker_image cimg/node:20.12
@@ -388,6 +526,8 @@ workflows:
       not:
         equal: [scheduled_pipeline, << pipeline.trigger_source >>]
     jobs:
+      - wp-plugin-php-unit
+      - wp-plugin-php-integration
       - wp-plugin-build:
           filters:
             branches:

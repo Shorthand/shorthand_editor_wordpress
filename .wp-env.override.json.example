@@ -1,0 +1,10 @@
+{
+	"port": 8890,
+	"config": {
+		"THESHED_API_URL": "https://test-pla-0000-example-api.dev.shorthand.com",
+		"THESHED_APP_URL": "https://test-pla-0000-example.dev.shorthand.com"
+	},
+	"mappings": {
+		"wp-content/plugins/the-shorthand-editor-stateless-support": "../shorthand_editor_wordpress_stateless"
+	}
+}
