@@ -20,13 +20,40 @@ final class StoryKsesInlineCssTest extends WordPressTestCase {
 
 	public function test_it_keeps_author_css_from_closing_the_style_element(): void {
 		$this->assertSame(
-			'body {} style><script>alert(1)</script>',
+			'body {} <\\/style><script>alert(1)</script>',
 			StoryKses::sanitize_inline_css( 'body {} </style><script>alert(1)</script>' )
 		);
 	}
 
-	public function test_it_catches_a_mixed_case_closing_tag(): void {
-		$this->assertSame( 'STYLE>', StoryKses::sanitize_inline_css( '</STYLE>' ) );
+	/**
+	 * A closing tag must not survive by nesting the fragment the sanitiser defuses.
+	 *
+	 * @dataProvider disguised_closing_tags
+	 */
+	public function test_it_never_leaves_a_closing_tag_behind( string $css ): void {
+		$this->assertDoesNotMatchRegularExpression( '#</style[\s/>]#i', StoryKses::sanitize_inline_css( $css ) );
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function disguised_closing_tags(): array {
+		return array(
+			'nested'        => array( '</</style>' ),
+			'doubly nested' => array( '</</</style>' ),
+			'mixed case'    => array( '</STYLE>' ),
+			'whitespace'    => array( "</style\n>" ),
+			'self closing'  => array( '</style/>' ),
+		);
+	}
+
+	/**
+	 * A tag name that merely starts with `style` is text to the parser.
+	 */
+	public function test_it_leaves_other_closing_tags_alone(): void {
+		$css = '/* </stylesheet> */ body {}';
+
+		$this->assertSame( $css, StoryKses::sanitize_inline_css( $css ) );
 	}
 
 	public function test_it_strips_nulls(): void {

@@ -40,7 +40,7 @@ class Options {
 			)
 		);
 
-		/* Source: settings form; legacy `sh_permalink` on activation.  At rest: URL path, slugged per segment. */
+		/* Source: settings form; legacy `sh_permalink` on activation.  At rest: plain text, stored as submitted. */
 		register_setting(
 			'theshed-general-options-group',
 			'shorthand_permalink',
@@ -48,7 +48,7 @@ class Options {
 				'type'              => 'string',
 				'label'             => __( 'Permalink structure', 'the-shorthand-editor' ),
 				'description'       => __( 'Set the permalink structure for published Shorthand story posts', 'the-shorthand-editor' ),
-				'sanitize_callback' => array( $this, 'sanitize_permalink' ),
+				'sanitize_callback' => 'sanitize_text_field',
 				'default'           => 'story',
 			)
 		);
@@ -236,21 +236,6 @@ class Options {
 		}
 
 		return $result;
-	}
-
-	/**
-	 * Reduces the permalink setting to a URL path.
-	 *
-	 * The value becomes a post type rewrite slug, so it may span segments but
-	 * must survive a URL.  Each segment is slugged and empty ones are dropped;
-	 * a value with nothing left falls back to the default.
-	 *
-	 * @param mixed $permalink Submitted permalink structure.
-	 */
-	public function sanitize_permalink( $permalink ): string {
-		$segments = array_filter( array_map( 'sanitize_title', explode( '/', (string) $permalink ) ) );
-
-		return empty( $segments ) ? 'story' : implode( '/', $segments );
 	}
 
 	public function sanitize_regex_list( $regex_list ) {

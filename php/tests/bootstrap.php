@@ -676,12 +676,6 @@ function wp_specialchars_decode( string $text, $quote_style = ENT_NOQUOTES ): st
 	return strtr( $text, $others );
 }
 
-function sanitize_title( string $title ): string {
-	$title = strtolower( trim( $title ) );
-	$title = preg_replace( '/[^a-z0-9\s-]/', '', $title );
-	return trim( preg_replace( '/[\s-]+/', '-', (string) $title ), '-' );
-}
-
 function get_site_url(): string {
 	return 'https://example.test';
 }

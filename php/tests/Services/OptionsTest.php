@@ -199,29 +199,4 @@ final class OptionsTest extends WordPressTestCase {
 
 		$this->assertNull( $options->sanitize_v2_token_info( 'nonsense' ) );
 	}
-
-	/**
-	 * The permalink becomes a rewrite slug, so it has to survive a URL.
-	 *
-	 * @dataProvider permalink_values
-	 */
-	public function test_permalink_is_reduced_to_a_url_path( string $submitted, string $expected ): void {
-		$options = new Options( new Version() );
-
-		$this->assertSame( $expected, $options->sanitize_permalink( $submitted ) );
-	}
-
-	/**
-	 * @return array<string, array{0: string, 1: string}>
-	 */
-	public static function permalink_values(): array {
-		return array(
-			'default'         => array( 'story', 'story' ),
-			'nested path'     => array( 'stories/features', 'stories/features' ),
-			'spaces'          => array( 'my stories', 'my-stories' ),
-			'punctuation'     => array( "Don't Call Me", 'dont-call-me' ),
-			'stray slashes'   => array( '/stories//features/', 'stories/features' ),
-			'nothing usable'  => array( '///', 'story' ),
-		);
-	}
 }

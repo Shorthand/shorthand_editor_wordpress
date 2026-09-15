@@ -103,7 +103,14 @@ class StoryKses {
 	 * a closing `style` tag, and it never decodes entities.  wp_kses() is
 	 * therefore the wrong tool — it escapes every `&`, which the browser then
 	 * reads literally and which breaks `url()` data URIs.  Ending the element
-	 * early is the only escape available, so that is all this removes.
+	 * early is the only escape available, so that is all this defuses.
+	 *
+	 * The tag is defused by a backslash between `<` and `/`, not by deletion:
+	 * deleting `</` lets `</</style>` collapse into a live tag, whereas the
+	 * backslash leaves nothing that can rejoin.  Inside a CSS string `\/`
+	 * decodes to `/`, so quoted text keeps its meaning.  Only a real end tag
+	 * matches — `</style` followed by whitespace, `/` or `>` — since
+	 * `</stylesheet>` is text to the parser and must stay untouched.
 	 *
 	 * @param string $css Author CSS, as stored.
 	 * @return string CSS that cannot close its own style element.
@@ -111,7 +118,7 @@ class StoryKses {
 	public static function sanitize_inline_css( string $css ): string {
 		$css = wp_kses_no_null( $css );
 
-		return preg_replace( '#</(?=style)#i', '', $css );
+		return preg_replace( '#</(?=style[\s/>])#i', '<\\/', $css );
 	}
 
 	/**
