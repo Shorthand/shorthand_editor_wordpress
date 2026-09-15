@@ -286,7 +286,8 @@ commands:
 jobs:
   wp-plugin-php-unit:
     docker:
-      - image: cimg/php:8.3
+      # composer.lock resolves symfony/string 8.x, which needs PHP 8.4.
+      - image: cimg/php:8.4
         auth:
           username: $DOCKERHUB_USER
           password: $DOCKERHUB_PASSWORD
@@ -316,11 +317,19 @@ jobs:
       - checkout:
           method: blobless
       - run:
+          # Each step is a new shell that reads BASH_ENV, not the nvm profile.
           name: Install Node and pnpm
           command: |
+            export NVM_DIR="$HOME/.nvm"
             nvm install 20
+            nvm use 20
             nvm alias default 20
+            NODE_BIN_DIR=$(dirname "$(nvm which 20)")
+            echo 'export NVM_DIR="$HOME/.nvm"' >> "$BASH_ENV"
+            echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> "$BASH_ENV"
+            echo "export PATH=\"$NODE_BIN_DIR:\$PATH\"" >> "$BASH_ENV"
             npm install -g pnpm@9
+            pnpm --version
       - run:
           # Cache keys need files in the working directory. The latest
           # WordPress release drives `"core": null`, so a new release invalidates
