@@ -73,6 +73,66 @@ final class ShorthandTest extends WordPressTestCase {
 		);
 	}
 
+	public function test_get_story_version_reads_the_content_version_from_the_story_settings(): void {
+		$service = $this->make_service_with_response(
+			array(
+				'response' => array( 'code' => 200 ),
+				'body'     => wp_json_encode( array( 'meta' => array( 'title' => 'Story', 'contentVersion' => 14 ) ) ),
+			)
+		);
+
+		$this->assertSame( 14, $service->get_story_version( 'abc123' ) );
+	}
+
+	public function test_get_story_version_fails_when_the_settings_carry_no_version(): void {
+		$service = $this->make_service_with_response(
+			array(
+				'response' => array( 'code' => 200 ),
+				'body'     => wp_json_encode( array( 'meta' => array( 'title' => 'Story' ) ) ),
+			)
+		);
+
+		$this->assertTrue( is_wp_error( $service->get_story_version( 'abc123' ) ) );
+	}
+
+	public function test_set_story_title_reports_a_refused_status(): void {
+		$service = $this->make_service_with_response(
+			array(
+				'response' => array( 'code' => 403 ),
+				'body'     => '',
+			)
+		);
+
+		$error = $service->set_story_title( 'abc123', 'Title' );
+
+		$this->assertTrue( is_wp_error( $error ) );
+		$this->assertSame( 'status', $error->get_error_code() );
+	}
+
+	public function test_set_story_title_returns_null_when_accepted(): void {
+		$service = $this->make_service_with_response(
+			array(
+				'response' => array( 'code' => 204 ),
+				'body'     => '',
+			)
+		);
+
+		$this->assertNull( $service->set_story_title( 'abc123', 'Title' ) );
+	}
+
+	/**
+	 * @param array<string, mixed> $response
+	 */
+	private function make_service_with_response( array $response ): Shorthand {
+		$options = $this->createMock( Options::class );
+		$options->method( 'get_api_url' )->willReturn( 'https://api.example.test' );
+
+		$api_client = $this->createMock( ShorthandApiClient::class );
+		$api_client->method( 'authed_request' )->willReturn( $response );
+
+		return new Shorthand( $options, $this->createMock( Version::class ), $api_client, $this->createMock( WordPressContextProvider::class ), new ConnectionErrorPage(), new ConnectionFailureClassifier() );
+	}
+
 	public function test_list_stories_builds_request_with_cursor_limit_and_keyword(): void {
 		$options          = $this->createMock( Options::class );
 		$version          = $this->createMock( Version::class );
