@@ -10,6 +10,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\StoryUpdateTask;
 use Shorthand\Tests\Support\FakeRemoteFileSystem;
@@ -117,7 +118,8 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 			$auth,
 			$this->createMock( StoryContentTransformer::class ),
 			$this->file_system,
-			new StoryTextExtractor()
+			new StoryTextExtractor(),
+			$this->createMock( StoryCover::class )
 		);
 
 		$task = $post_api->pull_story_begin( 7 );

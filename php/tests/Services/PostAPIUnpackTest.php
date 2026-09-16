@@ -11,6 +11,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Tests\Support\FakeRemoteFileSystem;
 use Shorthand\Tests\WordPressTestCase;
@@ -358,7 +359,35 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertContains( 'story_id', $result->get_error_codes() );
 	}
 
-	private function make_post_api( ?FileSystemService $file_system = null ): PostAPI {
+	/**
+	 * The featured image follows the content. A cover that cannot be imported
+	 * must not fail the publish, so `sync()` returns a state, never an error.
+	 */
+	public function test_the_story_cover_is_synced_after_the_content_is_stored(): void {
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => '',
+				'article.html' => '<h1>Story</h1>',
+			)
+		);
+
+		$story_cover = $this->createMock( StoryCover::class );
+		$story_cover->expects( $this->once() )
+			->method( 'sync' )
+			->with( 7, 'aBc123' )
+			->willReturnCallback(
+				function (): string {
+					$this->assertSame( '<h1>Story</h1>', \get_post_meta( 7, 'story_body', true ) );
+					return StoryCover::OUTCOME_FAILED;
+				}
+			);
+
+		$result = $this->make_post_api( null, $story_cover )->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
+
+		$this->assertNull( $result );
+	}
+
+	private function make_post_api( ?FileSystemService $file_system = null, ?StoryCover $story_cover = null ): PostAPI {
 		$options = $this->createMock( Options::class );
 		$options->method( 'is_staging_enabled' )->willReturn( true );
 		$options->method( 'get_post_regex_list' )->willReturn( '' );
@@ -386,7 +415,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			$this->createMock( AuthStateManager::class ),
 			$transformer,
 			$file_system ?? $this->file_system,
-			new StoryTextExtractor()
+			new StoryTextExtractor(),
+			$story_cover ?? $this->createMock( StoryCover::class )
 		);
 	}
 

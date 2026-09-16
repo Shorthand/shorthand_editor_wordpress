@@ -57,13 +57,19 @@ class PostAPI {
 	 */
 	private $text_extractor;
 	/**
+	 * Applies the story cover as the featured image.
+	 *
+	 * @var \Shorthand\Services\StoryCover
+	 */
+	private $story_cover;
+	/**
 	 * Guards the plugin's own write against the publish hooks it fires.
 	 *
 	 * @var bool
 	 */
 	private $storing_text = false;
 
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, FileSystemService $file_system, StoryTextExtractor $text_extractor ) {
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, FileSystemService $file_system, StoryTextExtractor $text_extractor, StoryCover $story_cover ) {
 		$this->shorthand           = $shorthand;
 		$this->options             = $options;
 		$this->permissions         = $permissions;
@@ -72,6 +78,7 @@ class PostAPI {
 		$this->auth_state_manager  = $auth_state_manager;
 		$this->file_system         = $file_system;
 		$this->text_extractor      = $text_extractor;
+		$this->story_cover         = $story_cover;
 	}
 
 	/**
@@ -711,6 +718,9 @@ class PostAPI {
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
 
 		$this->store_story_text( $post_id, $article );
+
+		/* Never fails the publish; the featured image is a courtesy on top of the content. */
+		$this->story_cover->sync( (int) $post_id, (string) $story_id );
 
 		/* Last, so that a failure above leaves the previous manifest in place. */
 		update_post_meta( $post_id, 'story_manifest', $story['manifest'] );

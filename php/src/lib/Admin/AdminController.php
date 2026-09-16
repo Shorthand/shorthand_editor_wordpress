@@ -15,6 +15,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\Cron;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryAttachmentResolver;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryLocalLookup;
 
 use Shorthand\Admin\Actions\ReturnToConnect;
@@ -74,6 +75,10 @@ class AdminController {
 	 * @var \Shorthand\Admin\AdminGateway
 	 */
 	private $admin_gateway;
+	/**
+	 * @var \Shorthand\Services\StoryCover
+	 */
+	private $story_cover;
 
 	public function __construct(
 		Options $options,
@@ -83,7 +88,8 @@ class AdminController {
 		Permissions $permissions,
 		Version $version,
 		string $post_type,
-		AuthStateManager $auth_state_manager
+		AuthStateManager $auth_state_manager,
+		StoryCover $story_cover
 	) {
 		$this->settings_page_slug = 'theshed-settings';
 
@@ -95,6 +101,7 @@ class AdminController {
 		$this->permissions        = $permissions;
 		$this->post_type          = $post_type;
 		$this->auth_state_manager = $auth_state_manager;
+		$this->story_cover        = $story_cover;
 		$this->admin_gateway      = new AdminGateway( $this->settings_page_slug );
 	}
 
@@ -220,7 +227,7 @@ class AdminController {
 		$redirect_to_shorthand_story->define_redirect_and_return_pages( $loader );
 		$post_preview->define_preview_page( $loader );
 
-		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager );
+		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager, $this->permissions, $this->story_cover );
 		$post->init( $loader );
 
 		$loader->add_filter(
