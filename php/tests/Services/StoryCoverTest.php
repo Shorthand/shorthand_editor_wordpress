@@ -309,34 +309,39 @@ final class StoryCoverTest extends WordPressTestCase {
 		$this->assertSame( array(), \tests_wp_downloads() );
 	}
 
-	public function test_sanitize_keeps_only_the_known_keys(): void {
+	public function test_sanitize_keeps_only_the_stored_keys(): void {
 		$this->assertSame(
-			array(
-				'id'     => 'c1',
-				'url'    => 'https://cdn.example.test/c1.jpg?sig=abc',
-				'mime'   => 'image/jpeg',
-				'name'   => 'cover.jpg',
-				'size'   => 1200,
-				'width'  => 800,
-				'height' => 600,
-			),
+			$this->record( 'c1' ),
 			StoryCover::sanitize( $this->cover( 'c1' ) + array( 'extra' => 'dropped' ) )
 		);
+		$this->assertSame( $this->record( 'c1' ), StoryCover::sanitize( $this->record( 'c1' ) ) );
 		$this->assertNull( StoryCover::sanitize( null ) );
 		$this->assertNull( StoryCover::sanitize( 'c1' ) );
-		$this->assertNull( StoryCover::sanitize( array( 'id' => 'c1' ) ) );
-		$this->assertNull( StoryCover::sanitize( array( 'url' => 'https://cdn.example.test/c1.jpg' ) ) );
+		$this->assertNull( StoryCover::sanitize( array( 'signedUrl' => 'https://cdn.example.test/c1.jpg' ) ) );
 	}
 
 	/**
-	 * The API reports `signedUrl`; meta already holds the reduced shape with
-	 * `url`. Both pass the same sanitizer.
+	 * The signed address is only good for the request that fetched it, so
+	 * meta never holds it; the fetched cover and its transient do.
 	 */
-	public function test_sanitize_accepts_the_stored_shape_as_well_as_the_api_shape(): void {
-		$stored = StoryCover::sanitize( $this->cover( 'c1' ) );
+	public function test_meta_holds_the_record_without_the_signed_url(): void {
+		$cover = $this->make_story_cover( $this->settings( $this->cover( 'c1' ) ) );
 
-		$this->assertSame( $stored, StoryCover::sanitize( $stored ) );
-		$this->assertNull( StoryCover::sanitize( array( 'id' => 'c1', 'signedUrl' => '' ) ) );
+		$this->assertSame( StoryCover::OUTCOME_IMPORTED, $cover->sync( self::POST_ID, self::STORY_ID ) );
+		$this->assertSame( $this->record( 'c1' ), \get_post_meta( self::POST_ID, 'story_cover', true ) );
+		$this->assertSame(
+			$this->record( 'c1' ) + array( 'url' => 'https://cdn.example.test/c1.jpg?sig=abc' ),
+			$cover->fetch( self::STORY_ID, true )
+		);
+	}
+
+	public function test_a_cover_without_a_signed_url_counts_as_no_cover(): void {
+		$reported = $this->cover( 'c1' );
+		unset( $reported['signedUrl'] );
+		$cover = $this->make_story_cover( $this->settings( $reported ) );
+
+		$this->assertSame( StoryCover::STATE_NONE, $cover->sync( self::POST_ID, self::STORY_ID ) );
+		$this->assertSame( array(), \tests_wp_downloads() );
 	}
 
 	/**
@@ -368,10 +373,19 @@ final class StoryCoverTest extends WordPressTestCase {
 	/**
 	 * @return array<string, mixed>
 	 */
+	/**
+	 * A cover as `GET /v2/stories/:id/settings` reports it.
+	 */
 	private function cover( string $id ): array {
+		return $this->record( $id ) + array( 'signedUrl' => "https://cdn.example.test/{$id}.jpg?sig=abc" );
+	}
+
+	/**
+	 * A cover as `story_cover` meta stores it.
+	 */
+	private function record( string $id ): array {
 		return array(
-			'id'        => $id,
-			'signedUrl' => "https://cdn.example.test/{$id}.jpg?sig=abc",
+			'id'     => $id,
 			'mime'   => 'image/jpeg',
 			'name'   => 'cover.jpg',
 			'size'   => 1200,

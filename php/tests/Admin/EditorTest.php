@@ -200,6 +200,40 @@ final class EditorTest extends WordPressTestCase {
 		$this->assertSame( array(), \tests_wp_updated_post_meta() );
 	}
 
+	/**
+	 * `meta.cover` is null for a story without a cover.
+	 */
+	public function test_the_cover_ajax_reports_a_story_without_a_cover(): void {
+		$_GET['post'] = '7';
+		$this->set_story_post( 7 );
+
+		$permissions = $this->createMock( Permissions::class );
+		$permissions->method( 'can_pull_story' )->willReturn( true );
+
+		$shorthand = $this->createMock( Shorthand::class );
+		$shorthand->method( 'get_story_settings' )->with( 'aBc123' )->willReturn(
+			array(
+				'id'   => 'aBc123',
+				'meta' => array( 'cover' => null ),
+			)
+		);
+		$story_cover = new StoryCover( $shorthand );
+
+		try {
+			$this->make_editor( $this->createMock( PostAPI::class ), $permissions, $story_cover )->ajax_get_story_cover();
+			$this->fail( 'Expected the response to end the request.' );
+		} catch ( Tests_WP_Die_Exception $e ) {
+			$response = \tests_wp_json_responses()[0];
+			$this->assertTrue( $response['success'] );
+			$this->assertNull( $response['data']['cover'] );
+			$this->assertSame( StoryCover::STATE_NONE, $response['data']['state'] );
+			$this->assertSame( $story_cover->describe( StoryCover::STATE_NONE ), $response['data']['message'] );
+			$this->assertFalse( $response['data']['importable'] );
+		}
+
+		$this->assertSame( array( 'cover' => null ), \tests_wp_get_transient( 'shorthand_story_cover_aBc123' ) );
+	}
+
 	public function test_the_cover_ajax_judges_the_thumbnail_the_form_sends(): void {
 		$_GET['post']      = '7';
 		$_GET['thumbnail'] = '-1';

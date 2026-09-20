@@ -1,7 +1,7 @@
 ---
 title: Story post meta
 purpose: The post meta keys a Shorthand story post carries, and the shape of the structured ones.
-updated: 2026-09-16
+updated: 2026-09-17
 ---
 
 # Story post meta
@@ -99,14 +99,13 @@ left alone.
 ## story_cover
 
 The cover image the last publish evaluated, as `GET /v2/stories/:id/settings`
-reported it under `meta.cover`, reduced to seven keys by
+reported it under `meta.cover`, reduced to six keys by
 `Shorthand\Services\StoryCover::sanitize()`, which is the registered
-`sanitize_callback`. The API's `signedUrl` is stored as `url`:
+`sanitize_callback`:
 
 ```php
 array(
     'id'     => 'c1',
-    'url'    => 'https://cdn.example.test/c1.jpg?sig=abc',
     'mime'   => 'image/jpeg',
     'name'   => 'cover.jpg',
     'size'   => 1200,
@@ -115,9 +114,12 @@ array(
 )
 ```
 
-`url` is a signed address that expires. The plugin treats it as opaque: it is
-downloaded within the request that fetched it and never rendered from meta.
-The editor panel leaves its image empty until the client fetches a fresh one.
+The file's address is not stored. The API reports it as `signedUrl`, signed
+for a short window, so it is only good for the request that fetched it.
+`Shorthand\Services\StoryCover::read()` carries it as `url` on the in-memory
+cover, the `shorthand_story_cover_{story_id}` transient, and the editor
+refresh payload; the download and the panel image use it from there. A cover
+the API reports without `signedUrl` counts as no cover.
 
 `Shorthand\Services\StoryCover::sync()` writes the key on every publish that
 finds a cover, whether or not it imports it. It is absent until the first

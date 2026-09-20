@@ -75,7 +75,6 @@ final class PostTypeTest extends WordPressTestCase {
 		$this->assertSame(
 			array(
 				'id'     => 'c1',
-				'url'    => 'https://cdn.example.test/c1.jpg',
 				'mime'   => 'image/jpeg',
 				'name'   => 'cover.jpg',
 				'size'   => 12,
@@ -85,7 +84,7 @@ final class PostTypeTest extends WordPressTestCase {
 			$sanitize(
 				array(
 					'id'     => 'c1',
-					'url'    => 'https://cdn.example.test/c1.jpg',
+					'url'    => 'https://cdn.example.test/c1.jpg?sig=abc',
 					'mime'   => 'image/jpeg',
 					'name'   => 'cover.jpg',
 					'size'   => '12',
@@ -96,7 +95,7 @@ final class PostTypeTest extends WordPressTestCase {
 			)
 		);
 		$this->assertNull( $sanitize( 'not a cover' ) );
-		$this->assertNull( $sanitize( array( 'id' => 'c1' ) ) );
+		$this->assertNull( $sanitize( array( 'url' => 'https://cdn.example.test/c1.jpg' ) ) );
 	}
 
 	public function test_story_cover_attachment_meta_is_an_integer(): void {

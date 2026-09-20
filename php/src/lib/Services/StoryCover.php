@@ -48,29 +48,23 @@ class StoryCover {
 	}
 
 	/**
-	 * Reduces a cover record from the API, or from meta, to its known keys.
+	 * Reduces a cover record, from the API or from meta, to what is stored.
 	 *
-	 * Registered as the `story_cover` meta sanitizer, so the stored value has
-	 * the same shape wherever it came from. The API reports the file under
-	 * `signedUrl`; it is kept as `url`, an opaque, short-lived address that
-	 * nothing renders from meta.
+	 * Registered as the `story_cover` meta sanitizer. The file's address is
+	 * not among the keys: the API signs it for a short window, so it is only
+	 * useful in the request that fetched it. `read()` adds it as `url` for
+	 * that request and the transient.
 	 *
 	 * @param mixed $cover Cover record.
-	 * @return array{id: string, url: string, mime: string, name: string, size: int, width: int, height: int}|null Null when the record is not a usable cover.
+	 * @return array{id: string, mime: string, name: string, size: int, width: int, height: int}|null Null when the record has no id.
 	 */
 	public static function sanitize( $cover ): ?array {
 		if ( ! is_array( $cover ) || empty( $cover['id'] ) ) {
 			return null;
 		}
 
-		$url = (string) ( $cover['signedUrl'] ?? $cover['url'] ?? '' );
-		if ( '' === $url ) {
-			return null;
-		}
-
 		return array(
 			'id'     => sanitize_text_field( (string) $cover['id'] ),
-			'url'    => esc_url_raw( $url ),
 			'mime'   => sanitize_mime_type( (string) ( $cover['mime'] ?? '' ) ),
 			'name'   => sanitize_text_field( (string) ( $cover['name'] ?? '' ) ),
 			'size'   => absint( $cover['size'] ?? 0 ),
@@ -175,15 +169,13 @@ class StoryCover {
 		$thumbnail = (int) get_post_thumbnail_id( $post_id );
 		$state     = $this->state( $post_id, $cover, $thumbnail );
 
-		$cover['url'] = $this->fix_api_url( $cover['url'] );
-
 		if ( self::STATE_NONE === $state ) {
 			return $state;
 		}
 
 		$import = self::STATE_PENDING === $state || ( $replace && self::STATE_CURRENT !== $state );
 		if ( ! $import ) {
-			update_post_meta( $post_id, 'story_cover', $cover );
+			update_post_meta( $post_id, 'story_cover', self::sanitize( $cover ) );
 			return $state;
 		}
 
@@ -195,7 +187,7 @@ class StoryCover {
 		$previous = (int) get_post_meta( $post_id, 'story_cover_attachment', true );
 
 		set_post_thumbnail( $post_id, $attachment_id );
-		update_post_meta( $post_id, 'story_cover', $cover );
+		update_post_meta( $post_id, 'story_cover', self::sanitize( $cover ) );
 		update_post_meta( $post_id, 'story_cover_attachment', $attachment_id );
 
 		/*
@@ -261,7 +253,7 @@ class StoryCover {
 		require_once ABSPATH . 'wp-admin/includes/media.php';
 		require_once ABSPATH . 'wp-admin/includes/image.php';
 
-		$tmp = download_url( $cover['url'] );
+		$tmp = download_url( $this->fix_api_url( $cover['url'] ) );
 		if ( is_wp_error( $tmp ) ) {
 			return $tmp;
 		}
@@ -290,6 +282,9 @@ class StoryCover {
 	/**
 	 * Splits a settings response into the cover and the alt text, and caches the cover.
 	 *
+	 * The cover carries the API's `signedUrl` as `url`. A cover the API
+	 * reports without one cannot be imported, so it counts as no cover.
+	 *
 	 * @param string $story_id Shorthand story ID.
 	 * @param array  $settings Decoded `GET /v2/stories/:id/settings` body.
 	 * @return array{cover: array|null, description: string}
@@ -297,6 +292,9 @@ class StoryCover {
 	private function read( string $story_id, array $settings ): array {
 		$meta  = isset( $settings['meta'] ) && is_array( $settings['meta'] ) ? $settings['meta'] : array();
 		$cover = self::sanitize( $meta['cover'] ?? null );
+		$url   = esc_url_raw( (string) ( $meta['cover']['signedUrl'] ?? '' ) );
+
+		$cover = null === $cover || '' === $url ? null : $cover + array( 'url' => $url );
 
 		set_transient( $this->cache_key( $story_id ), array( 'cover' => $cover ), self::CACHE_TTL );
 
