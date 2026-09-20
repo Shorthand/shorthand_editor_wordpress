@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-09-16
+updated: 2026-09-17
 ---
 
 # Publishing a story
@@ -165,6 +165,22 @@ The import, when it runs:
 
 The featured image lands after the post is already live, on the WP-Cron tick
 that finishes the pull. A listing rendered in between shows no featured image.
+
+### Local development
+
+`download_url()` uses `wp_safe_remote_get()`, which refuses the Docker
+environment's API on three counts: `host.docker.internal` resolves to a
+private address, port 9443 is not on WordPress's safe port list, and the
+ministack certificate is self-signed. Story content downloads use
+`wp_remote_get()` and are not checked.
+
+`Shorthand\Plugin\DevHttp::register()`, called from `Shorthand\Plugin::init()`,
+adds the `http_request_host_is_external`, `http_allowed_safe_ports`, and
+`https_ssl_verify` filters for the host and port in `THESHED_API_URL`. It
+registers nothing unless `THESHED_NO_SSL_VERIFY` is true, which only
+`docker-compose.yml` sets. Keep `download_url()`: the cover URL comes from an
+API response, and the safe transport is what stops it reaching internal
+addresses in production.
 
 ### Editor panel
 

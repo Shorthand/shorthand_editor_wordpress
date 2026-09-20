@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 use Shorthand\Core\Loader;
 use Shorthand\Core\Version;
 use Shorthand\Plugin\Dependencies;
+use Shorthand\Plugin\DevHttp;
 use Shorthand\Admin\AdminController;
 use Shorthand\Services\Cron;
 use Shorthand\Services\Options;
@@ -90,6 +91,8 @@ class Plugin {
 			$loader->add_filter( 'upgrader_pre_install', $this, 'block_upgrade', 10, 2 );
 		}
 		$loader->register();
+
+		DevHttp::register();
 	}
 
 	public function activate() {
