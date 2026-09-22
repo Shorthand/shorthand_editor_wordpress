@@ -296,7 +296,7 @@ class Editor {
 			'#theshed-toolbar { width: 100%; }'
 		);
 
-		wp_enqueue_script( 'theshed-post-components-script', $this->version->get_plugin_url( 'public/scripts/post.min.js' ), array(), $this->version->get_plugin_version(), false );
+		wp_enqueue_script( 'theshed-post-components-script', $this->version->get_plugin_url( 'public/scripts/post.min.js' ), array( 'jquery', 'wp-hooks' ), $this->version->get_plugin_version(), false );
 
 		ob_start();
 		?>

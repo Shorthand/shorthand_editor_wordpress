@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { PostEditorToolBar } from "./components/PostEditorToolBar";
 import { PHPStoryState, StoryStateProvider } from "./hooks/useStoryState";
+import { initSeoAnalysis } from "./SeoAnalysis";
 
 declare global {
   interface Window {
@@ -48,6 +49,7 @@ function initShorthand(): void {
 
 export function initPostEditor(): void {
   initShorthand();
+  initSeoAnalysis();
 
   if (!window.Shorthand.WordPress.ui.hasOwnProperty("createPostEditorToolBar")) {
     window.Shorthand.WordPress.ui.createPostEditorToolBar = createPostEditorToolBar;
