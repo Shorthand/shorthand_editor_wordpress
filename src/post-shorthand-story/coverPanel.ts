@@ -4,13 +4,17 @@
  * PHP renders the box with the Shorthand cover the last publish saw under
  * the first tab and core's featured image under the second. One request
  * after mount replaces the recorded cover with what Shorthand reports now.
- * "Use story cover now" imports it at once. Kept apart from `useStoryState`,
- * which polls during a pull; the cover needs one request per editor load.
+ * "Use story cover now" imports it at once. When a pull the editor watched
+ * ends, the box reloads from the server, since publishing may have set the
+ * featured image. Kept apart from `useStoryState`, which polls during a
+ * pull; the cover needs one request per editor load and one per pull.
  *
  * Core replaces the whole box when the author sets or removes a featured
  * image, so every handler is delegated from the document and the chosen
  * tab is re-applied after each replacement.
  */
+
+import { PULL_ENDED_EVENT } from "./hooks/useStoryState";
 
 interface ICover {
   id: string;
@@ -50,10 +54,12 @@ interface IFeaturedImageApi {
 
 let view: View = "story";
 let importing = false;
+/* Set before asking core to redraw, so the redraw does not change tabs. */
+let ownRedraw = false;
 
 export function refreshStoryCover(postId: number, wpNonce: string): void {
   const run = (): void => {
-    void refresh(postId, wpNonce);
+    void refresh(postId, wpNonce, formThumbnail());
   };
 
   document.addEventListener("click", event => {
@@ -81,6 +87,10 @@ export function refreshStoryCover(postId: number, wpNonce: string): void {
     run();
   }
 
+  document.addEventListener(PULL_ENDED_EVENT, () => {
+    void reload(postId, wpNonce);
+  });
+
   const jQuery = (window as unknown as { jQuery?: JQueryLike }).jQuery;
   if (typeof jQuery !== "function") {
     return;
@@ -89,11 +99,12 @@ export function refreshStoryCover(postId: number, wpNonce: string): void {
     if (!THUMBNAIL_ACTIONS.test(String(settings?.data ?? ""))) {
       return;
     }
-    /* A core re-render follows the author's own change, unless we asked for it. */
+    /* A core redraw follows the author's own change, unless we asked for it. */
     const panel = document.getElementById(PANEL_ID);
-    if (panel) {
-      show(panel, importing ? "story" : "featured");
+    if (panel && !ownRedraw) {
+      show(panel, "featured");
     }
+    ownRedraw = false;
     importing = false;
     run();
   });
@@ -121,10 +132,14 @@ function formThumbnail(): number | null {
   return Math.max(0, parseInt(input.value, 10) || 0);
 }
 
-async function refresh(postId: number, wpNonce: string): Promise<void> {
+/*
+ * Repaints the first tab from the server. The state is judged against
+ * `thumbnail` when given, otherwise against the saved featured image.
+ */
+async function refresh(postId: number, wpNonce: string, thumbnail: number | null): Promise<ICoverState | null> {
   const panel = document.getElementById(PANEL_ID);
   if (!panel) {
-    return;
+    return null;
   }
 
   try {
@@ -132,7 +147,6 @@ async function refresh(postId: number, wpNonce: string): Promise<void> {
     url.searchParams.set("_ajax_nonce", wpNonce);
     url.searchParams.set("action", "shorthand_get_story_cover");
     url.searchParams.set("post", postId.toString());
-    const thumbnail = formThumbnail();
     if (thumbnail !== null) {
       url.searchParams.set("thumbnail", thumbnail.toString());
     }
@@ -140,20 +154,32 @@ async function refresh(postId: number, wpNonce: string): Promise<void> {
     const response = await fetch(url);
     if (!response.ok) {
       unavailable(panel);
-      return;
+      return null;
     }
 
     const { success, data } = (await response.json()) as { success: boolean; data?: ICoverState };
     if (!success || !data) {
       unavailable(panel);
-      return;
+      return null;
     }
 
     paint(panel, data);
+    return data;
   } catch (err) {
     console.error(`error: could not refresh the story cover: ${err}`);
     unavailable(panel);
+    return null;
   }
+}
+
+/* After a pull, the saved featured image wins over whatever the form held. */
+async function reload(postId: number, wpNonce: string): Promise<void> {
+  const data = await refresh(postId, wpNonce, null);
+  if (!data || data.thumbnail === undefined || data.thumbnail === formThumbnail()) {
+    return;
+  }
+  ownRedraw = true;
+  rerenderFeatured(data.thumbnail);
 }
 
 async function importCover(
@@ -190,6 +216,7 @@ async function importCover(
     }
 
     paint(panel, data);
+    ownRedraw = true;
     rerenderFeatured(data.thumbnail ?? 0);
   } catch (err) {
     console.error(`error: could not import the story cover: ${err}`);
@@ -200,22 +227,23 @@ async function importCover(
 }
 
 /*
- * Lets core redraw its half of the box for the new featured image; that
- * also updates the form field a save would otherwise submit. Without the
- * media API, the form field is set by hand.
+ * Lets core redraw its half of the box for the featured image; that also
+ * updates the form field a save would otherwise submit. Core spells "none"
+ * as -1. Without the media API, only the form field is set.
  */
 function rerenderFeatured(thumbnail: number): void {
   const api = (window as unknown as { wp?: { media?: { featuredImage?: IFeaturedImageApi } } }).wp?.media
     ?.featuredImage;
-  if (api && thumbnail) {
-    api.set(thumbnail);
+  if (api) {
+    api.set(thumbnail || -1);
     return;
   }
 
+  ownRedraw = false;
   importing = false;
   const input = document.getElementById(THUMBNAIL_INPUT_ID) as HTMLInputElement | null;
-  if (input && thumbnail) {
-    input.value = thumbnail.toString();
+  if (input) {
+    input.value = (thumbnail || -1).toString();
   }
 }
 
@@ -229,6 +257,8 @@ function paint(panel: HTMLElement, { cover, state, message: text, importable }: 
     image.hidden = !cover;
     image.src = cover ? cover.url : "";
     image.alt = cover ? cover.name : "";
+    image.width = cover ? cover.width : 0;
+    image.height = cover ? cover.height : 0;
   }
   if (button) {
     button.hidden = !importable;

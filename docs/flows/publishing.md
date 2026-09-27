@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-09-17
+updated: 2026-09-25
 ---
 
 # Publishing a story
@@ -189,7 +189,10 @@ rebuilds the Featured image box with two tabs. "Shorthand cover", shown by
 default, carries the cover image, a message saying what the next publish will
 do, and a "Use story cover now" button. "Featured image" carries core's own
 markup: the current featured image, the Set and Remove links, and the
-`_thumbnail_id` form field.
+`_thumbnail_id` form field. The first tab lays its image out as core lays out
+the featured image, a paragraph holding an image with width and height
+attributes, so when the featured image is the story cover, switching tabs
+does not move the picture.
 
 The box renders from `story_cover`. The client module
 `src/post-shorthand-story/coverPanel.ts` then calls
@@ -205,6 +208,15 @@ runs `Shorthand\Services\StoryCover::sync()` with `$replace = true`. The
 import is saved at once, including `_thumbnail_id`. The client then calls
 `wp.media.featuredImage.set()` with the new attachment so core redraws its
 tab and the form field matches; a later save of the post cannot revert it.
+
+Every panel payload carries `thumbnail`, the saved featured image ID. When
+the story state poll in `src/post-shorthand-story/hooks/useStoryState.tsx`
+sees a pull it was watching end, it fires the `shorthand:pull-ended` event
+on `document`. The cover module then refreshes without the `thumbnail`
+parameter, so the state is judged against what the pull saved, and calls
+`wp.media.featuredImage.set()` when the saved ID differs from the form's.
+The chosen tab stays as it was. The event fires on a failed pull too; the
+refresh then shows the unchanged state.
 
 ## Pull tracking
 

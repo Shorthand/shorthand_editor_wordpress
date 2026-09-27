@@ -24,7 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		</button>
 	</div>
 	<div class="theshed-cover-panel__view" data-theshed-view="story">
-		<img class="theshed-cover-panel__image" src="" alt="" hidden>
+		<p><img class="theshed-cover-panel__image" src="" alt="" hidden></p>
 		<p class="theshed-cover-panel__message"><?php echo esc_html( $message ); ?></p>
 		<p class="hide-if-no-js">
 			<button type="button" class="button theshed-cover-panel__import" <?php echo $importable ? '' : 'hidden'; ?>>

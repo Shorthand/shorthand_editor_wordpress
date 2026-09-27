@@ -320,7 +320,6 @@ class Editor {
 			. ' .theshed-cover-panel__tabs { display: flex; gap: 16px; margin: 0 0 10px; border-bottom: 1px solid #dcdcde; }'
 			. ' .theshed-cover-panel__tab { padding: 4px 0 6px; border-bottom: 2px solid transparent; color: #50575e; text-decoration: none; }'
 			. ' .theshed-cover-panel__tab[aria-selected="true"] { color: #1d2327; border-bottom-color: #2271b1; font-weight: 600; }'
-			. ' .theshed-cover-panel__image { max-width: 100%; height: auto; display: block; }'
 		);
 
 		wp_enqueue_script( 'theshed-post-components-script', $this->version->get_plugin_url( 'public/scripts/post.min.js' ), array(), $this->version->get_plugin_version(), false );
@@ -399,7 +398,7 @@ class Editor {
 		$cover = StoryCover::sanitize( get_post_meta( $post_id, 'story_cover', true ) );
 		$state = null === $cover ? StoryCover::STATE_UNKNOWN : $this->story_cover->state( (int) $post_id, $cover, (int) $thumbnail_id );
 
-		$panel      = $this->cover_panel( $cover, $state );
+		$panel      = $this->cover_panel( (int) $post_id, $cover, $state );
 		$message    = $panel['message'];
 		$importable = $panel['importable'];
 
@@ -428,7 +427,7 @@ class Editor {
 		$thumbnail = isset( $_GET['thumbnail'] ) ? max( 0, (int) $_GET['thumbnail'] ) : null; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Checked above.
 		$state     = $this->story_cover->state( $post_id, $cover, $thumbnail );
 
-		wp_send_json_success( $this->cover_panel( $cover, $state ) );
+		wp_send_json_success( $this->cover_panel( $post_id, $cover, $state ) );
 	}
 
 	/**
@@ -451,10 +450,7 @@ class Editor {
 		$cover = $this->story_cover->fetch( $story_id, true );
 		$state = $this->story_cover->state( $post_id, is_wp_error( $cover ) ? null : $cover );
 
-		wp_send_json_success(
-			$this->cover_panel( is_wp_error( $cover ) ? null : $cover, $state )
-			+ array( 'thumbnail' => get_post_thumbnail_id( $post_id ) )
-		);
+		wp_send_json_success( $this->cover_panel( $post_id, is_wp_error( $cover ) ? null : $cover, $state ) );
 	}
 
 	/**
@@ -488,16 +484,18 @@ class Editor {
 	/**
 	 * What the cover panel shows for a state.
 	 *
-	 * @param array|null $cover Incoming cover.
-	 * @param string     $state A `StoryCover::STATE_*` value.
-	 * @return array{cover: array|null, state: string, message: string, importable: bool}
+	 * @param int        $post_id Post whose featured image is reported.
+	 * @param array|null $cover   Incoming cover.
+	 * @param string     $state   A `StoryCover::STATE_*` value.
+	 * @return array{cover: array|null, state: string, message: string, importable: bool, thumbnail: int}
 	 */
-	private function cover_panel( ?array $cover, string $state ): array {
+	private function cover_panel( int $post_id, ?array $cover, string $state ): array {
 		return array(
 			'cover'      => $cover,
 			'state'      => $state,
 			'message'    => $this->story_cover->describe( $state ),
 			'importable' => null !== $cover && StoryCover::STATE_CURRENT !== $state,
+			'thumbnail'  => get_post_thumbnail_id( $post_id ),
 		);
 	}
 

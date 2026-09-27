@@ -107,7 +107,7 @@ final class EditorTest extends WordPressTestCase {
 		$this->assertStringStartsWith( '<div id="theshed-cover-panel"', $html );
 		$this->assertStringContainsString( 'data-view="story"', $html );
 		$this->assertStringContainsString( 'data-state="current"', $html );
-		$this->assertStringContainsString( '<img class="theshed-cover-panel__image" src="" alt="" hidden>', $html );
+		$this->assertStringContainsString( '<p><img class="theshed-cover-panel__image" src="" alt="" hidden></p>', $html );
 		$this->assertStringContainsString( $story_cover->describe( StoryCover::STATE_CURRENT ), $html );
 		$this->assertMatchesRegularExpression( '/theshed-cover-panel__import" hidden>/', $html );
 		$this->assertMatchesRegularExpression( '/data-theshed-view="featured" hidden>\s*<p>box<\/p>/', $html );
@@ -195,6 +195,7 @@ final class EditorTest extends WordPressTestCase {
 			$this->assertSame( StoryCover::STATE_MANUAL, $response['data']['state'] );
 			$this->assertSame( $story_cover->describe( StoryCover::STATE_MANUAL ), $response['data']['message'] );
 			$this->assertTrue( $response['data']['importable'] );
+			$this->assertSame( 9, $response['data']['thumbnail'] );
 		}
 
 		$this->assertSame( array(), \tests_wp_updated_post_meta() );
