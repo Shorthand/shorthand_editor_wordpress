@@ -4,6 +4,11 @@ parameters:
   PLUGIN_SUBDIR:
     type: string
     default: "plugins/wp/the-shorthand-editor"
+  # Set by the setup job in config.yml. True only when the pipeline was
+  # triggered by a tag whose commit is an ancestor of origin/master.
+  tag_on_master:
+    type: boolean
+    default: false
 
 tag_only: &tag_only
   filters:
@@ -537,6 +542,9 @@ workflows:
       - wp-plugin-bundle-and-upload:
           context:
             - wp-plugin-upload-context
+          requires:
+            - wp-plugin-php-unit
+            - wp-plugin-php-integration
           filters:
             branches:
               only:
@@ -555,13 +563,22 @@ workflows:
               only:
                 - master
 
+  # Tags on other branches are allowed; they just never reach this workflow.
   production-release:
+    when: << pipeline.parameters.tag_on_master >>
     jobs:
+      - wp-plugin-php-unit:
+          <<: *tag_only
+      - wp-plugin-php-integration:
+          <<: *tag_only
       - wp-plugin-bundle-and-upload:
           <<: *tag_only
           name: bundle-and-upload
           context:
             - wp-plugin-upload-context
+          requires:
+            - wp-plugin-php-unit
+            - wp-plugin-php-integration
 
       - wp-plugin-release:
           <<: *tag_only
