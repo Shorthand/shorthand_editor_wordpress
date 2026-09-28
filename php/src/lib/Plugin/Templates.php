@@ -149,7 +149,7 @@ class Templates {
 		$user_css = $this->options->get_post_css();
 		wp_register_style( 'theshed-user-style', false, array(), md5( $user_css ) );
 		wp_enqueue_style( 'theshed-user-style' );
-		wp_add_inline_style( 'theshed-user-style', wp_kses( $user_css, array() ) );
+		wp_add_inline_style( 'theshed-user-style', StoryKses::sanitize_inline_css( $user_css ) );
 
 		// Register handle for story scripts extracted during KSES filtering.
 		// This is an inline script and doesn't have a version.

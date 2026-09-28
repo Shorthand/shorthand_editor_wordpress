@@ -116,6 +116,8 @@ function tests_wp_reset_state(): void {
 		'transient_ttls'       => array(),
 		'site_transients'      => array(),
 		'settings_errors'      => array(),
+		'settings_sections'    => array(),
+		'settings_fields'      => array(),
 		'remote_requests'      => array(),
 		'remote_get_response'  => array(
 			'response' => array(
@@ -130,6 +132,7 @@ function tests_wp_reset_state(): void {
 		'registered_styles'    => array(),
 		'inline_styles'        => array(),
 		'environment_type'     => 'production',
+		'bloginfo'             => array( 'name' => 'Example Site' ),
 		'posts_queries'        => array(),
 		'posts_query_result'   => array(),
 		'inserted_posts'       => array(),
@@ -544,6 +547,46 @@ function add_settings_error( string $setting, string $code, $message ): void {
 }
 
 /**
+ * @param callable|null        $callback
+ * @param array<string, mixed> $args
+ */
+function add_settings_section( string $id, string $title, $callback, string $page, array $args = array() ): void {
+	$GLOBALS['tests_wp_state']['settings_sections'][] = array(
+		'id'    => $id,
+		'title' => $title,
+		'page'  => $page,
+	);
+}
+
+/**
+ * @param callable|null        $callback
+ * @param array<string, mixed> $args
+ */
+function add_settings_field( string $id, string $title, $callback, string $page, string $section = 'default', array $args = array() ): void {
+	$GLOBALS['tests_wp_state']['settings_fields'][] = array(
+		'id'      => $id,
+		'title'   => $title,
+		'page'    => $page,
+		'section' => $section,
+		'args'    => $args,
+	);
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_get_settings_sections(): array {
+	return $GLOBALS['tests_wp_state']['settings_sections'];
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_get_settings_fields(): array {
+	return $GLOBALS['tests_wp_state']['settings_fields'];
+}
+
+/**
  * @return mixed
  */
 function get_option( string $option, $default = false ) {
@@ -674,7 +717,28 @@ function wp_kses_no_null( string $value ): string {
 }
 
 function get_bloginfo( string $show = '' ): string {
-	return 'Example Site';
+	return $GLOBALS['tests_wp_state']['bloginfo'][ $show ] ?? 'Example Site';
+}
+
+/**
+ * Mirrors the core mapping for ENT_QUOTES; other quote styles are unused here.
+ *
+ * @param int $quote_style
+ */
+function wp_specialchars_decode( string $text, $quote_style = ENT_NOQUOTES ): string {
+	$others = array(
+		'&lt;'   => '<',
+		'&gt;'   => '>',
+		'&amp;'  => '&',
+	);
+
+	if ( ENT_QUOTES === $quote_style ) {
+		$others['&#039;'] = "'";
+		$others['&#39;']  = "'";
+		$others['&quot;'] = '"';
+	}
+
+	return strtr( $text, $others );
 }
 
 function get_site_url(): string {
