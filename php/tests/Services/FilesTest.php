@@ -28,7 +28,7 @@ final class FilesTest extends WordPressTestCase {
 	 * service is constructed on every admin request. It waits for the first call.
 	 */
 	public function test_constructing_the_uploads_service_does_not_boot_wp_filesystem(): void {
-		$this->forget_filesystem_boot();
+		$this->forgetFileSystemBoot();
 
 		new WpUploads();
 
@@ -40,7 +40,7 @@ final class FilesTest extends WordPressTestCase {
 	}
 
 	public function test_the_boot_is_done_once_and_returns_the_same_filesystem(): void {
-		$this->forget_filesystem_boot();
+		$this->forgetFileSystemBoot();
 
 		$this->assertSame( FileSystem::boot(), FileSystem::boot() );
 	}
@@ -121,23 +121,6 @@ final class FilesTest extends WordPressTestCase {
 		sort( $sources );
 
 		return $sources;
-	}
-
-	/**
-	 * Returns the boot to the state of a fresh request.
-	 */
-	private function forget_filesystem_boot(): void {
-		$forget = \Closure::bind(
-			static function (): void {
-				FileSystem::$booted = false;
-			},
-			null,
-			FileSystem::class
-		);
-
-		$forget();
-
-		unset( $GLOBALS['wp_filesystem'] );
 	}
 
 	/**

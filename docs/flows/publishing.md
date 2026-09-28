@@ -104,18 +104,20 @@ different meaning.
 5. The unpacked tree is copied into the bundle directory, skipping files whose
    name, size, and CRC32 match the stored manifest. `article.html` and
    `head.html` are copied to `docs/{nonce}/`.
-6. Files present in the manifest but absent from the archive are deleted.
-7. `story_manifest` post meta is written.
-8. `story_head` and `story_body` post meta are written, with asset URLs
+6. Files present in the manifest but absent from the archive are deleted. The
+   staging directory goes with them.
+7. `story_head` and `story_body` post meta are written, with asset URLs
    rewritten.
-9. The story's plain text is mirrored into `post_content` and `post_excerpt`,
+8. The story's plain text is mirrored into `post_content` and `post_excerpt`,
    so core search and listing views have something to read.
-10. `Shorthand\Services\StoryCover::sync()` fetches the story settings and,
+9. `Shorthand\Services\StoryCover::sync()` fetches the story settings and,
    where the featured image rule allows, imports the cover into the media
    library and sets it as the featured image. See the cover section below.
-11. The staging directory and the chunks are deleted.
+10. `story_manifest` post meta is written.
+11. The chunks are deleted, and the pull record with them.
 
-Steps 3 to 7 are one call, `Shorthand\Services\Files\Bundle::publish()`.
+Steps 3 to 6 are one call, `Shorthand\Services\Files\Bundle::publish()`, and
+step 10 is `Shorthand\Services\Files\Bundle::commit()`.
 `Shorthand\Services\PostAPI` names no path, opens no archive, and makes no
 choice between hosts. See `docs/services/file-system.md`.
 
@@ -152,13 +154,19 @@ extracting.
 
 ## Decision: write the manifest after the copy, never before
 
-Step 7 follows steps 5 and 6, and a failed copy returns before it. A stale
+Step 10 follows steps 5 and 6, and a failed copy returns before it. A stale
 manifest causes over-copying, which is safe. A manifest written early would
 claim files were copied when they were not, and the next publish would skip
 them permanently.
 
-Step 7 precedes step 8, so a failure while storing markup leaves a manifest
-describing files that do exist. That is the safe direction.
+Step 10 also follows steps 7 and 8, so a failure while storing markup leaves the
+previous manifest in place and the next publish copies the bundle again. That is
+the safe direction.
+
+A copy that fails part way is the one manifest write that does not come last:
+`Bundle::unpack()` commits the stored manifest merged with the entries it did
+write, carried on the `WP_Error` as `partial_manifest`. Those files are on the
+host, so the next publish is right to skip them.
 
 ## Decision: version the two documents by pull nonce
 

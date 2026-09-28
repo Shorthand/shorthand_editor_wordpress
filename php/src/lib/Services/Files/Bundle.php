@@ -151,6 +151,11 @@ class Bundle {
 	 *
 	 * The `{post_id}` parent is left alone: it cannot be listed, so it cannot
 	 * be known to be empty.
+	 *
+	 * The manifest goes whether or not every delete landed. This runs on
+	 * `before_delete_post`, and WordPress drops the post's meta straight after,
+	 * so keeping the record would buy nothing: a file the host refused is an
+	 * orphan either way.
 	 */
 	public function delete(): void {
 		$this->prune( $this->manifest() );

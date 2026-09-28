@@ -86,6 +86,17 @@ final class DownloadTest extends WordPressTestCase {
 		$this->assertSame( '', $this->open( '../../etc' )->segment() );
 	}
 
+	/**
+	 * Chunk paths go through the validated segment too, so no path this class
+	 * forms can leave the bundle's own directory.
+	 */
+	public function test_a_nonce_that_is_not_a_path_segment_reaches_no_chunk_path(): void {
+		$path = $this->open( '../../etc' )->chunk_path( 0 );
+
+		$this->assertStringStartsWith( '/uploads/shorthand/7/aBc123_', $path );
+		$this->assertStringNotContainsString( '..', $path );
+	}
+
 	private function open( string $nonce = '44444' ): Download {
 		$bundle = ( new BundleStore( $this->uploads ) )->open( 7, 'aBc123' );
 

@@ -99,10 +99,17 @@ class Staging {
 	/**
 	 * Removes the staging directory and everything under it.
 	 *
+	 * A host without file system credentials cannot remove anything, so the
+	 * directory is left for the system to clear and the caller is told.
+	 *
 	 * @return bool True when the directory is gone.
 	 */
 	public function discard(): bool {
 		$fs = FileSystem::boot();
+
+		if ( null === $fs ) {
+			return false;
+		}
 
 		if ( ! $fs->is_dir( $this->path ) ) {
 			return true;

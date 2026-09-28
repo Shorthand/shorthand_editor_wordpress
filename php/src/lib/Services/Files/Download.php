@@ -74,7 +74,7 @@ class Download {
 	 * @param int $index Position of the chunk in the archive.
 	 */
 	public function chunk_path( int $index ): string {
-		return $this->bundle_path . '_' . $this->nonce . '_' . $index . '.part';
+		return $this->bundle_path . '_' . $this->segment() . '_' . $index . '.part';
 	}
 
 	/**
@@ -121,7 +121,7 @@ class Download {
 	 * @param int $chunks Number of chunks it had written.
 	 */
 	public function discard_legacy( int $chunks ): void {
-		$dir = $this->bundle_path . '_' . $this->nonce;
+		$dir = $this->bundle_path . '_' . $this->segment();
 
 		for ( $idx = 0; $idx < $chunks; $idx++ ) {
 			$this->uploads->delete( $dir . '/file-' . $idx . '.part' );
@@ -134,7 +134,9 @@ class Download {
 	 * A nonce is generated, not received, so an unusable one never happens in
 	 * practice. It is validated the same way a story ID is because both are
 	 * interpolated into directory names, and neither is worth trusting on that
-	 * account.
+	 * account. Every path this class forms goes through here, so one that is
+	 * not a path segment names something inside the bundle's own directory
+	 * rather than reaching out of it.
 	 *
 	 * @return string The nonce, or an empty string.
 	 */

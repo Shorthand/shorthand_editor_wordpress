@@ -48,6 +48,18 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 		$this->assertTrue( $task->is_download_complete() );
 	}
 
+	/**
+	 * The nonce is interpolated into chunk paths, so a task that cannot have
+	 * come from this plugin is refused rather than repaired.
+	 */
+	public function test_from_json_refuses_a_nonce_that_is_not_a_path_segment(): void {
+		$this->assertNull(
+			StoryUpdateTask::from_json(
+				'{"post_id":7,"story_id":"aBc123","request_nonce":"..\/..\/etc","prior_status":"draft","download_url":"https:\/\/example.test\/download"}'
+			)
+		);
+	}
+
 	public function test_from_json_restores_serialised_state(): void {
 		$task = StoryUpdateTask::from_json(
 			'{"post_id":7,"story_id":"story-123","request_nonce":"abc","prior_status":"draft","download_url":"https:\/\/example.test\/download","content_version":4,"file_url":"https:\/\/example.test\/file.zip","size":2048,"start":1024,"end":2048,"files":2}'

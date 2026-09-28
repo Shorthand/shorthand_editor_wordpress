@@ -112,7 +112,8 @@ class StoryUpdateTask {
 		if ( ! isset( $data['story_id'] ) || ! is_string( $data['story_id'] ) ) {
 			return null;
 		}
-		if ( ! isset( $data['request_nonce'] ) || ! is_string( $data['request_nonce'] ) ) {
+		/* The nonce becomes part of a chunk path, so a task carrying one this plugin could not have written is dropped, not repaired. */
+		if ( ! isset( $data['request_nonce'] ) || ! is_string( $data['request_nonce'] ) || ! StoryId::is_valid( $data['request_nonce'] ) ) {
 			return null;
 		}
 		if ( ! isset( $data['prior_status'] ) || ! is_string( $data['prior_status'] ) ) {
