@@ -1013,6 +1013,49 @@ function is_singular( string $post_type = '' ): bool {
 	return '' === $post_type || $post_type === $singular;
 }
 
+if ( ! class_exists( 'WP_Query' ) ) {
+	/**
+	 * Stands in for the query object handed to `pre_get_posts`.
+	 */
+	class WP_Query {
+		/**
+		 * @var array<string, mixed>
+		 */
+		public $query_vars = array();
+
+		/**
+		 * @var bool
+		 */
+		public $main_query = true;
+
+		/**
+		 * @param array<string, mixed> $query_vars
+		 */
+		public function __construct( array $query_vars = array() ) {
+			$this->query_vars = $query_vars;
+		}
+
+		/**
+		 * @param mixed $default
+		 * @return mixed
+		 */
+		public function get( string $name, $default = '' ) {
+			return $this->query_vars[ $name ] ?? $default;
+		}
+
+		/**
+		 * @param mixed $value
+		 */
+		public function set( string $name, $value ): void {
+			$this->query_vars[ $name ] = $value;
+		}
+
+		public function is_main_query(): bool {
+			return $this->main_query;
+		}
+	}
+}
+
 function tests_wp_set_front_page( bool $is_front_page ): void {
 	$GLOBALS['tests_wp_state']['is_front_page'] = $is_front_page;
 }

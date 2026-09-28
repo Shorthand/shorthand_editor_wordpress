@@ -43,7 +43,6 @@ class Templates {
 		$loader = new Loader();
 
 		$loader->add_filter( 'single_template', $this, 'single_template' );
-		$loader->add_filter( 'template_include', $this, 'front_page_template', 99 );
 		$loader->add_action( 'wp_head', $this, 'single_head' );
 
 		$loader->add_action( 'wp_enqueue_scripts', $this, 'enqueue_scripts' );
@@ -69,10 +68,14 @@ class Templates {
 	 * Resolution order: the story's own page template, a theme override, then
 	 * the template shipped with the plugin.
 	 *
+	 * The empty string leaves the fallback to the caller, which differs by
+	 * route: `single_template` and `template_include` are each handed a
+	 * different template to keep.
+	 *
 	 * @param int $post_id The story to resolve a template for.
 	 * @return string The template path, or an empty string when none is found.
 	 */
-	private function resolve_story_template( int $post_id ): string {
+	public function resolve_story_template( int $post_id ): string {
 		$custom_template = get_post_meta( $post_id, '_wp_page_template', true );
 
 		if ( $custom_template && 'default' !== $custom_template ) {
@@ -126,38 +129,10 @@ class Templates {
 	}
 
 	/**
-	 * Uses the story template when a story is the static front page.
-	 *
-	 * A front page request is a page request, so core resolves it through
-	 * get_page_template() and the `single_template` filter never fires. Left
-	 * alone, a story set as the home page renders through the theme's page
-	 * template, which prints the title and no story body.
-	 *
-	 * @param string $template The resolved template path.
-	 * @return string
-	 */
-	public function front_page_template( $template ) {
-		/*
-		 * `page_on_front` keeps its value after the site switches back to
-		 * showing latest posts, and is_front_page() is true for the blog index,
-		 * so the stale option would otherwise capture the blog index.
-		 */
-		if ( ! is_front_page() || 'page' !== get_option( 'show_on_front' ) ) {
-			return $template;
-		}
-
-		$front_page_id = (int) get_option( 'page_on_front' );
-		if ( ! $front_page_id || get_post_type( $front_page_id ) !== $this->post_type ) {
-			return $template;
-		}
-
-		$story_template = $this->resolve_story_template( $front_page_id );
-
-		return '' !== $story_template ? $story_template : $template;
-	}
-
-	/**
 	 * Prints meta tags from story head content.
+	 *
+	 * is_singular() for the post type is the test that holds on every route.
+	 * is_single() does not: it is false for a story serving as the front page.
 	 *
 	 * Scripts and stylesheets are enqueued separately in enqueue_scripts().
 	 */
