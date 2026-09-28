@@ -161,11 +161,15 @@ things; nothing else crosses the boundary.
 | `theshed_uploads` | This plugin | Filter, applied once in `Dependencies::get_post_api()`. Receives the default `WpUploads`; must return an `Uploads` |
 | `theshed_get_story_url` | This plugin | Filter, already applied in `Bundle::url()`. Receives the local bundle URL; returns the URL a browser should use |
 
-`theshed_uploads` covers every operation `Uploads` exposes, including download
-chunks: `Bundle::chunk_path()` puts them in uploads because they span WP Cron
-requests, and `Staging::gather()` reads them back through
-`Uploads::read_into()`. A decorator sees both; a hook on story files alone
-would not.
+`theshed_uploads` covers every operation `Uploads` exposes, and download chunks
+are the one thing that does not go through all of it. `Download::chunk_path()`
+puts them in uploads because they span WP Cron requests, and `Staging::gather()`
+reads them back through `Uploads::read_into()`, so a decorator sees the read.
+It does not see the write: `PostAPI::pull_story_chunk()` passes the chunk path
+to the HTTP transport as `filename`, and the transport streams the response
+there itself. The path is inside uploads either way, so a host whose uploads are
+a stream wrapper still stores the chunk; a sidecar that redirects uploads by
+some other means sees only the finished bundle, not the transfer.
 
 Rules that follow:
 

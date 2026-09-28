@@ -40,6 +40,9 @@ final class FakeUploads implements Uploads {
 	/** @var int */
 	private $writes_before_error = 0;
 
+	/** @var bool */
+	private $make_dir_fails = false;
+
 	/**
 	 * @return bool|\WP_Error
 	 */
@@ -89,7 +92,7 @@ final class FakeUploads implements Uploads {
 	public function make_dir( string $path ): bool {
 		++$this->make_dir_calls;
 
-		return true;
+		return ! $this->make_dir_fails;
 	}
 
 	/**
@@ -101,6 +104,13 @@ final class FakeUploads implements Uploads {
 	public function fail_writes( \WP_Error $error, int $after = 0 ): void {
 		$this->write_error         = $error;
 		$this->writes_before_error = $this->writes + $after;
+	}
+
+	/**
+	 * Makes `make_dir()` answer false, as a host that refuses one does.
+	 */
+	public function fail_make_dir(): void {
+		$this->make_dir_fails = true;
 	}
 
 	/**

@@ -180,4 +180,17 @@ final class OptionsTest extends WordPressTestCase {
 
 		$this->assertNull( $options->sanitize_v2_token_info( 'nonsense' ) );
 	}
+
+	/**
+	 * A host that cannot boot `WP_Filesystem` still renders the settings
+	 * screen, so the bundled stylesheet comes back empty rather than fatal.
+	 */
+	public function test_the_default_css_is_empty_when_the_file_system_cannot_boot(): void {
+		$this->forgetFileSystemBoot();
+		\tests_wp_set_filesystem_available( false );
+
+		$options = new Options( new Version() );
+
+		$this->assertSame( '', $options->get_default_css() );
+	}
 }

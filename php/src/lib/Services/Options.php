@@ -156,9 +156,20 @@ class Options {
 		$loader->register();
 	}
 
+	/**
+	 * The bundled stylesheet, or nothing where it cannot be read.
+	 *
+	 * A host without file system credentials has no `WP_Filesystem`, and the
+	 * settings screen still has to render.
+	 */
 	public function get_default_css(): string {
+		$fs = FileSystem::boot();
+		if ( null === $fs ) {
+			return '';
+		}
+
 		$default_css_path = $this->version->get_plugin_path( 'assets/css/options-css.default.css' );
-		$default_css      = FileSystem::boot()->get_contents( $default_css_path );
+		$default_css      = $fs->get_contents( $default_css_path );
 		if ( $default_css === false ) {
 			return '';
 		}

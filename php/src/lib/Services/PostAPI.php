@@ -260,7 +260,10 @@ class PostAPI {
 			return $download_url;
 		}
 
-		$bundle->download( $request_nonce )->start();
+		/* Nothing is recorded until uploads will take the chunks. */
+		if ( ! $bundle->download( $request_nonce )->start() ) {
+			return new WP_Error( 'pretty', __( 'Cannot publish: the story files cannot be written to this site\'s uploads.', 'the-shorthand-editor' ) );
+		}
 
 		$this->record_story_pull( $post_id, $request_nonce, 0 );
 
@@ -620,6 +623,11 @@ class PostAPI {
 
 		foreach ( $this->get_story_pulls( $post_id ) as $stale_nonce => $pull ) {
 			if ( $stale_nonce === $nonce ) {
+				continue;
+			}
+
+			/* The key came out of the database and becomes part of a path. */
+			if ( ! StoryId::is_valid( (string) $stale_nonce ) ) {
 				continue;
 			}
 

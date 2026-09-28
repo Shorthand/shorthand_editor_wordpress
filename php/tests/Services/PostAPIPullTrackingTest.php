@@ -98,7 +98,41 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		$this->assertSame( array(), $this->uploads->objects() );
 	}
 
+	/**
+	 * A pull record is data read back from the database, and its key becomes
+	 * part of a path. One that is not a path segment is left alone.
+	 */
+	public function test_a_stale_pull_whose_nonce_is_not_a_path_segment_deletes_nothing(): void {
+		tests_wp_set_post_meta( 7, 'story_pulls', array( '../../etc' => 2 ) );
+
+		$this->begin_pull();
+
+		$this->assertSame( 0, $this->uploads->deletes() );
+	}
+
+	/**
+	 * A host that refuses the bundle directory cannot hold the chunks either,
+	 * so the pull fails now rather than at the first chunk. Nothing is
+	 * recorded, because nothing was written.
+	 */
+	public function test_a_pull_that_cannot_be_prepared_is_not_recorded(): void {
+		$this->uploads->fail_make_dir();
+
+		$result = $this->make_post_api()->pull_story_begin( 7 );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( '', get_post_meta( 7, 'story_pulls', true ) );
+	}
+
 	private function begin_pull(): StoryUpdateTask {
+		$task = $this->make_post_api()->pull_story_begin( 7 );
+
+		$this->assertInstanceOf( StoryUpdateTask::class, $task );
+
+		return $task;
+	}
+
+	private function make_post_api(): PostAPI {
 		$auth = $this->createMock( AuthStateManager::class );
 		$auth->method( 'is_connected' )->willReturn( true );
 
@@ -114,7 +148,7 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 			)
 		);
 
-		$post_api = new PostAPI(
+		return new PostAPI(
 			$shorthand,
 			$options,
 			$this->createMock( Permissions::class ),
@@ -124,11 +158,5 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 			new BundleStore( $this->uploads ),
 			new StoryTextExtractor()
 		);
-
-		$task = $post_api->pull_story_begin( 7 );
-
-		$this->assertInstanceOf( StoryUpdateTask::class, $task );
-
-		return $task;
 	}
 }

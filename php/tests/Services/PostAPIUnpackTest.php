@@ -447,8 +447,13 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	private function publish( string $nonce, array $entries, ?PostAPI $post_api = null ): ?\WP_Error {
 		$archive = $this->make_archive( $entries );
 
+		$bundle = ( new BundleStore( $this->uploads ) )->open( 7, 'aBc123' );
+
+		$this->assertNotNull( $bundle );
+
+		/* The chunk is seeded where the download would have written it. */
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
-		$this->uploads->put( self::BUNDLE . '_' . $nonce . '_0.part', file_get_contents( $archive ) );
+		$this->uploads->put( $bundle->download( $nonce )->chunk_path( 0 ), file_get_contents( $archive ) );
 
 		$post_api = $post_api ?? $this->make_post_api();
 
