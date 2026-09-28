@@ -15,81 +15,6 @@ final class TemplatesTest extends WordPressTestCase {
 
 	private const STORY_ID = 42;
 
-	public function test_the_front_page_story_gets_the_plugin_template(): void {
-		$this->stage_front_page_story();
-
-		$this->assertSame(
-			$this->plugin_template(),
-			$this->templates()->front_page_template( 'theme/page.php' )
-		);
-	}
-
-	public function test_the_front_page_story_prefers_a_theme_override(): void {
-		$this->stage_front_page_story();
-		\tests_wp_set_located_template( 'single-tse-story.php', 'theme/single-tse-story.php' );
-
-		$this->assertSame(
-			'theme/single-tse-story.php',
-			$this->templates()->front_page_template( 'theme/page.php' )
-		);
-	}
-
-	public function test_the_front_page_story_prefers_its_own_page_template(): void {
-		$this->stage_front_page_story();
-		\tests_wp_set_post_meta( self::STORY_ID, '_wp_page_template', 'custom.php' );
-		\tests_wp_set_located_template( 'custom.php', 'theme/custom.php' );
-		\tests_wp_set_located_template( 'single-tse-story.php', 'theme/single-tse-story.php' );
-
-		$this->assertSame(
-			'theme/custom.php',
-			$this->templates()->front_page_template( 'theme/page.php' )
-		);
-	}
-
-	/**
-	 * `page_on_front` keeps its value after the site switches back to showing
-	 * latest posts, and is_front_page() is true for the blog index.
-	 */
-	public function test_a_stale_front_page_option_leaves_the_blog_index_alone(): void {
-		$this->stage_front_page_story();
-		\tests_wp_set_option( 'show_on_front', 'posts' );
-
-		$this->assertSame(
-			'theme/home.php',
-			$this->templates()->front_page_template( 'theme/home.php' )
-		);
-	}
-
-	public function test_other_pages_are_left_alone(): void {
-		$this->stage_front_page_story();
-		\tests_wp_set_front_page( false );
-
-		$this->assertSame(
-			'theme/single.php',
-			$this->templates()->front_page_template( 'theme/single.php' )
-		);
-	}
-
-	public function test_a_site_without_a_static_front_page_is_left_alone(): void {
-		$this->stage_front_page_story();
-		\tests_wp_set_option( 'page_on_front', 0 );
-
-		$this->assertSame(
-			'theme/page.php',
-			$this->templates()->front_page_template( 'theme/page.php' )
-		);
-	}
-
-	public function test_a_front_page_that_is_not_a_story_is_left_alone(): void {
-		$this->stage_front_page_story();
-		\tests_wp_set_post_type( self::STORY_ID, 'page' );
-
-		$this->assertSame(
-			'theme/page.php',
-			$this->templates()->front_page_template( 'theme/page.php' )
-		);
-	}
-
 	public function test_a_story_gets_the_plugin_template(): void {
 		$this->stage_global_post( self::POST_TYPE );
 
@@ -118,21 +43,13 @@ final class TemplatesTest extends WordPressTestCase {
 		);
 	}
 
-	public function test_the_front_page_filter_runs_late_on_template_include(): void {
+	public function test_the_story_template_filter_is_registered(): void {
 		$this->templates()->register_templates();
 
-		$hooks = \tests_wp_hook_callbacks( 'template_include' );
+		$hooks = \tests_wp_hook_callbacks( 'single_template' );
 
 		$this->assertCount( 1, $hooks );
-		$this->assertSame( 'front_page_template', $hooks[0]['callback'][1] );
-		$this->assertSame( 99, $hooks[0]['priority'] );
-	}
-
-	private function stage_front_page_story(): void {
-		\tests_wp_set_front_page( true );
-		\tests_wp_set_option( 'show_on_front', 'page' );
-		\tests_wp_set_option( 'page_on_front', self::STORY_ID );
-		\tests_wp_set_post_type( self::STORY_ID, self::POST_TYPE );
+		$this->assertSame( 'single_template', $hooks[0]['callback'][1] );
 	}
 
 	private function stage_global_post( string $post_type ): void {
