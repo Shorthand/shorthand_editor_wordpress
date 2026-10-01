@@ -1,5 +1,12 @@
 import * as React from "react";
 
+/*
+ * Fired on `document` when a pull this editor watched has ended, whether it
+ * succeeded or failed. The post's content and featured image are settled by
+ * then, so other parts of the page can reload from the server.
+ */
+export const PULL_ENDED_EVENT = "shorthand:pull-ended";
+
 /* The story state exposed to React components */
 export interface IStoryState {
   liveVersion: number | null;
@@ -47,6 +54,7 @@ export function StoryStateProvider({
   React.useEffect(() => {
     let percent = 0;
     let timeout = 2000;
+    let pulling = false;
 
     refreshProgress();
     return () => {
@@ -78,8 +86,12 @@ export function StoryStateProvider({
         setProgress(progress);
 
         if (!data.progress) {
+          if (pulling) {
+            document.dispatchEvent(new CustomEvent(PULL_ENDED_EVENT));
+          }
           return;
         }
+        pulling = true;
 
         refreshTimerRef.current = setTimeout(refreshProgress, timeout) as unknown as number;
         if (percent === data.progress.percent) {

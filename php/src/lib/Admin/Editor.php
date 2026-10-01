@@ -11,7 +11,9 @@ use Shorthand\Core\Version;
 use Shorthand\Services\AuthStateManager;
 use Shorthand\Services\Options;
 use Shorthand\Services\Shorthand;
+use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StorySyncState;
 use Shorthand\Admin\Actions\PostPreview;
 use Shorthand\Admin\Actions\EditWithShorthand;
@@ -60,6 +62,16 @@ class Editor {
 	 */
 	private $auth_state_manager;
 
+	/**
+	 * @var \Shorthand\Services\Permissions
+	 */
+	private $permissions;
+
+	/**
+	 * @var \Shorthand\Services\StoryCover
+	 */
+	private $story_cover;
+
 	public function __construct(
 		Options $options,
 		Shorthand $shorthand,
@@ -69,7 +81,9 @@ class Editor {
 		PostPreview $post_preview,
 		EditWithShorthand $edit_with_shorthand,
 		string $post_type,
-		AuthStateManager $auth_state_manager
+		AuthStateManager $auth_state_manager,
+		Permissions $permissions,
+		StoryCover $story_cover
 	) {
 		$this->post_type           = $post_type;
 		$this->options             = $options;
@@ -80,6 +94,8 @@ class Editor {
 		$this->post_preview        = $post_preview;
 		$this->edit_with_shorthand = $edit_with_shorthand;
 		$this->auth_state_manager  = $auth_state_manager;
+		$this->permissions         = $permissions;
+		$this->story_cover         = $story_cover;
 	}
 
 	public function init( Loader $loader ) {
@@ -94,6 +110,12 @@ class Editor {
 		$loader->add_filter( 'admin_enqueue_scripts', $this, 'admin_enqueue_scripts', 10, 1 );
 
 		$loader->add_action( 'wp_ajax_shorthand_get_story_state', $this, 'ajax_get_story_state', 10, 1 );
+
+		$loader->add_filter( 'admin_post_thumbnail_html', $this, 'admin_post_thumbnail_html', 10, 3 );
+
+		$loader->add_action( 'wp_ajax_shorthand_get_story_cover', $this, 'ajax_get_story_cover', 10, 1 );
+
+		$loader->add_action( 'wp_ajax_shorthand_import_story_cover', $this, 'ajax_import_story_cover', 10, 1 );
 
 		$loader->add_action( 'before_delete_post', $this, 'before_delete_post', 10, 2 );
 	}
@@ -294,6 +316,10 @@ class Editor {
 		wp_add_inline_style(
 			'theshed-post-components-style',
 			'#theshed-toolbar { width: 100%; }'
+			. ' .theshed-cover-panel [hidden] { display: none !important; }'
+			. ' .theshed-cover-panel__tabs { display: flex; gap: 16px; margin: 0 0 10px; border-bottom: 1px solid #dcdcde; }'
+			. ' .theshed-cover-panel__tab { padding: 4px 0 6px; border-bottom: 2px solid transparent; color: #50575e; text-decoration: none; }'
+			. ' .theshed-cover-panel__tab[aria-selected="true"] { color: #1d2327; border-bottom-color: #2271b1; font-weight: 600; }'
 		);
 
 		wp_enqueue_script( 'theshed-post-components-script', $this->version->get_plugin_url( 'public/scripts/post.min.js' ), array(), $this->version->get_plugin_version(), false );
@@ -323,6 +349,12 @@ class Editor {
 			<?php echo wp_json_encode( (array) $story_state, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>,
 			<?php echo wp_json_encode( wp_create_nonce( 'shorthand_get_story_state' ), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>,
 		);
+		<?php if ( '' !== $story_id ) : ?>
+		window.Shorthand.WordPress.ui.refreshStoryCover(
+			<?php echo wp_json_encode( get_the_ID(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>,
+			<?php echo wp_json_encode( wp_create_nonce( 'shorthand_story_cover' ), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT ); ?>
+		);
+		<?php endif; ?>
 		<?php
 
 		$create_toolbar_src = ob_get_clean();
@@ -342,6 +374,129 @@ class Editor {
 		$data    = $this->get_post_story_state( $post_id );
 
 		wp_send_json_success( $data );
+	}
+
+	/**
+	 * Rebuilds the Featured image box around the Shorthand cover.
+	 *
+	 * The cover the last publish recorded shows first; core's own markup,
+	 * with the featured image and its links, sits under a second tab. The
+	 * client asks Shorthand for the current cover once the page has loaded.
+	 * Core re-runs this filter when the author sets or removes a featured
+	 * image, passing the unsaved choice as `$thumbnail_id`.
+	 *
+	 * @param string   $content      The featured image box markup.
+	 * @param int      $post_id      Post being edited.
+	 * @param int|null $thumbnail_id Featured image the form shows.
+	 */
+	public function admin_post_thumbnail_html( $content, $post_id, $thumbnail_id ) {
+		$post = get_post( $post_id );
+		if ( ! $post instanceof WP_Post || $post->post_type !== $this->post_type || '' === $this->get_story_id( $post ) ) {
+			return $content;
+		}
+
+		$cover = StoryCover::sanitize( get_post_meta( $post_id, 'story_cover', true ) );
+		$state = null === $cover ? StoryCover::STATE_UNKNOWN : $this->story_cover->state( (int) $post_id, $cover, (int) $thumbnail_id );
+
+		$panel      = $this->cover_panel( (int) $post_id, $cover, $state );
+		$message    = $panel['message'];
+		$importable = $panel['importable'];
+
+		ob_start();
+		include $this->version->get_plugin_path( 'assets/admin/partials/cover-panel.php' );
+
+		return ob_get_clean();
+	}
+
+	/**
+	 * The story's current cover and the state publishing would reach with it.
+	 *
+	 * Reads only. The recorded cover belongs to the publish path, or a
+	 * refresh here would hide a changed cover from the next publish. The
+	 * `thumbnail` parameter carries the form's unsaved featured image.
+	 */
+	public function ajax_get_story_cover() {
+		list( $post_id, $story_id ) = $this->ajax_story_post( $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Checked inside.
+
+		$cover = $this->story_cover->fetch( $story_id, true );
+		if ( is_wp_error( $cover ) ) {
+			wp_send_json_error( $cover, 502 );
+			return;
+		}
+
+		$thumbnail = isset( $_GET['thumbnail'] ) ? max( 0, (int) $_GET['thumbnail'] ) : null; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Checked above.
+		$state     = $this->story_cover->state( $post_id, $cover, $thumbnail );
+
+		wp_send_json_success( $this->cover_panel( $post_id, $cover, $state ) );
+	}
+
+	/**
+	 * Imports the story's cover as the featured image now, at the author's
+	 * request, replacing whatever is featured.
+	 */
+	public function ajax_import_story_cover() {
+		list( $post_id, $story_id ) = $this->ajax_story_post( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked inside.
+
+		$outcome = $this->story_cover->sync( $post_id, $story_id, true );
+		if ( StoryCover::OUTCOME_FAILED === $outcome ) {
+			wp_send_json_error( new WP_Error( 'pretty', 'The story cover could not be imported.' ), 502 );
+			return;
+		}
+		if ( StoryCover::STATE_NONE === $outcome ) {
+			wp_send_json_error( new WP_Error( 'pretty', 'This story has no cover image.' ), 404 );
+			return;
+		}
+
+		$cover = $this->story_cover->fetch( $story_id, true );
+		$state = $this->story_cover->state( $post_id, is_wp_error( $cover ) ? null : $cover );
+
+		wp_send_json_success( $this->cover_panel( $post_id, is_wp_error( $cover ) ? null : $cover, $state ) );
+	}
+
+	/**
+	 * Checks the nonce, the capability and the story link shared by the
+	 * cover ajax actions. Ends the request on failure.
+	 *
+	 * @param array<string, mixed> $request `$_GET` or `$_POST`.
+	 * @return array{0: int, 1: string} Post ID and story ID.
+	 */
+	private function ajax_story_post( array $request ): array {
+		if ( empty( $request['post'] ) ) {
+			wp_send_json_error( new WP_Error( 'pretty', 'Post ID is required.' ), 400 );
+		}
+
+		check_ajax_referer( 'shorthand_story_cover', '_ajax_nonce' );
+
+		$post_id = absint( $request['post'] );
+		if ( ! $this->permissions->can_pull_story( $post_id ) ) {
+			wp_send_json_error( new WP_Error( 'pretty', 'You are not allowed to change this story.' ), 403 );
+		}
+
+		$post     = get_post( $post_id );
+		$story_id = $post instanceof WP_Post ? $this->get_story_id( $post ) : '';
+		if ( '' === $story_id ) {
+			wp_send_json_error( new WP_Error( 'pretty', 'This post is not linked to a Shorthand story.' ), 404 );
+		}
+
+		return array( $post_id, $story_id );
+	}
+
+	/**
+	 * What the cover panel shows for a state.
+	 *
+	 * @param int        $post_id Post whose featured image is reported.
+	 * @param array|null $cover   Incoming cover.
+	 * @param string     $state   A `StoryCover::STATE_*` value.
+	 * @return array{cover: array|null, state: string, message: string, importable: bool, thumbnail: int}
+	 */
+	private function cover_panel( int $post_id, ?array $cover, string $state ): array {
+		return array(
+			'cover'      => $cover,
+			'state'      => $state,
+			'message'    => $this->story_cover->describe( $state ),
+			'importable' => null !== $cover && StoryCover::STATE_CURRENT !== $state,
+			'thumbnail'  => get_post_thumbnail_id( $post_id ),
+		);
 	}
 
 	public function get_post_story_state( int $post_id ): ?array {

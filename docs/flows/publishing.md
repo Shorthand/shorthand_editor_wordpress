@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-08-25
+updated: 2026-09-25
 ---
 
 # Publishing a story
@@ -51,8 +51,11 @@ different meaning.
    rewritten.
 8. The story's plain text is mirrored into `post_content` and `post_excerpt`,
    so core search and listing views have something to read.
-9. `story_manifest` post meta is written.
-10. The staging directory and the pull directory are deleted.
+9. `Shorthand\Services\StoryCover::sync()` fetches the story settings and,
+   where the featured image rule allows, imports the cover into the media
+   library and sets it as the featured image. See the cover section below.
+10. `story_manifest` post meta is written.
+11. The staging directory and the pull directory are deleted.
 
 Steps 5 and 6 run through `Shorthand\Services\FileSystemService`, never through
 a direct `ZipArchive::extractTo()` into uploads. See
@@ -132,6 +135,88 @@ the third argument of the `theshed_post_process_body` and
 A republish of an unedited story performs two writes and two deletes, both of
 them documents, whatever the size of the story. See
 `Shorthand\Tests\Services\PostAPIUnpackTest`.
+
+## Cover image
+
+Step 9 runs `Shorthand\Services\StoryCover::sync( int $post_id, string $story_id )`
+inside `Shorthand\Services\PostAPI::extract_story_content()`. It never fails
+the publish: a settings call, download, or sideload that fails leaves the
+featured image as it was, and the next publish tries again.
+
+The rule: the plugin writes the featured image only when it set the current
+one, or when there is none. The five states and the two meta keys behind them
+are in `docs/models/story-post-meta.md`.
+
+The import, when it runs:
+
+1. Refuse a cover whose `mime` is not `image/*`, or whose `size` is over the
+   `theshed_cover_max_bytes` filter value, 20 MB by default.
+2. Require `wp-admin/includes/file.php`, `media.php`, and `image.php`, which
+   WP-Cron does not load.
+3. `download_url()` to a temporary file, then `media_handle_sideload()` into
+   the media library, attached to the post. A failed sideload deletes the
+   temporary file.
+4. Set `_wp_attachment_image_alt` from `meta.description`, when present.
+5. `set_post_thumbnail()`, then write `story_cover` and `story_cover_attachment`.
+6. `wp_delete_attachment( $previous, true )` when the plugin's earlier
+   attachment was still the featured image. This runs after the thumbnail
+   moves, because deleting an attachment clears every `_thumbnail_id` that
+   still points at it.
+
+The featured image lands after the post is already live, on the WP-Cron tick
+that finishes the pull. A listing rendered in between shows no featured image.
+
+### Local development
+
+`download_url()` uses `wp_safe_remote_get()`, which refuses the Docker
+environment's API on three counts: `host.docker.internal` resolves to a
+private address, port 9443 is not on WordPress's safe port list, and the
+ministack certificate is self-signed. Story content downloads use
+`wp_remote_get()` and are not checked.
+
+`Shorthand\Plugin\DevHttp::register()`, called from `Shorthand\Plugin::init()`,
+adds the `http_request_host_is_external`, `http_allowed_safe_ports`, and
+`https_ssl_verify` filters for the host and port in `THESHED_API_URL`. It
+registers nothing unless `THESHED_NO_SSL_VERIFY` is true, which only
+`docker-compose.yml` sets. Keep `download_url()`: the cover URL comes from an
+API response, and the safe transport is what stops it reaching internal
+addresses in production.
+
+### Editor panel
+
+In the classic editor, `Shorthand\Admin\Editor::admin_post_thumbnail_html()`
+rebuilds the Featured image box with two tabs. "Shorthand cover", shown by
+default, carries the cover image, a message saying what the next publish will
+do, and a "Use story cover now" button. "Featured image" carries core's own
+markup: the current featured image, the Set and Remove links, and the
+`_thumbnail_id` form field. The first tab lays its image out as core lays out
+the featured image, a paragraph holding an image with width and height
+attributes, so when the featured image is the story cover, switching tabs
+does not move the picture.
+
+The box renders from `story_cover`. The client module
+`src/post-shorthand-story/coverPanel.ts` then calls
+`wp_ajax_shorthand_get_story_cover` once, sending the form's `_thumbnail_id`
+as `thumbnail`, and repaints the first tab with the cover Shorthand reports
+now. Core replaces the whole box when the author sets or removes a featured
+image, passing the unsaved choice to the filter; the client then shows the
+"Featured image" tab and refreshes again.
+
+"Use story cover now" posts `wp_ajax_shorthand_import_story_cover`, which
+checks the nonce and `Shorthand\Services\Permissions::can_pull_story()`, then
+runs `Shorthand\Services\StoryCover::sync()` with `$replace = true`. The
+import is saved at once, including `_thumbnail_id`. The client then calls
+`wp.media.featuredImage.set()` with the new attachment so core redraws its
+tab and the form field matches; a later save of the post cannot revert it.
+
+Every panel payload carries `thumbnail`, the saved featured image ID. When
+the story state poll in `src/post-shorthand-story/hooks/useStoryState.tsx`
+sees a pull it was watching end, it fires the `shorthand:pull-ended` event
+on `document`. The cover module then refreshes without the `thumbnail`
+parameter, so the state is judged against what the pull saved, and calls
+`wp.media.featuredImage.set()` when the saved ID differs from the form's.
+The chosen tab stays as it was. The event fires on a failed pull too; the
+refresh then shows the unchanged state.
 
 ## Pull tracking
 
