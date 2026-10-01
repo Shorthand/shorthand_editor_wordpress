@@ -1,0 +1,18 @@
+{
+	"core": null,
+	"phpVersion": "8.3",
+	"port": 8889,
+	"testsEnvironment": false,
+	"mappings": {
+		"wp-content/plugins/the-shorthand-editor": "./php/src",
+		"wp-content/plugins/the-shorthand-editor/public": "./public",
+		"wp-content/mu-plugins": "./docker/mu-plugins",
+		"wp-content/s4w-tests": "./php/tests/integration"
+	},
+	"config": {
+		"WP_DEBUG": true,
+		"WP_ENVIRONMENT_TYPE": "local",
+		"THESHED_NO_SSL_VERIFY": true,
+		"THESHED_BLOCK_UPGRADE": true
+	}
+}

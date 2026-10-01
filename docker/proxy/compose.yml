@@ -1,0 +1,20 @@
+# Optional HTTPS front for wp-env.
+#
+#   mkcert -cert-file docker/proxy/certs/local.pem -key-file docker/proxy/certs/local-key.pem localhost wordpress.local "*.localhost"
+#   WP_PORT=8888 docker compose -f docker/proxy/compose.yml up -d
+#
+# Then browse https://localhost:8443. docker/mu-plugins/local-proxy.php serves WordPress under that origin.
+name: "s4w-proxy-${PROXY_PORT:-8443}"
+
+services:
+  proxy:
+    image: caddy:2-alpine
+    ports:
+      - "${PROXY_PORT:-8443}:443"
+    environment:
+      WP_PORT: "${WP_PORT:-8888}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway

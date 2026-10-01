@@ -1,0 +1,26 @@
+{
+	"core": null,
+	"phpVersion": "8.3",
+	"port": 8888,
+	"testsEnvironment": false,
+	"mappings": {
+		"wp-content/plugins/the-shorthand-editor": "./php/src",
+		"wp-content/plugins/the-shorthand-editor/public": "./public",
+		"wp-content/mu-plugins": "./docker/mu-plugins",
+		"wp-content/s4w-tests": "./php/tests/integration"
+	},
+	"config": {
+		"WP_DEBUG": true,
+		"WP_DEBUG_DISPLAY": true,
+		"WP_DEVELOPMENT_MODE": "plugin",
+		"WP_ENVIRONMENT_TYPE": "local",
+		"THESHED_NO_SSL_VERIFY": true,
+		"THESHED_FIX_CRON_URL": true,
+		"THESHED_BLOCK_UPGRADE": true,
+		"THESHED_API_URL": "https://host.docker.internal:9443/api",
+		"THESHED_APP_URL": "https://localhost:9443"
+	},
+	"lifecycleScripts": {
+		"afterStart": "bin/wp-env-seed.sh"
+	}
+}
