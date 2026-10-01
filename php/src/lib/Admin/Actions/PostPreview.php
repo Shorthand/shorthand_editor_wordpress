@@ -116,8 +116,10 @@ class PostPreview {
 
 		$story_version = $preview_content->get_content_version();
 		$story_head    = $preview_content->get_head();
-		$story_body    = $preview_content->get_body();
-		$user_style    = $this->options->get_post_css();
+
+		/** This filter is documented in templates/single-tse-story.php. */
+		$story_body = apply_filters( 'theshed_story_body', $preview_content->get_body(), $post_id );
+		$user_style = $this->options->get_post_css();
 
 		// Enqueue scripts and stylesheets from story head content.
 		if ( ! empty( $story_head ) ) {

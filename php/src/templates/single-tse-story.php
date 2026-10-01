@@ -66,6 +66,14 @@ if ( post_password_required( $post->ID ) ) {
 		if ( '' !== $theshed_story_body ) {
 			$theshed_story_version = is_numeric( $theshed_story_version ) ? (int) $theshed_story_version : null;
 
+			/**
+			 * Filters Shorthand story body HTML immediately before it is rendered.
+			 *
+			 * @param string $story_body The Shorthand story body HTML.
+			 * @param int    $post_id    The Shorthand story post ID.
+			 */
+			$theshed_story_body = apply_filters( 'theshed_story_body', $theshed_story_body, $post->ID );
+
 			\Shorthand\Services\StoryKses::enable();
 			\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $theshed_story_body, $theshed_story_version );
 			\Shorthand\Services\StoryKses::disable();
