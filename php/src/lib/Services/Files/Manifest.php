@@ -225,23 +225,31 @@ class Manifest {
 	 * is what `Shorthand\Services\Files\Bundle` copies from. The previous
 	 * directory is removed by the next publish's manifest diff.
 	 *
-	 * An archive that already names the new path fails: its own entry would
-	 * be dropped from the manifest, and never copied.
+	 * An archive that already names the new path, in any case, fails: its own
+	 * entry would be dropped from the manifest and never copied, or share one
+	 * file with the document on a host that folds case.
 	 *
 	 * @param array  $manifest Manifest read out of the archive index.
 	 * @param string $prefix   Directory to move the documents into, relative to the bundle.
 	 * @return array<string, array{size: int, crc: int, from?: string}>|\WP_Error
 	 */
 	public static function relocate_documents( array $manifest, string $prefix ) {
+		$folded = array();
+
+		foreach ( array_keys( $manifest ) as $key ) {
+			$folded[ strtolower( $key ) ] = $key;
+		}
+
 		foreach ( self::DOCUMENTS as $name ) {
 			if ( ! isset( $manifest[ $name ] ) ) {
 				continue;
 			}
 
 			$path = $prefix . '/' . $name;
+			$fold = strtolower( $path );
 
-			if ( isset( $manifest[ $path ] ) ) {
-				return new WP_Error( 'file', "The story archive names {$path}, where this publish moves {$name}.", $path );
+			if ( isset( $folded[ $fold ] ) ) {
+				return new WP_Error( 'file', "The story archive names {$folded[ $fold ]}, where this publish moves {$name}.", $folded[ $fold ] );
 			}
 
 			$entry         = $manifest[ $name ];

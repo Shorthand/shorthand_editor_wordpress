@@ -255,6 +255,28 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
+	 * `from_archive()` folded case before the move made the new name.
+	 */
+	public function test_relocating_onto_an_entry_that_differs_only_in_case_is_refused(): void {
+		$result = Manifest::relocate_documents(
+			array(
+				'article.html'            => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+				'docs/pull1/Article.html' => array(
+					'size' => 5,
+					'crc'  => 2,
+				),
+			),
+			'docs/pull1'
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'docs/pull1/Article.html', $result->get_error_data( 'file' ) );
+	}
+
+	/**
 	 * A story with no head material still publishes.
 	 */
 	public function test_relocating_the_documents_tolerates_an_absent_one(): void {
