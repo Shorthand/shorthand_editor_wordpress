@@ -201,6 +201,10 @@ class Bundle {
 
 		if ( '' !== $documents_dir ) {
 			$manifest = Manifest::relocate_documents( $manifest, $documents_dir );
+
+			if ( is_wp_error( $manifest ) ) {
+				return $manifest;
+			}
 		}
 
 		$stored = $this->manifest();

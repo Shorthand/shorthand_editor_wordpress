@@ -225,14 +225,23 @@ class Manifest {
 	 * is what `Shorthand\Services\Files\Bundle` copies from. The previous
 	 * directory is removed by the next publish's manifest diff.
 	 *
+	 * An archive that already names the new path fails: its own entry would
+	 * be dropped from the manifest, and never copied.
+	 *
 	 * @param array  $manifest Manifest read out of the archive index.
 	 * @param string $prefix   Directory to move the documents into, relative to the bundle.
-	 * @return array<string, array{size: int, crc: int, from?: string}>
+	 * @return array<string, array{size: int, crc: int, from?: string}>|\WP_Error
 	 */
-	public static function relocate_documents( array $manifest, string $prefix ): array {
+	public static function relocate_documents( array $manifest, string $prefix ) {
 		foreach ( self::DOCUMENTS as $name ) {
 			if ( ! isset( $manifest[ $name ] ) ) {
 				continue;
+			}
+
+			$path = $prefix . '/' . $name;
+
+			if ( isset( $manifest[ $path ] ) ) {
+				return new WP_Error( 'file', "The story archive names {$path}, where this publish moves {$name}.", $path );
 			}
 
 			$entry         = $manifest[ $name ];
@@ -240,7 +249,7 @@ class Manifest {
 
 			unset( $manifest[ $name ] );
 
-			$manifest[ $prefix . '/' . $name ] = $entry;
+			$manifest[ $path ] = $entry;
 		}
 
 		ksort( $manifest );
