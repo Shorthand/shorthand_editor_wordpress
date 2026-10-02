@@ -394,6 +394,32 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	}
 
 	/**
+	 * PHP stores a digits-only name as an integer key, and a merge that
+	 * renumbers keys would record the file under a name it does not have.
+	 */
+	public function test_a_failed_copy_records_a_digits_only_name_as_written(): void {
+		$this->publish( 'pull1', array( 'article.html' => 'article' ) );
+
+		$this->uploads->fail_writes( new \WP_Error( 'file', 'Could not write the story file.' ), 1 );
+
+		$result = $this->publish(
+			'pull2',
+			array(
+				'123'          => 'binary',
+				'article.html' => 'article, edited',
+			)
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+
+		$names = array_map( 'strval', array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
+		sort( $names );
+
+		$this->assertSame( array( '123', 'docs/pull1/article.html' ), $names );
+		$this->assertArrayHasKey( self::BUNDLE . '/123', $this->bundle_objects() );
+	}
+
+	/**
 	 * The manifest is the record of what the bundle holds, so it is stored
 	 * once the documents are, not before.
 	 */
@@ -610,7 +636,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$zip->open( $path, ZipArchive::CREATE | ZipArchive::OVERWRITE );
 
 		foreach ( $entries as $name => $contents ) {
-			$zip->addFromString( $name, $contents );
+			$zip->addFromString( (string) $name, $contents );
 		}
 
 		$zip->close();

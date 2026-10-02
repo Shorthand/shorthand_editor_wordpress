@@ -213,8 +213,9 @@ class Bundle {
 		if ( is_wp_error( $copied ) ) {
 			$written = $copied->get_error_data( 'partial_manifest' );
 
+			/* A digits-only name is an integer key, which `array_merge()` renumbers. */
 			if ( ! empty( $written ) ) {
-				$this->commit( array_merge( $stored, $written ) );
+				$this->commit( array_replace( $stored, $written ) );
 			}
 
 			return $copied;
