@@ -237,8 +237,9 @@ refresh then shows the unchanged state.
 Uploads cannot be listed, so the `story_pulls` post meta key records what each
 pull left behind: a chunk count per request nonce.
 
-- `pull_story_begin()` sweeps every entry that is not its own nonce, deleting
-  chunk `0` to `{count-1}` by name, then records its own.
+- `pull_story_begin()` sweeps every entry, deleting chunk `0` to `{count-1}` by
+  name, then records its own. The sweep runs before the new pull writes
+  anything, so an entry that shares the new nonce holds only stale chunks.
 - `pull_story_chunk()` raises the recorded count after each chunk lands.
 - `pull_story_cleanup()` deletes the chunks and drops the entry, on both a
   successful and a failed pull.

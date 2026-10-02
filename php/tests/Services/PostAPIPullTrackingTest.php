@@ -112,6 +112,23 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	}
 
 	/**
+	 * The sweep runs before the new pull records or writes anything, so a
+	 * stale record that happens to share the new nonce holds only stale chunks.
+	 */
+	public function test_a_stale_pull_that_shares_the_new_nonce_is_swept(): void {
+		$stale = 'vip://wp-content/uploads/shorthand/7/aBc123_10000';
+
+		$this->uploads->put( $stale . '_0.part', 'first' );
+
+		tests_wp_set_post_meta( 7, 'story_pulls', array( '10000' => 1 ) );
+
+		$task = $this->begin_pull();
+
+		$this->assertSame( '10000', $task->request_nonce );
+		$this->assertSame( array(), $this->uploads->objects() );
+	}
+
+	/**
 	 * A host that refuses the bundle directory cannot hold the chunks either,
 	 * so the pull fails now rather than at the first chunk. Nothing is
 	 * recorded, because nothing was written.
