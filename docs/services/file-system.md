@@ -165,9 +165,10 @@ section "Case and the manifest" in `docs/services/file-system.md`.
 
 `Manifest::relocate_documents()` fails the publish when the archive already
 names `docs/{nonce}/article.html` or `docs/{nonce}/head.html`, the path a
-document moves to. The archive's own entry would be dropped from the manifest
-and never copied. The story exports checked on 2026-10-02 have no `docs/`
-directory.
+document moves to, in any case. The archive's own entry would be dropped from
+the manifest and never copied, or, differing only in case, share one file with
+the document on a host that folds case. The story exports checked on
+2026-10-02 have no `docs/` directory.
 
 `Manifest::from_meta()` holds the names in the stored `story_manifest` to the
 same rules, because `Bundle::prune()` and `Bundle::delete()` join each name
