@@ -66,6 +66,60 @@ final class PostTypeTest extends WordPressTestCase {
 		$this->assertSame( 'aBc123', $sanitize( 'aBc123' ) );
 	}
 
+	public function test_story_cover_meta_keeps_only_the_known_keys(): void {
+		$post_type = $this->make_post_type();
+		$post_type->register_post_type();
+
+		$sanitize = \tests_wp_registered_post_meta( $post_type->post_type, 'story_cover' )['sanitize_callback'];
+
+		$this->assertSame(
+			array(
+				'id'     => 'c1',
+				'mime'   => 'image/jpeg',
+				'name'   => 'cover.jpg',
+				'size'   => 12,
+				'width'  => 800,
+				'height' => 600,
+			),
+			$sanitize(
+				array(
+					'id'     => 'c1',
+					'url'    => 'https://cdn.example.test/c1.jpg?sig=abc',
+					'mime'   => 'image/jpeg',
+					'name'   => 'cover.jpg',
+					'size'   => '12',
+					'width'  => 800,
+					'height' => 600,
+					'extra'  => 'dropped',
+				)
+			)
+		);
+		$this->assertNull( $sanitize( 'not a cover' ) );
+		$this->assertNull( $sanitize( array( 'url' => 'https://cdn.example.test/c1.jpg' ) ) );
+	}
+
+	public function test_story_cover_attachment_meta_is_an_integer(): void {
+		$post_type = $this->make_post_type();
+		$post_type->register_post_type();
+
+		$args = \tests_wp_registered_post_meta( $post_type->post_type, 'story_cover_attachment' );
+
+		$this->assertSame( 'integer', $args['type'] );
+		$this->assertSame( 'absint', $args['sanitize_callback'] );
+	}
+
+	/**
+	 * Both keys drive the featured image rule, so the Custom Fields box must
+	 * not offer them for editing.
+	 */
+	public function test_cover_meta_keys_are_protected(): void {
+		$post_type = $this->make_post_type();
+
+		$this->assertTrue( $post_type->is_protected_meta( false, 'story_cover', 'post' ) );
+		$this->assertTrue( $post_type->is_protected_meta( false, 'story_cover_attachment', 'post' ) );
+		$this->assertFalse( $post_type->is_protected_meta( false, 'story_cover', 'user' ) );
+	}
+
 	private function make_post_type(): PostType {
 		return new PostType(
 			$this->createStub( Options::class ),

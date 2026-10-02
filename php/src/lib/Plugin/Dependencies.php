@@ -22,6 +22,7 @@ use Shorthand\Services\Shorthand;
 use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\ShorthandHttpTransport;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\TokenManager;
 use Shorthand\Services\WordPressContextProvider;
@@ -67,6 +68,10 @@ class Dependencies {
 	 * @var \Shorthand\Services\PostAPI
 	 */
 	protected $post_api;
+	/**
+	 * @var \Shorthand\Services\StoryCover
+	 */
+	protected $story_cover;
 	/**
 	 * @var \Shorthand\Admin\AdminController
 	 */
@@ -196,9 +201,17 @@ class Dependencies {
 				$uploads = $default_uploads;
 			}
 
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), new BundleStore( $uploads ), new StoryTextExtractor() );
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), new BundleStore( $uploads ), new StoryTextExtractor(), $this->get_story_cover() );
 		}
 		return $this->post_api;
+	}
+
+	public function get_story_cover(): StoryCover {
+		$this->boot();
+		if ( ! isset( $this->story_cover ) ) {
+			$this->story_cover = new StoryCover( $this->get_shorthand() );
+		}
+		return $this->story_cover;
 	}
 
 	public function get_admin(): AdminController {
@@ -212,7 +225,8 @@ class Dependencies {
 				$this->get_permissions(),
 				$this->version,
 				$this->get_post_type()->post_type,
-				$this->get_auth_state_manager()
+				$this->get_auth_state_manager(),
+				$this->get_story_cover()
 			);
 			$this->admin->init();
 		}

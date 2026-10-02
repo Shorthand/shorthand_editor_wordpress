@@ -12,6 +12,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Tests\WordPressTestCase;
 
@@ -42,7 +43,8 @@ final class PostAPITest extends WordPressTestCase {
 			$auth_state_manager ?? $this->createMock( AuthStateManager::class ),
 			$this->createMock( StoryContentTransformer::class ),
 			new BundleStore( $uploads ?? $this->createMock( Uploads::class ) ),
-			new StoryTextExtractor()
+			new StoryTextExtractor(),
+			$this->createMock( StoryCover::class )
 		);
 	}
 

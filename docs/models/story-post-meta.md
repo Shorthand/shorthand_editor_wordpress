@@ -1,7 +1,7 @@
 ---
 title: Story post meta
 purpose: The post meta keys a Shorthand story post carries, and the shape of the structured ones.
-updated: 2026-09-01
+updated: 2026-10-02
 ---
 
 # Story post meta
@@ -24,6 +24,8 @@ rendered page is built from `story_body`.
 | `story_update_state` | object | Progress of the in-flight pull |
 | `story_pulls` | object | Download chunks awaiting cleanup |
 | `story_excerpt` | string | The excerpt last generated from the story body |
+| `story_cover` | object | The Shorthand cover image the last publish evaluated |
+| `story_cover_attachment` | number | Attachment the plugin set as the featured image |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
 
 `Shorthand\Plugin\PostType::register_post_type()` registers every key except
@@ -106,6 +108,79 @@ re-encoded entities.
 The next publish overwrites `post_excerpt` only when it still matches this
 value. Any other value, including an empty one, is an author's edit and is
 left alone.
+
+## story_cover
+
+The cover image the last publish evaluated, as `GET /v2/stories/:id/settings`
+reported it under `meta.cover`, reduced to six keys by
+`Shorthand\Services\StoryCover::sanitize()`, which is the registered
+`sanitize_callback`:
+
+```php
+array(
+    'id'     => 'c1',
+    'mime'   => 'image/jpeg',
+    'name'   => 'cover.jpg',
+    'size'   => 1200,
+    'width'  => 800,
+    'height' => 600,
+)
+```
+
+The file's address is not stored. The API reports it as `signedUrl`, signed
+for a short window, so it is only good for the request that fetched it.
+`Shorthand\Services\StoryCover::read()` carries it as `url` on the in-memory
+cover, the `shorthand_story_cover_{story_id}` transient, and the editor
+refresh payload; the download and the panel image use it from there. A cover
+the API reports without `signedUrl` counts as no cover.
+
+`Shorthand\Services\StoryCover::sync()` writes the key on every publish that
+finds a cover, whether or not it imports it. It is absent until the first
+publish after the feature shipped, and absent for a story with no cover.
+
+The editor refresh, `wp_ajax_shorthand_get_story_cover`, never writes this
+key. The editor's "Use story cover now" button, `wp_ajax_shorthand_import_story_cover`,
+runs `Shorthand\Services\StoryCover::sync()` with `$replace = true` and writes it
+like a publish does. It caches the API response in the `shorthand_story_cover_{story_id}`
+transient for five minutes instead. If the refresh wrote `story_cover`, a
+cover changed between two publishes would match the stored id at the next
+publish and be skipped as already imported.
+
+The `id` inside it is what `Shorthand\Services\StoryCover::state()` compares.
+Media files in Shorthand are immutable, so an unchanged id is an unchanged file.
+
+## story_cover_attachment
+
+The attachment ID `Shorthand\Services\StoryCover::sync()` last set as the
+featured image. Absent until the plugin has imported a cover.
+
+The featured image rule: the plugin writes the featured image only when it set
+the current one, or when there is none. `story_cover_attachment` is how the
+plugin knows which one it set. On every publish it is compared with
+`get_post_thumbnail_id()`:
+
+| `story_cover_attachment` | `_thumbnail_id` | Outcome |
+| --- | --- | --- |
+| absent | absent | Import the cover |
+| absent | set | Keep the author's image; write `story_cover` only |
+| set | equal, cover id unchanged | Nothing to do |
+| set | equal, cover id changed | Import the new cover, delete the old attachment |
+| set | different or absent | The author changed it; stand down |
+
+The last row holds for every publish. The author hands control back with the
+"Use story cover now" button in the editor, which imports with `$replace = true`
+and records the new attachment here. The earlier attachment is deleted only
+when it was still the featured image; one the author moved away from stays in
+the media library.
+
+`Shorthand\Services\StoryCover::state( int $post_id, ?array $cover, ?int $thumbnail = null )`
+compares against `$thumbnail` when given. The classic editor holds an unsaved
+featured image choice in the form's `_thumbnail_id` field until the post is
+saved, so the editor passes that value rather than the saved one.
+
+Both keys are protected by
+`Shorthand\Plugin\PostType::is_protected_meta()`, so the Custom Fields box
+does not offer them.
 
 ## story_update_state
 

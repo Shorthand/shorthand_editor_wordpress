@@ -10,6 +10,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\StoryUpdateTask;
 use Shorthand\Services\Files\BundleStore;
@@ -156,7 +157,8 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 			$auth,
 			$this->createMock( StoryContentTransformer::class ),
 			new BundleStore( $this->uploads ),
-			new StoryTextExtractor()
+			new StoryTextExtractor(),
+			$this->createMock( StoryCover::class )
 		);
 	}
 }

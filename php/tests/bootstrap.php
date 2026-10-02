@@ -10,6 +10,43 @@ if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
 	define( 'HOUR_IN_SECONDS', 3600 );
 }
 
+if ( ! defined( 'MINUTE_IN_SECONDS' ) ) {
+	define( 'MINUTE_IN_SECONDS', 60 );
+}
+
+if ( ! defined( 'MB_IN_BYTES' ) ) {
+	define( 'MB_IN_BYTES', 1024 * 1024 );
+}
+
+if ( ! class_exists( 'WP_Post' ) ) {
+	/**
+	 * Bare post object; carries the fields the plugin reads.
+	 */
+	class WP_Post {
+		/**
+		 * @var int
+		 */
+		public $ID = 0;
+		/**
+		 * @var string
+		 */
+		public $post_type = 'post';
+		/**
+		 * @var string
+		 */
+		public $post_status = 'draft';
+
+		/**
+		 * @param array<string, mixed> $fields
+		 */
+		public function __construct( array $fields = array() ) {
+			foreach ( $fields as $name => $value ) {
+				$this->$name = $value;
+			}
+		}
+	}
+}
+
 if ( ! defined( 'THESHED_PLUGIN_FILE' ) ) {
 	define( 'THESHED_PLUGIN_FILE', '/var/www/html/wp-content/plugins/the-shorthand-editor/the-shorthand-editor.php' );
 }
@@ -152,6 +189,13 @@ function tests_wp_reset_state(): void {
 		'registered_post_meta' => array(),
 		'deleted_post_meta'    => array(),
 		'deleted_files'        => array(),
+		'downloads'            => array(),
+		'download_result'      => '/tmp/cover.tmp',
+		'sideloads'            => array(),
+		'sideload_result'      => null,
+		'next_attachment_id'   => 501,
+		'deleted_attachments'  => array(),
+		'json_responses'       => array(),
 		'upload_dir'           => array(
 			'basedir' => '/var/www/html/wp-content/uploads',
 			'baseurl' => 'https://example.test/wp-content/uploads',
@@ -1568,4 +1612,170 @@ spl_autoload_register(
 		}
 	}
 );
+/*
+ * Media library and admin-ajax stubs, used by the story cover import.
+ */
+
+function get_post_thumbnail_id( int $post_id ): int {
+	return (int) get_post_meta( $post_id, '_thumbnail_id', true );
+}
+
+function set_post_thumbnail( int $post_id, int $thumbnail_id ): bool {
+	update_post_meta( $post_id, '_thumbnail_id', $thumbnail_id );
+	return true;
+}
+
+/**
+ * @return string|WP_Error
+ */
+function download_url( string $url, int $timeout = 300 ) {
+	$GLOBALS['tests_wp_state']['downloads'][] = $url;
+	return $GLOBALS['tests_wp_state']['download_result'];
+}
+
+/**
+ * @param string|WP_Error $result
+ */
+function tests_wp_set_download_result( $result ): void {
+	$GLOBALS['tests_wp_state']['download_result'] = $result;
+}
+
+/**
+ * @return array<int, string>
+ */
+function tests_wp_downloads(): array {
+	return $GLOBALS['tests_wp_state']['downloads'];
+}
+
+/**
+ * @param array<string, mixed> $file_array
+ * @return int|WP_Error
+ */
+function media_handle_sideload( array $file_array, int $post_id = 0, ?string $desc = null, array $post_data = array() ) {
+	$GLOBALS['tests_wp_state']['sideloads'][] = array(
+		'file'    => $file_array,
+		'post_id' => $post_id,
+	);
+
+	$result = $GLOBALS['tests_wp_state']['sideload_result'];
+	if ( null !== $result ) {
+		return $result;
+	}
+
+	$id = $GLOBALS['tests_wp_state']['next_attachment_id']++;
+	tests_wp_set_post( $id, new WP_Post( array( 'ID' => $id, 'post_type' => 'attachment' ) ) );
+
+	return $id;
+}
+
+/**
+ * @param int|WP_Error|null $result Null restores the counter from 501.
+ */
+function tests_wp_set_sideload_result( $result ): void {
+	$GLOBALS['tests_wp_state']['sideload_result'] = $result;
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_sideloads(): array {
+	return $GLOBALS['tests_wp_state']['sideloads'];
+}
+
+/**
+ * Mirrors core: every post whose `_thumbnail_id` is the attachment loses it.
+ *
+ * @return WP_Post|false|null
+ */
+function wp_delete_attachment( int $post_id, bool $force_delete = false ) {
+	$GLOBALS['tests_wp_state']['deleted_attachments'][] = array(
+		'post_id' => $post_id,
+		'force'   => $force_delete,
+	);
+
+	$post = get_post( $post_id );
+	unset( $GLOBALS['tests_wp_state']['stub_posts'][ $post_id ] );
+
+	foreach ( $GLOBALS['tests_wp_state']['post_meta'] as $owner => $meta ) {
+		if ( (int) ( $meta['_thumbnail_id'] ?? 0 ) === $post_id ) {
+			unset( $GLOBALS['tests_wp_state']['post_meta'][ $owner ]['_thumbnail_id'] );
+		}
+	}
+
+	return $post ?? false;
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_deleted_attachments(): array {
+	return $GLOBALS['tests_wp_state']['deleted_attachments'];
+}
+
+function esc_url_raw( string $url ): string {
+	return esc_url( $url );
+}
+
+function sanitize_mime_type( string $mime_type ): string {
+	return (string) preg_replace( '/[^-+*.a-zA-Z0-9\/]/', '', $mime_type );
+}
+
+/**
+ * @return mixed
+ */
+function wp_parse_url( string $url, int $component = -1 ) {
+	return parse_url( $url, $component );
+}
+
+function wp_basename( string $path, string $suffix = '' ): string {
+	return urldecode( basename( str_replace( array( '%2F', '%5C' ), '/', urlencode( $path ) ), $suffix ) );
+}
+
+/**
+ * @return int|false
+ */
+function check_ajax_referer( $action = -1, $query_arg = false, bool $stop = true ) {
+	$nonce = ( $query_arg && isset( $_REQUEST[ $query_arg ] ) ) ? $_REQUEST[ $query_arg ] : '';
+	$valid = wp_verify_nonce( $nonce, (string) $action );
+	if ( ! $valid && $stop ) {
+		wp_die( 'The link you followed has expired.', '', array( 'response' => 403 ) );
+	}
+	return $valid ? 1 : false;
+}
+
+/**
+ * Records the response, then halts as core does.
+ *
+ * @param mixed $data
+ * @throws Tests_WP_Die_Exception Always.
+ */
+function wp_send_json_success( $data = null, ?int $status_code = null ): void {
+	$GLOBALS['tests_wp_state']['json_responses'][] = array(
+		'success' => true,
+		'data'    => $data,
+		'status'  => $status_code,
+	);
+	throw new Tests_WP_Die_Exception( 'json' );
+}
+
+/**
+ * @param mixed $data
+ * @throws Tests_WP_Die_Exception Always.
+ */
+function wp_send_json_error( $data = null, ?int $status_code = null ): void {
+	$GLOBALS['tests_wp_state']['json_responses'][] = array(
+		'success' => false,
+		'data'    => $data,
+		'status'  => $status_code,
+	);
+	throw new Tests_WP_Die_Exception( 'json' );
+}
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_json_responses(): array {
+	return $GLOBALS['tests_wp_state']['json_responses'];
+}
+
 require_once __DIR__ . '/WordPressTestCase.php';

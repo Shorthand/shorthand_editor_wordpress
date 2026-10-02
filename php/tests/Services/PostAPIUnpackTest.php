@@ -11,6 +11,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Tests\Support\FakeUploads;
 use Shorthand\Tests\WordPressTestCase;
@@ -460,7 +461,35 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		return $post_api->publish_story_bundle( 7, 'aBc123', $nonce, 1 );
 	}
 
-	private function make_post_api(): PostAPI {
+	/**
+	 * The featured image follows the content. A cover that cannot be imported
+	 * must not fail the publish, so `sync()` returns a state, never an error.
+	 */
+	public function test_the_story_cover_is_synced_after_the_content_is_stored(): void {
+		$story_cover = $this->createMock( StoryCover::class );
+		$story_cover->expects( $this->once() )
+			->method( 'sync' )
+			->with( 7, 'aBc123' )
+			->willReturnCallback(
+				function (): string {
+					$this->assertSame( '<h1>Story</h1>', \get_post_meta( 7, 'story_body', true ) );
+					return StoryCover::OUTCOME_FAILED;
+				}
+			);
+
+		$result = $this->publish(
+			'pull1',
+			array(
+				'head.html'    => '',
+				'article.html' => '<h1>Story</h1>',
+			),
+			$this->make_post_api( $story_cover )
+		);
+
+		$this->assertNull( $result );
+	}
+
+	private function make_post_api( ?StoryCover $story_cover = null ): PostAPI {
 		$options = $this->createMock( Options::class );
 		$options->method( 'get_post_regex_list' )->willReturn( '' );
 
@@ -487,7 +516,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			$this->createMock( AuthStateManager::class ),
 			$transformer,
 			new BundleStore( $this->uploads ),
-			new StoryTextExtractor()
+			new StoryTextExtractor(),
+			$story_cover ?? $this->createMock( StoryCover::class )
 		);
 	}
 

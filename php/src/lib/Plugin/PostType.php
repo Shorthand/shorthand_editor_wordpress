@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 use Shorthand\Core\Version;
 use Shorthand\Core\Loader;
 use Shorthand\Services\Options;
+use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryId;
 
 class PostType {
@@ -200,6 +201,30 @@ class PostType {
 			)
 		);
 
+		register_post_meta(
+			$this->post_type,
+			'story_cover',
+			array(
+				'single'            => true,
+				'type'              => 'object',
+				'description'       => __( 'The Shorthand cover image the last publish evaluated', 'the-shorthand-editor' ),
+				'show_in_rest'      => false,
+				'sanitize_callback' => array( StoryCover::class, 'sanitize' ),
+			)
+		);
+
+		register_post_meta(
+			$this->post_type,
+			'story_cover_attachment',
+			array(
+				'single'            => true,
+				'type'              => 'integer',
+				'description'       => __( 'The attachment the plugin set as the featured image from the Shorthand cover', 'the-shorthand-editor' ),
+				'show_in_rest'      => false,
+				'sanitize_callback' => 'absint',
+			)
+		);
+
 		$loader = new Loader();
 
 		$loader->add_filter( 'is_protected_meta', $this, 'is_protected_meta', 10, 3 );
@@ -218,7 +243,7 @@ class PostType {
 	}
 
 	public function is_protected_meta( $prot, $meta_key, $meta_type ) {
-		$protected_meta_keys = array( 'story_id', 'story_body', 'story_head', 'story_version', 'story_update_nonce', 'story_update_state', 'story_manifest', 'story_pulls', 'story_excerpt' );
+		$protected_meta_keys = array( 'story_id', 'story_body', 'story_head', 'story_version', 'story_update_nonce', 'story_update_state', 'story_manifest', 'story_pulls', 'story_excerpt', 'story_cover', 'story_cover_attachment' );
 		if ( 'post' === $meta_type && in_array( $meta_key, $protected_meta_keys, true ) ) {
 			return true;
 		}

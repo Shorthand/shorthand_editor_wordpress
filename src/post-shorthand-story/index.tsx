@@ -2,6 +2,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 
 import { PostEditorToolBar } from "./components/PostEditorToolBar";
+import { refreshStoryCover } from "./coverPanel";
 import { PHPStoryState, StoryStateProvider } from "./hooks/useStoryState";
 
 declare global {
@@ -31,6 +32,7 @@ interface IShorthandWordPressAPI {
         initialState: PHPStoryState,
         wpNonce: string
       ) => void;
+      refreshStoryCover?: (postId: number, wpNonce: string) => void;
     };
   };
 }
@@ -51,6 +53,9 @@ export function initPostEditor(): void {
 
   if (!window.Shorthand.WordPress.ui.hasOwnProperty("createPostEditorToolBar")) {
     window.Shorthand.WordPress.ui.createPostEditorToolBar = createPostEditorToolBar;
+  }
+  if (!window.Shorthand.WordPress.ui.hasOwnProperty("refreshStoryCover")) {
+    window.Shorthand.WordPress.ui.refreshStoryCover = refreshStoryCover;
   }
 }
 
