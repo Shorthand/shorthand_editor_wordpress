@@ -1085,10 +1085,20 @@ function tests_wp_set_post_type( int $post_id, string $post_type ): void {
 }
 
 /**
+ * Without an argument, resolves the global post, as core does.
+ *
  * @param mixed $post
  * @return string|false
  */
 function get_post_type( $post = null ) {
+	if ( null === $post ) {
+		$post = get_post();
+	}
+
+	if ( is_object( $post ) && isset( $post->post_type ) ) {
+		return $post->post_type;
+	}
+
 	$post_id = is_object( $post ) ? (int) $post->ID : (int) $post;
 	return $GLOBALS['tests_wp_state']['post_type_by_id'][ $post_id ] ?? false;
 }
