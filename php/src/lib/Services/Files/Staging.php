@@ -70,6 +70,13 @@ class Staging {
 	}
 
 	/**
+	 * Absolute path of the staging directory.
+	 */
+	public function path(): string {
+		return $this->path;
+	}
+
+	/**
 	 * Absolute path of a file or directory inside the staging directory.
 	 *
 	 * @param string $name Name relative to the staging directory.

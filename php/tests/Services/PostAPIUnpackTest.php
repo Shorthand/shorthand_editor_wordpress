@@ -457,6 +457,26 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( array(), glob( $this->temp_root . '/sh_pull_*' ) );
 	}
 
+	/**
+	 * The story is already in uploads, so a staging directory the host will
+	 * not remove fails nothing. Its name is random and recorded nowhere, so
+	 * this is the one chance to say it was left.
+	 */
+	public function test_a_staging_directory_that_cannot_be_removed_is_reported(): void {
+		\tests_wp_set_delete_failure();
+
+		$result = $this->publish( 'pull1', array( 'article.html' => 'article' ) );
+
+		$this->assertNull( $result );
+
+		$left    = glob( $this->temp_root . '/sh_pull_*' );
+		$reports = tests_wp_doing_it_wrong();
+
+		$this->assertCount( 1, $left );
+		$this->assertCount( 1, $reports );
+		$this->assertStringContainsString( $left[0], $reports[0]['message'] );
+	}
+
 	public function test_an_unusable_story_id_reaches_no_uploads_call(): void {
 		$result = $this->make_post_api()->publish_story_bundle( 7, '../../etc', 'pull1', 1 );
 

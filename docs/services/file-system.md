@@ -97,6 +97,11 @@ not write; `read_into()`, `delete()` and `make_dir()` return `false`, so
 remove, and `Bundle::publish()` turns that into a `WP_Error`. An unreachable
 file system is a publish error the author sees, not a fatal.
 
+`Staging::discard()` answers `false` when the staging directory stays, and
+`Bundle::publish()` reports it through `_doing_it_wrong()`. The publish still
+succeeds: the story is already in uploads. The directory name is random and
+recorded nowhere, so the report is the only record that the directory was left.
+
 ## Decision: nothing enumerates or removes a directory
 
 No `scandir()`, `glob()`, `opendir()`, `readdir()`, `list_files()`, `dirlist()`
