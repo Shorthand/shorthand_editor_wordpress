@@ -153,7 +153,7 @@ them documents, whatever the size of the story. See
 ## Cover image
 
 Step 9 runs `Shorthand\Services\StoryCover::sync( int $post_id, string $story_id )`
-inside `Shorthand\Services\PostAPI::extract_story_content()`. It never fails
+inside `Shorthand\Services\PostAPI::publish_story_bundle()`. It never fails
 the publish: a settings call, download, or sideload that fails leaves the
 featured image as it was, and the next publish tries again.
 

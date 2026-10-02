@@ -97,11 +97,15 @@ class WpUploads implements Uploads {
 	 * On an object store this creates nothing and reports success, which is
 	 * what the callers of this interface are written to expect.
 	 *
+	 * Fails where `WP_Filesystem` cannot boot, as every other call here does.
+	 * `WP_Filesystem::mkdir()` makes one level only, so the parents still come
+	 * from `wp_mkdir_p()`.
+	 *
 	 * @param string $path Directory to create.
 	 * @return bool True on success.
 	 */
 	public function make_dir( string $path ): bool {
-		return wp_mkdir_p( $path );
+		return null !== FileSystem::boot() && wp_mkdir_p( $path );
 	}
 
 	/**
