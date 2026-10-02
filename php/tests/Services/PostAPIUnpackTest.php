@@ -432,6 +432,20 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( 0, $this->uploads->make_dir_calls() );
 	}
 
+	public function test_an_archive_with_two_names_that_fold_to_one_publishes_nothing(): void {
+		$result = $this->publish(
+			'pull1',
+			array(
+				'assets/media/Photo.JPG' => 'first',
+				'assets/media/photo.jpg' => 'second',
+			)
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( array(), $this->bundle_objects() );
+		$this->assertSame( 0, $this->uploads->writes() );
+	}
+
 	/**
 	 * The bundle's files, without the chunks the download left in uploads.
 	 *

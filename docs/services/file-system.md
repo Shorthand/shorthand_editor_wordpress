@@ -151,6 +151,10 @@ bundle path the same way story IDs and nonces are. An unsafe name fails the
 whole publish instead of being skipped: a skipped entry would leave the bundle
 incomplete and the manifest naming a file that was never written.
 
+It also rejects two entry names that differ only in case, such as
+`assets/media/Photo.JPG` and `assets/media/photo.jpg`, on every host. See the
+section "Case and the manifest" in `docs/services/file-system.md`.
+
 ## Sidecar plugins
 
 WP Stateless support is not in this plugin and will not be. A sidecar plugin
@@ -211,7 +215,13 @@ the post it links. Two posts therefore cannot fold onto one bundle, however
 their story IDs are cased. The download nonce is `wp_rand( 10000, 99999 )`, so
 `docs/{nonce}` and the `.part` chunks beside the bundle carry no case either.
 
-What case-insensitivity can still merge is two file names inside one bundle:
+Two file names inside one archive can fold to one. An object store keeps one
+file for both, holding whichever was written last, while the manifest names
+two with two CRC32s; every later publish then skips both.
+`Manifest::from_archive()` refuses such an archive on every host, a disk
+included, so a story publishes the same everywhere or nowhere.
+
+What case-insensitivity can still merge is two file names across publishes:
 one in the stored manifest, one in the manifest of the publish now running.
 `Bundle::is_unchanged()` is a keyed lookup and `Manifest::removed()` is an
 `array_diff_key()`, both case-sensitive. A file renamed only in case —
