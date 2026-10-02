@@ -91,10 +91,11 @@ never injected, and carries no host knowledge.
 The flag is set only once a valid instance is in hand, so a failed boot is
 retried on the next call rather than short-circuiting to an unset global.
 `WpUploads::write()` turns `null` into a `WP_Error` naming the file it could
-not write; `read_into()` and `delete()` return `false`. `Staging::open()`
-returns `null` rather than create a directory nothing could remove, and
-`Bundle::publish()` turns that into a `WP_Error`. An unreachable file system is
-a publish error the author sees, not a fatal.
+not write; `read_into()`, `delete()` and `make_dir()` return `false`, so
+`PostAPI::pull_story_begin()` records no pull it could not serve.
+`Staging::open()` returns `null` rather than create a directory nothing could
+remove, and `Bundle::publish()` turns that into a `WP_Error`. An unreachable
+file system is a publish error the author sees, not a fatal.
 
 ## Decision: nothing enumerates or removes a directory
 

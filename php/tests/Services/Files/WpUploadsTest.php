@@ -71,6 +71,17 @@ final class WpUploadsTest extends WordPressTestCase {
 	}
 
 	/**
+	 * A download is recorded only once its directory is made, so a directory
+	 * made here would record a pull nothing could write or read.
+	 */
+	public function test_a_make_dir_fails_and_makes_nothing(): void {
+		$path = sys_get_temp_dir() . '/sh_make_dir_' . getmypid() . '_' . uniqid() . '/7';
+
+		$this->assertFalse( $this->subject->make_dir( $path ) );
+		$this->assertDirectoryDoesNotExist( dirname( $path ) );
+	}
+
+	/**
 	 * A boot is remembered for the request, and one test is one request.
 	 */
 	private function forget_booted_file_system(): void {
