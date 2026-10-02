@@ -482,6 +482,21 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( 0, $this->uploads->writes() );
 	}
 
+	public function test_an_archive_that_names_the_documents_directory_publishes_nothing(): void {
+		$result = $this->publish(
+			'pull1',
+			array(
+				'article.html'            => '<h1>Story</h1>',
+				'head.html'               => '<title>Story</title>',
+				'docs/pull1/article.html' => 'asset',
+			)
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( array(), $this->bundle_objects() );
+		$this->assertSame( 0, $this->uploads->writes() );
+	}
+
 	/**
 	 * The bundle's files, without the chunks the download left in uploads.
 	 *

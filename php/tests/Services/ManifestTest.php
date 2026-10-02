@@ -233,6 +233,28 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
+	 * The archive's own entry would be dropped, and never copied.
+	 */
+	public function test_relocating_onto_an_archive_entry_is_refused(): void {
+		$result = Manifest::relocate_documents(
+			array(
+				'article.html'            => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+				'docs/pull1/article.html' => array(
+					'size' => 5,
+					'crc'  => 2,
+				),
+			),
+			'docs/pull1'
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'docs/pull1/article.html', $result->get_error_data( 'file' ) );
+	}
+
+	/**
 	 * A story with no head material still publishes.
 	 */
 	public function test_relocating_the_documents_tolerates_an_absent_one(): void {
