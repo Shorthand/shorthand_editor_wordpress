@@ -313,6 +313,28 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	}
 
 	/**
+	 * The manifest comes back out of post meta, so a name in it is not trusted
+	 * to stay inside the bundle.
+	 */
+	public function test_deleting_the_bundle_leaves_a_stored_name_that_escapes_it(): void {
+		tests_wp_set_post_meta(
+			7,
+			'story_manifest',
+			array(
+				'../../8/xYz789/article.html' => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+			)
+		);
+
+		$this->make_post_api()->delete_story_bundle( 7, 'aBc123' );
+
+		$this->assertSame( 0, $this->uploads->deletes() );
+		$this->assertCount( 1, tests_wp_doing_it_wrong() );
+	}
+
+	/**
 	 * An interrupted publish must not leave a manifest claiming files were copied.
 	 */
 	public function test_a_failed_copy_leaves_the_previous_manifest_in_place(): void {

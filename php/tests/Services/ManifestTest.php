@@ -59,7 +59,7 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
-	 * Nothing extracts the archive, so directory entries name nothing to copy.
+	 * A directory entry names nothing to copy.
 	 */
 	public function test_directory_entries_are_left_out(): void {
 		$zip = new ZipArchive();
@@ -269,6 +269,51 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
+	 * `Archive::unpack_to()` extracts directory entries too, so a directory
+	 * entry is checked before it is left out.
+	 */
+	public function test_a_directory_entry_that_escapes_the_bundle_is_refused(): void {
+		$zip = $this->open_archive( array( '../../escaped/' => null ) );
+
+		$result = Manifest::from_archive( $zip );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( '../../escaped/', $result->get_error_data( 'file' ) );
+
+		$zip->close();
+	}
+
+	/**
+	 * `Bundle::prune()` and `Bundle::delete()` join a stored name onto the
+	 * bundle path, so a stored name is held to the archive's rules.
+	 *
+	 * @dataProvider escaping_entry_names
+	 *
+	 * @param string $name Name as stored in post meta.
+	 */
+	public function test_a_stored_name_that_escapes_the_bundle_is_dropped_and_reported( string $name ): void {
+		$manifest = Manifest::from_meta(
+			array(
+				'article.html' => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+				$name          => array(
+					'size' => 7,
+					'crc'  => 1,
+				),
+			)
+		);
+
+		$this->assertSame( array( 'article.html' ), array_keys( $manifest ) );
+
+		$reports = tests_wp_doing_it_wrong();
+
+		$this->assertCount( 1, $reports );
+		$this->assertStringContainsString( esc_html( $name ), $reports[0]['message'] );
+	}
+
+	/**
 	 * @return array<string, array{0: string}>
 	 */
 	public static function escaping_entry_names(): array {
@@ -327,7 +372,7 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
-	 * @param array<string, string> $entries
+	 * @param array<string, string|null> $entries Entry name to contents, or null for a directory entry.
 	 */
 	private function open_archive( array $entries ): ZipArchive {
 		$path = $this->temp_root . '/archive.zip';
@@ -336,6 +381,11 @@ final class ManifestTest extends WordPressTestCase {
 		$zip->open( $path, ZipArchive::CREATE | ZipArchive::OVERWRITE );
 
 		foreach ( $entries as $name => $contents ) {
+			if ( null === $contents ) {
+				$zip->addEmptyDir( $name );
+				continue;
+			}
+
 			$zip->addFromString( $name, $contents );
 		}
 

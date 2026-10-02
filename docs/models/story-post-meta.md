@@ -57,7 +57,9 @@ array(
 ```
 
 Built by `Shorthand\Services\Files\Manifest`: `from_archive()` from
-`ZipArchive::statIndex()`, `from_meta()` from the stored value.
+`ZipArchive::statIndex()`, `from_meta()` from the stored value. `from_meta()`
+drops and reports a key that is not a safe bundle path, under the rules in
+`docs/services/file-system.md`, section "Archive entry names".
 
 Keys are bundle paths, not archive paths. The two differ for `article.html` and
 `head.html`, which the archive names at its root and the bundle holds under
