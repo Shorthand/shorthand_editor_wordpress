@@ -43,6 +43,27 @@ final class TemplatesTest extends WordPressTestCase {
 		);
 	}
 
+	public function test_story_meta_tags_print_on_the_front_page(): void {
+		// The front page route: singular, and not single.
+		\tests_wp_set_singular( self::POST_TYPE );
+		$this->stage_global_post( self::POST_TYPE );
+		\tests_wp_set_post_meta( self::STORY_ID, 'story_head', '<meta name="sh-head" content="yes">' );
+
+		$this->expectOutputString( "<meta name=\"sh-head\" content=\"yes\">\n" );
+
+		$this->templates()->single_head();
+	}
+
+	public function test_other_post_types_print_no_story_meta_tags(): void {
+		\tests_wp_set_singular( 'page' );
+		$this->stage_global_post( 'page' );
+		\tests_wp_set_post_meta( self::STORY_ID, 'story_head', '<meta name="sh-head" content="yes">' );
+
+		$this->expectOutputString( '' );
+
+		$this->templates()->single_head();
+	}
+
 	public function test_the_story_template_filter_is_registered(): void {
 		$this->templates()->register_templates();
 
