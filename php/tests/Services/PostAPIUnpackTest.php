@@ -395,6 +395,20 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( array( 'story_head', 'story_body', 'story_manifest' ), $order );
 	}
 
+	/**
+	 * Without `WP_Filesystem` the chunks cannot be read into staging, and
+	 * staging cannot be removed after, so the publish stops before making it.
+	 */
+	public function test_a_publish_without_a_file_system_leaves_no_staging_directory(): void {
+		$this->forgetFileSystemBoot();
+		\tests_wp_set_filesystem_available( false );
+
+		$result = $this->publish( 'pull1', array( 'article.html' => 'article' ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( array(), glob( $this->temp_root . '/sh_pull_*' ) );
+	}
+
 	public function test_an_unusable_story_id_reaches_no_uploads_call(): void {
 		$result = $this->make_post_api()->publish_story_bundle( 7, '../../etc', 'pull1', 1 );
 

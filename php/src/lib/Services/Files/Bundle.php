@@ -139,6 +139,10 @@ class Bundle {
 		$download = $this->download( $nonce );
 		$staging  = Staging::open( $this->uploads, 'sh_pull_' . $download->segment() . '_' );
 
+		if ( null === $staging ) {
+			return new WP_Error( 'file', 'No file system is available to unpack the story.' );
+		}
+
 		try {
 			return $this->unpack( $staging, $download, $chunks );
 		} finally {

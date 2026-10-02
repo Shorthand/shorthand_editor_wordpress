@@ -256,7 +256,7 @@ class PostAPI {
 		/* abort any outstanding requests by updating the nonce */
 		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
 
-		$this->sweep_story_pulls( $bundle, $request_nonce );
+		$this->sweep_story_pulls( $bundle );
 
 		$this->set_story_update_error( $post_id );
 		$this->set_story_update_progress( $post_id, new StorySyncProgress( 0, 'Requesting story from Shorthand' ) );
@@ -620,19 +620,17 @@ class PostAPI {
 	}
 
 	/**
-	 * Cleans up every pull except the one starting now.
+	 * Cleans up every recorded pull.
+	 *
+	 * Runs before the pull starting now records or writes anything, so a
+	 * record that shares its nonce holds only stale chunks and goes too.
 	 *
 	 * @param \Shorthand\Services\Files\Bundle $bundle Bundle the pulls belong to.
-	 * @param string                           $nonce  Request nonce of the pull starting now.
 	 */
-	private function sweep_story_pulls( Bundle $bundle, string $nonce ): void {
+	private function sweep_story_pulls( Bundle $bundle ): void {
 		$post_id = $bundle->post_id();
 
 		foreach ( $this->get_story_pulls( $post_id ) as $stale_nonce => $pull ) {
-			if ( $stale_nonce === $nonce ) {
-				continue;
-			}
-
 			/* The key came out of the database and becomes part of a path. */
 			if ( ! StoryId::is_valid( (string) $stale_nonce ) ) {
 				continue;

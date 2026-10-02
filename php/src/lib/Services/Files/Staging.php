@@ -46,12 +46,17 @@ class Staging {
 	/**
 	 * Creates an empty staging directory under the local temp directory.
 	 *
+	 * Null where `WP_Filesystem` cannot boot: nothing could remove the
+	 * directory again, and every publish would leave one behind.
+	 *
 	 * @param \Shorthand\Services\Files\Uploads $uploads Uploads directory to read chunks from.
 	 * @param string                            $prefix  Prefix for the directory name.
 	 */
-	public static function open( Uploads $uploads, string $prefix ): Staging {
-		/* Unpacking an archive wants the admin memory limit. */
-		FileSystem::boot();
+	public static function open( Uploads $uploads, string $prefix ): ?Staging {
+		/* The boot also raises the memory limit, which unpacking an archive wants. */
+		if ( null === FileSystem::boot() ) {
+			return null;
+		}
 
 		$base = untrailingslashit( get_temp_dir() );
 
