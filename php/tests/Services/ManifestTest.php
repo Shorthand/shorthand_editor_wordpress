@@ -282,6 +282,26 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
+	 * An object store folds case, so the second write would land on the first
+	 * file while the manifest named both.
+	 */
+	public function test_two_entries_that_differ_only_in_case_are_refused(): void {
+		$zip = $this->open_archive(
+			array(
+				'assets/media/Photo.JPG' => 'first',
+				'assets/media/photo.jpg' => 'second',
+			)
+		);
+
+		$result = Manifest::from_archive( $zip );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'assets/media/photo.jpg', $result->get_error_data( 'file' ) );
+
+		$zip->close();
+	}
+
+	/**
 	 * Dots and slashes are ordinary in a story's asset names.
 	 *
 	 * @dataProvider ordinary_entry_names

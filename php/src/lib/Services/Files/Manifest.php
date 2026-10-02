@@ -29,11 +29,15 @@ class Manifest {
 	/**
 	 * Reads an archive index, without extracting anything.
 	 *
+	 * Two names that fold to one are refused on every host. An object store
+	 * keeps one file for both, and the manifest would vouch for two.
+	 *
 	 * @param \ZipArchive $zip Open archive.
 	 * @return array<string, array{size: int, crc: int}>|\WP_Error Entry name to size and CRC32.
 	 */
 	public static function from_archive( ZipArchive $zip ) {
 		$manifest = array();
+		$folded   = array();
 
 		for ( $idx = 0; $idx < $zip->numFiles; $idx++ ) {
 			$stat = $zip->statIndex( $idx );
@@ -45,6 +49,14 @@ class Manifest {
 			if ( ! self::is_safe_name( $stat['name'] ) ) {
 				return new WP_Error( 'file', "The story archive names a file outside the bundle: {$stat['name']}.", $stat['name'] );
 			}
+
+			$fold = strtolower( $stat['name'] );
+
+			if ( isset( $folded[ $fold ] ) ) {
+				return new WP_Error( 'file', "The story archive names {$folded[ $fold ]} and {$stat['name']}, which a host that ignores case stores as one file.", $stat['name'] );
+			}
+
+			$folded[ $fold ] = $stat['name'];
 
 			$manifest[ $stat['name'] ] = array(
 				'size' => (int) $stat['size'],
