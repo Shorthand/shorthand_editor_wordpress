@@ -284,14 +284,50 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
+	 * `ZipArchive::extractTo()` and a disk resolve each of these to a plainer
+	 * name, so the manifest would vouch for a file that is another one.
+	 *
+	 * @dataProvider aliasing_entry_names
+	 *
+	 * @param string $name Archive entry name.
+	 */
+	public function test_an_entry_that_aliases_another_path_is_refused( string $name ): void {
+		$zip = $this->open_archive(
+			array(
+				'assets/theme.css' => 'first',
+				$name              => 'second',
+			)
+		);
+
+		$result = Manifest::from_archive( $zip );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $name, $result->get_error_data( 'file' ) );
+
+		$zip->close();
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function aliasing_entry_names(): array {
+		return array(
+			'dot segment'         => array( 'assets/./theme.css' ),
+			'leading dot segment' => array( './assets/theme.css' ),
+			'empty segment'       => array( 'assets//theme.css' ),
+		);
+	}
+
+	/**
 	 * `Bundle::prune()` and `Bundle::delete()` join a stored name onto the
 	 * bundle path, so a stored name is held to the archive's rules.
 	 *
 	 * @dataProvider escaping_entry_names
+	 * @dataProvider aliasing_entry_names
 	 *
 	 * @param string $name Name as stored in post meta.
 	 */
-	public function test_a_stored_name_that_escapes_the_bundle_is_dropped_and_reported( string $name ): void {
+	public function test_an_unsafe_stored_name_is_dropped_and_reported( string $name ): void {
 		$manifest = Manifest::from_meta(
 			array(
 				'article.html' => array(
@@ -364,9 +400,8 @@ final class ManifestTest extends WordPressTestCase {
 	 */
 	public static function ordinary_entry_names(): array {
 		return array(
-			'nested'         => array( 'assets/media/photo.jpg' ),
-			'leading dot'    => array( 'assets/.htaccess' ),
-			'dot segment'    => array( 'assets/./theme.css' ),
+			'nested'          => array( 'assets/media/photo.jpg' ),
+			'leading dot'     => array( 'assets/.htaccess' ),
 			'double dot name' => array( 'assets/..photo.jpg' ),
 		);
 	}
