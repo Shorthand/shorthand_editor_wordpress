@@ -131,7 +131,7 @@ class Templates {
 	/**
 	 * Prints meta tags from story head content.
 	 *
-	 * is_singular() for the post type is the test that holds on every route.
+	 * Tests is_singular() for the post type, which holds on every route.
 	 * is_single() does not: it is false for a story serving as the front page.
 	 *
 	 * Scripts and stylesheets are enqueued separately in enqueue_scripts().

@@ -105,9 +105,9 @@ class FrontPage {
 	 * Uses the story template when a story is the static front page.
 	 *
 	 * A front page request is a page request, so core resolves it through
-	 * get_page_template() and the `single_template` filter never fires. Left
-	 * alone, a story set as the home page renders through the theme's page
-	 * template, which prints the title and no story body.
+	 * get_page_template() and the `single_template` filter never fires. Once
+	 * find_front_page_story() lets the query find the story, that resolves to
+	 * the theme's page template, which prints the title and no story body.
 	 *
 	 * `template_include` is the only hook every route passes through, and it
 	 * runs after core has settled on a template.

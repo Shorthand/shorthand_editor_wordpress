@@ -109,6 +109,8 @@ if ( ! class_exists( 'WP_Error' ) ) {
  * Reset the small slice of WordPress state used by the unit tests.
  */
 function tests_wp_reset_state(): void {
+	unset( $GLOBALS['post'] );
+
 	$GLOBALS['tests_wp_state'] = array(
 		'options'              => array(),
 		'filter_args'          => array(),
@@ -804,9 +806,15 @@ function tests_wp_set_post( int $post_id, $post ): void {
 }
 
 /**
+ * Without an ID, returns the global post, as core does.
+ *
  * @return mixed
  */
-function get_post( int $post_id ) {
+function get_post( ?int $post_id = null ) {
+	if ( null === $post_id ) {
+		return $GLOBALS['post'] ?? null;
+	}
+
 	return $GLOBALS['tests_wp_state']['stub_posts'][ $post_id ] ?? null;
 }
 
@@ -1001,6 +1009,14 @@ function is_preview(): bool {
 
 function tests_wp_set_singular( ?string $post_type ): void {
 	$GLOBALS['tests_wp_state']['singular_post_type'] = $post_type;
+}
+
+/**
+ * False on every route the suite models. A story serving as the static front
+ * page is singular, and not single.
+ */
+function is_single(): bool {
+	return false;
 }
 
 function is_singular( string $post_type = '' ): bool {
