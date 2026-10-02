@@ -98,8 +98,9 @@ class WpUploads implements Uploads {
 	 * what the callers of this interface are written to expect.
 	 *
 	 * Fails where `WP_Filesystem` cannot boot, as every other call here does.
-	 * `WP_Filesystem::mkdir()` makes one level only, so the parents still come
-	 * from `wp_mkdir_p()`.
+	 * The directories come from `wp_mkdir_p()`, as they do in
+	 * `wp_upload_dir()`: a host where PHP cannot make them takes no media
+	 * uploads either. `WP_Filesystem::mkdir()` makes one level only.
 	 *
 	 * @param string $path Directory to create.
 	 * @return bool True on success.

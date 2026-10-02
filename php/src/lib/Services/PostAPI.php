@@ -459,7 +459,8 @@ class PostAPI {
 			return $this->get_invalid_story_id_error( $args->story_id );
 		}
 
-		$file_path = $bundle->download( $args->request_nonce )->chunk_path( $args->files );
+		$download  = $bundle->download( $args->request_nonce );
+		$file_path = $download->chunk_path( $args->files );
 
 		$url      = $args->file_url;
 		$start    = $args->start;
@@ -476,13 +477,19 @@ class PostAPI {
 			)
 		);
 
-		$status_code = wp_remote_retrieve_response_code( $response );
-
+		/*
+		 * Streaming opens the chunk file before the status is known, and
+		 * `files` counts only chunks that arrived, so cleanup would miss it.
+		 */
 		if ( is_wp_error( $response ) ) {
+			$download->discard_chunk( $args->files );
 			return $response;
 		}
 
+		$status_code = wp_remote_retrieve_response_code( $response );
+
 		if ( $status_code !== 206 ) {
+			$download->discard_chunk( $args->files );
 			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
 		}
 

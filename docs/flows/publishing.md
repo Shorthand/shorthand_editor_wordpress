@@ -240,7 +240,10 @@ pull left behind: a chunk count per request nonce.
 - `pull_story_begin()` sweeps every entry, deleting chunk `0` to `{count-1}` by
   name, then records its own. The sweep runs before the new pull writes
   anything, so an entry that shares the new nonce holds only stale chunks.
-- `pull_story_chunk()` raises the recorded count after each chunk lands.
+- `pull_story_chunk()` raises the recorded count after each chunk lands. A
+  chunk request that fails or returns other than `206` has already opened its
+  file, which the count does not cover, so `pull_story_chunk()` deletes it
+  through `Download::discard_chunk()`.
 - `pull_story_cleanup()` deletes the chunks and drops the entry, on both a
   successful and a failed pull.
 
@@ -251,6 +254,9 @@ that stored `{path, files}` names chunks at the older layout, and is swept by
 
 A superseded pull returns early without cleaning up. Its entry survives until
 the next `pull_story_begin()` sweeps it.
+
+A process that dies during a chunk request runs neither path. That chunk is
+left behind, named by no entry.
 
 ## Removing a bundle
 

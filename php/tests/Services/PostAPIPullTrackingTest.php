@@ -29,6 +29,13 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	/** @var \Shorthand\Tests\Support\FakeUploads */
 	private $uploads;
 
+	/**
+	 * Responses to chunk requests, in order.
+	 *
+	 * @var array<int, array<string, mixed>|\WP_Error>
+	 */
+	private $chunk_responses = array();
+
 	protected function setUp(): void {
 		parent::setUp();
 
@@ -142,6 +149,45 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		$this->assertSame( '', get_post_meta( 7, 'story_pulls', true ) );
 	}
 
+	/**
+	 * Streaming opens the chunk file before the status is known, so a refused
+	 * chunk still leaves one. `story_pulls` counts only chunks that arrived.
+	 */
+	public function test_a_refused_chunk_leaves_no_file_behind(): void {
+		$this->fail_second_chunk( array( 'response' => array( 'code' => 500 ) ) );
+
+		$this->assertSame( array(), $this->uploads->objects() );
+	}
+
+	public function test_a_chunk_cut_off_in_transit_leaves_no_file_behind(): void {
+		$this->fail_second_chunk( new \WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out.' ) );
+
+		$this->assertSame( array(), $this->uploads->objects() );
+	}
+
+	/**
+	 * Pulls one chunk, then fails the next as `Cron::pull_story_cron()` does.
+	 *
+	 * @param array<string, mixed>|\WP_Error $response Response to the second chunk request.
+	 */
+	private function fail_second_chunk( $response ): void {
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 206 ) ), $response );
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = 3 * 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
+
+		$api = $this->make_post_api();
+
+		$this->assertSame( 'retry', $api->pull_story_cron( $task )->get_error_code() );
+
+		$result = $api->pull_story_cron( $task );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+
+		$api->pull_story_failed( $task, $result );
+	}
+
 	private function begin_pull(): StoryUpdateTask {
 		$task = $this->make_post_api()->pull_story_begin( 7 );
 
@@ -158,12 +204,20 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		$options->method( 'get_api_url' )->willReturn( 'https://api.example.test' );
 
 		$shorthand = $this->createMock( Shorthand::class );
-		$shorthand->method( 'shorthand_api_authed_request' )->willReturn(
-			array(
-				'response' => array( 'code' => 202 ),
-				'headers'  => array( 'Location' => 'https://api.example.test/download/1' ),
-				'body'     => '',
-			)
+		$shorthand->method( 'shorthand_api_authed_request' )->willReturnCallback(
+			function ( $url, $method = 'GET', $options = array() ) {
+				if ( empty( $options['stream'] ) ) {
+					return array(
+						'response' => array( 'code' => 202 ),
+						'headers'  => array( 'Location' => 'https://api.example.test/download/1' ),
+						'body'     => '',
+					);
+				}
+
+				$this->uploads->put( $options['filename'], 'chunk' );
+
+				return array_shift( $this->chunk_responses );
+			}
 		);
 
 		return new PostAPI(

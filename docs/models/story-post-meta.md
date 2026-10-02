@@ -81,7 +81,7 @@ the bundle directory. See `docs/services/file-system.md`.
 ## story_pulls
 
 One entry per in-flight request nonce, holding the number of download chunks
-written so far:
+that have arrived so far:
 
 ```php
 array(

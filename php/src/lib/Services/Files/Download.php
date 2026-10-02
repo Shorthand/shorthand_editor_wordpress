@@ -108,6 +108,15 @@ class Download {
 	}
 
 	/**
+	 * Removes one chunk, such as the one a failed request left unfinished.
+	 *
+	 * @param int $index Chunk number, from 0.
+	 */
+	public function discard_chunk( int $index ): void {
+		$this->uploads->delete( $this->chunk_path( $index ) );
+	}
+
+	/**
 	 * Removes the chunks of a download queued before the chunk rename.
 	 *
 	 * Those went into a directory beside the bundle, `{bundle}_{nonce}`, which
