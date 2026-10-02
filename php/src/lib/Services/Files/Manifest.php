@@ -48,7 +48,7 @@ class Manifest {
 
 			/* `Archive::unpack_to()` extracts directory entries too. */
 			if ( ! self::is_safe_name( $stat['name'] ) ) {
-				return new WP_Error( 'file', "The story archive names a file outside the bundle: {$stat['name']}.", $stat['name'] );
+				return new WP_Error( 'file', "The story archive names {$stat['name']}, which is not a plain path inside the bundle.", $stat['name'] );
 			}
 
 			if ( self::is_directory_entry( $stat['name'] ) ) {
@@ -75,12 +75,17 @@ class Manifest {
 	}
 
 	/**
-	 * Whether an entry name is usable as a path inside the bundle.
+	 * Whether an entry name is a plain path inside the bundle.
 	 *
 	 * Entry names become path segments the same way a story ID and a request
 	 * nonce do, and unlike those two they are received rather than generated.
 	 * A name that escapes fails the whole publish: skipping it would leave the
 	 * bundle incomplete, and the manifest naming a file that is not on disk.
+	 *
+	 * An empty or `.` segment fails too. `ZipArchive::extractTo()` and a disk
+	 * resolve `assets/./theme.css` and `assets//theme.css` to
+	 * `assets/theme.css`, so the manifest would vouch for two files where the
+	 * bundle holds one.
 	 *
 	 * @param string $name Archive entry name.
 	 */
@@ -89,11 +94,18 @@ class Manifest {
 			return false;
 		}
 
-		if ( '/' === $name[0] || 1 === preg_match( '/^[A-Za-z]:/', $name ) ) {
+		if ( 1 === preg_match( '/^[A-Za-z]:/', $name ) ) {
 			return false;
 		}
 
-		return ! in_array( '..', explode( '/', $name ), true );
+		$segments = explode( '/', $name );
+
+		/* A directory entry ends in one slash. */
+		if ( '' === end( $segments ) ) {
+			array_pop( $segments );
+		}
+
+		return array() === array_intersect( $segments, array( '', '.', '..' ) );
 	}
 
 	/**
@@ -142,8 +154,8 @@ class Manifest {
 	 * manifest is the only record `prune()` and `delete()` have.
 	 *
 	 * A name is held to the rules an archive entry is, because `prune()` and
-	 * `delete()` join it onto the bundle path. One that escapes is dropped and
-	 * reported.
+	 * `delete()` join it onto the bundle path. One that fails them is dropped
+	 * and reported.
 	 *
 	 * @param mixed $value Stored meta value.
 	 * @return array<string, array{size: int, crc: int}>
@@ -161,7 +173,7 @@ class Manifest {
 					__METHOD__,
 					sprintf(
 						/* translators: %s: name of a file as the story manifest stores it. */
-						esc_html__( 'The stored story manifest names %s, which is outside the story bundle, so that file is left alone.', 'the-shorthand-editor' ),
+						esc_html__( 'The stored story manifest names %s, which is not a plain path inside the story bundle, so that file is left alone.', 'the-shorthand-editor' ),
 						esc_html( (string) $name )
 					),
 					'1.0.10'

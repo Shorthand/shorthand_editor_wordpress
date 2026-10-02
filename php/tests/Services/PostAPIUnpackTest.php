@@ -468,6 +468,20 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( 0, $this->uploads->writes() );
 	}
 
+	public function test_an_archive_with_two_names_for_one_path_publishes_nothing(): void {
+		$result = $this->publish(
+			'pull1',
+			array(
+				'assets/theme.css'   => 'first',
+				'assets/./theme.css' => 'second',
+			)
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( array(), $this->bundle_objects() );
+		$this->assertSame( 0, $this->uploads->writes() );
+	}
+
 	/**
 	 * The bundle's files, without the chunks the download left in uploads.
 	 *

@@ -144,13 +144,20 @@ full.
 `Manifest::from_archive()` validates every entry name in the story ZIP before
 it becomes a path, directory entries included, because `Archive::unpack_to()`
 extracts those too. It rejects an empty name, a null byte, a backslash, a
-leading `/`, a drive prefix such as `C:`, and any `..` segment, and returns a
-`WP_Error` that fails the publish.
+leading `/`, a drive prefix such as `C:`, and any `..`, `.` or empty segment,
+and returns a `WP_Error` that fails the publish. A directory entry keeps its
+one trailing `/`.
 
 Entry names are received rather than generated, and are interpolated into the
 bundle path the same way story IDs and nonces are. An unsafe name fails the
 whole publish instead of being skipped: a skipped entry would leave the bundle
 incomplete and the manifest naming a file that was never written.
+
+A `.` or empty segment stays inside the bundle, but makes an alias:
+`ZipArchive::extractTo()` and a disk resolve `assets/./theme.css` and
+`assets//theme.css` to `assets/theme.css`. Accepting one would let the manifest
+vouch for two files, with two CRC32 values, where the bundle holds one. The
+Shorthand story exports checked on 2026-10-02 use plain names only.
 
 It also rejects two entry names that differ only in case, such as
 `assets/media/Photo.JPG` and `assets/media/photo.jpg`, on every host. See the
