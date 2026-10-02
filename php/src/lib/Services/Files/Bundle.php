@@ -146,7 +146,22 @@ class Bundle {
 		try {
 			return $this->unpack( $staging, $download, $chunks );
 		} finally {
-			$staging->discard();
+			/*
+			 * The story is in uploads by now, so this fails nothing. The
+			 * directory name is random and recorded nowhere, so this is the
+			 * one chance to say it was left.
+			 */
+			if ( ! $staging->discard() ) {
+				_doing_it_wrong(
+					__METHOD__,
+					sprintf(
+						/* translators: %s: local path of a directory a story publish worked in. */
+						esc_html__( 'The story staging directory %s could not be removed, so it stays until the system clears its temp directory.', 'the-shorthand-editor' ),
+						esc_html( $staging->path() )
+					),
+					'1.0.10'
+				);
+			}
 		}
 	}
 

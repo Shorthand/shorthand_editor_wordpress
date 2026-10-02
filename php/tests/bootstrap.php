@@ -203,6 +203,7 @@ function tests_wp_reset_state(): void {
 		'temp_dir'             => sys_get_temp_dir() . '/',
 		'copy_error'           => null,
 		'copy_failure'         => false,
+		'delete_failure'       => false,
 		'filesystem_available' => true,
 		'doing_it_wrong'       => array(),
 		'wp_rand_calls'        => 0,
@@ -1410,6 +1411,10 @@ class Tests_WP_Filesystem extends WP_Filesystem_Base {
 	 * @param string|false $type
 	 */
 	public function delete( string $path, bool $recursive = false, $type = false ): bool {
+		if ( $GLOBALS['tests_wp_state']['delete_failure'] ) {
+			return false;
+		}
+
 		if ( is_file( $path ) ) {
 			return unlink( $path );
 		}
@@ -1489,6 +1494,15 @@ function tests_wp_set_copy_error( ?string $code, string $message = '' ): void {
  */
 function tests_wp_set_copy_failure( bool $fails = true ): void {
 	$GLOBALS['tests_wp_state']['copy_failure'] = $fails;
+}
+
+/**
+ * Makes every `WP_Filesystem::delete()` fail, as a host that refuses one does.
+ *
+ * @param bool $fails Whether deleting fails.
+ */
+function tests_wp_set_delete_failure( bool $fails = true ): void {
+	$GLOBALS['tests_wp_state']['delete_failure'] = $fails;
 }
 
 function WP_Filesystem(): bool {

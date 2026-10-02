@@ -26,7 +26,9 @@ different meaning.
 - **Staging directory** — the assembled archive and the unpacked tree for one
   pull. On the local disk returned by `get_temp_dir()`, at
   `sh_pull_{nonce}_{random}/`, holding `archive.zip` and `unpacked/`. Lives for
-  one request, and is never readable by a later one.
+  one request, and is never readable by a later one. A staging directory the
+  host will not remove is reported, and stays until the system clears its temp
+  directory.
 
 - **Bundle directory** — the published story files. In uploads, at
   `shorthand/{post_id}/{story_id}/`, one per story, overwritten in place on
