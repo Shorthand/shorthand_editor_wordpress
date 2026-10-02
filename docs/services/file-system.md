@@ -142,7 +142,8 @@ full.
 ## Archive entry names
 
 `Manifest::from_archive()` validates every entry name in the story ZIP before
-it becomes a path. It rejects an empty name, a null byte, a backslash, a
+it becomes a path, directory entries included, because `Archive::unpack_to()`
+extracts those too. It rejects an empty name, a null byte, a backslash, a
 leading `/`, a drive prefix such as `C:`, and any `..` segment, and returns a
 `WP_Error` that fails the publish.
 
@@ -154,6 +155,12 @@ incomplete and the manifest naming a file that was never written.
 It also rejects two entry names that differ only in case, such as
 `assets/media/Photo.JPG` and `assets/media/photo.jpg`, on every host. See the
 section "Case and the manifest" in `docs/services/file-system.md`.
+
+`Manifest::from_meta()` holds the names in the stored `story_manifest` to the
+same rules, because `Bundle::prune()` and `Bundle::delete()` join each name
+onto the bundle path. A stored name that fails them is dropped and reported
+through `_doing_it_wrong()`, so no delete reaches outside the bundle; the file
+it names, if any, is left alone.
 
 ## Sidecar plugins
 

@@ -42,12 +42,17 @@ class Manifest {
 		for ( $idx = 0; $idx < $zip->numFiles; $idx++ ) {
 			$stat = $zip->statIndex( $idx );
 
-			if ( false === $stat || self::is_directory_entry( $stat['name'] ) ) {
+			if ( false === $stat ) {
 				continue;
 			}
 
+			/* `Archive::unpack_to()` extracts directory entries too. */
 			if ( ! self::is_safe_name( $stat['name'] ) ) {
 				return new WP_Error( 'file', "The story archive names a file outside the bundle: {$stat['name']}.", $stat['name'] );
+			}
+
+			if ( self::is_directory_entry( $stat['name'] ) ) {
+				continue;
 			}
 
 			$fold = strtolower( $stat['name'] );
@@ -136,6 +141,10 @@ class Manifest {
 	 * is reported: the file it names stays in uploads for good, because the
 	 * manifest is the only record `prune()` and `delete()` have.
 	 *
+	 * A name is held to the rules an archive entry is, because `prune()` and
+	 * `delete()` join it onto the bundle path. One that escapes is dropped and
+	 * reported.
+	 *
 	 * @param mixed $value Stored meta value.
 	 * @return array<string, array{size: int, crc: int}>
 	 */
@@ -147,6 +156,20 @@ class Manifest {
 		$manifest = array();
 
 		foreach ( $value as $name => $entry ) {
+			if ( ! self::is_safe_name( (string) $name ) ) {
+				_doing_it_wrong(
+					__METHOD__,
+					sprintf(
+						/* translators: %s: name of a file as the story manifest stores it. */
+						esc_html__( 'The stored story manifest names %s, which is outside the story bundle, so that file is left alone.', 'the-shorthand-editor' ),
+						esc_html( (string) $name )
+					),
+					'1.0.10'
+				);
+
+				continue;
+			}
+
 			if ( ! is_array( $entry ) || ! isset( $entry['size'], $entry['crc'] ) ) {
 				_doing_it_wrong(
 					__METHOD__,
