@@ -124,6 +124,38 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	}
 
 	/**
+	 * A document is read from the entry that lands at its path, as it is copied.
+	 */
+	public function test_a_document_named_by_an_alias_is_stored_as_post_meta(): void {
+		$this->publish(
+			'pull1',
+			array(
+				'./head.html'     => 'head markup',
+				'.//article.html' => 'article markup',
+			)
+		);
+
+		$this->assertSame( 'head markup', get_post_meta( 7, 'story_head', true ) );
+		$this->assertSame( 'article markup', get_post_meta( 7, 'story_body', true ) );
+	}
+
+	/**
+	 * The later entry is the file `ZipArchive::extractTo()` leaves.
+	 */
+	public function test_the_later_of_two_entries_for_a_document_is_stored(): void {
+		$this->publish(
+			'pull1',
+			array(
+				'article.html'   => 'first',
+				'./article.html' => 'second',
+			)
+		);
+
+		$this->assertSame( 'second', get_post_meta( 7, 'story_body', true ) );
+		$this->assertSame( array( self::BUNDLE . '/article.html' => 'second' ), $this->bundle_objects() );
+	}
+
+	/**
 	 * The whole point of the manifest: a republish costs the size of the edit.
 	 */
 	public function test_a_republish_with_no_change_writes_nothing(): void {

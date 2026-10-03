@@ -54,11 +54,11 @@ class Manifest {
 				return self::get_unsafe_name_error( $stat['name'] );
 			}
 
-			if ( self::is_directory_entry( $stat['name'] ) ) {
+			$name = self::path( $stat['name'] );
+
+			if ( null === $name ) {
 				continue;
 			}
-
-			$name = self::canonical( $stat['name'] );
 
 			if ( '' === $name ) {
 				return self::get_unsafe_name_error( $stat['name'] );
@@ -130,6 +130,16 @@ class Manifest {
 		}
 
 		return ! in_array( '..', explode( '/', $name ), true );
+	}
+
+	/**
+	 * The bundle path an entry's file lands at.
+	 *
+	 * @param string $name Entry name that `is_safe_name()` accepts.
+	 * @return string|null Null for a directory entry, which lands no file.
+	 */
+	public static function path( string $name ): ?string {
+		return self::is_directory_entry( $name ) ? null : self::canonical( $name );
 	}
 
 	/**

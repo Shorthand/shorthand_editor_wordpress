@@ -338,6 +338,5 @@ plain copy failure that leaves `WP_Filesystem::errors` untouched, and
 `tests_wp_doing_it_wrong()` for the calls `Manifest::from_meta()` makes.
 
 The counts are the assertion that matters. A republish with no edits performs
-two writes and two deletes — the two documents, which move each publish —
-whatever the size of the story. See
+no writes and no deletes, whatever the size of the story. See
 `Shorthand\Tests\Services\PostAPIUnpackTest`.
