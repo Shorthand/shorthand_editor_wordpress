@@ -16,6 +16,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StorySyncProgress;
 use Shorthand\Tests\WordPressTestCase;
 use Tests_WP_Die_Exception;
 use WP_Error;
@@ -31,7 +32,7 @@ final class EditorTest extends WordPressTestCase {
 	 */
 	public function test_saving_a_published_post_does_not_publish_the_story( string $post_status ): void {
 		$post_api = $this->createMock( PostAPI::class );
-		$post_api->expects( $this->never() )->method( 'extract_story_content' );
+		$post_api->expects( $this->never() )->method( 'publish_story_bundle' );
 		$post_api->expects( $this->never() )->method( 'set_post_story_version' );
 
 		$editor = $this->make_editor( $post_api );
@@ -398,6 +399,60 @@ final class EditorTest extends WordPressTestCase {
 			'size'   => 1200,
 			'width'  => 800,
 			'height' => 600,
+		);
+	}
+
+	/**
+	 * A warning describes a finished publish, so the editor shows it only when
+	 * there is no error and no publish in progress to report instead.
+	 */
+	public function test_the_story_state_carries_the_publishing_warning(): void {
+		$post_api = $this->createMock( PostAPI::class );
+		$post_api->method( 'get_story_update_warning' )->willReturn( $this->collision_warning() );
+
+		$state = $this->make_editor( $post_api )->get_post_story_state( 7 );
+
+		$this->assertSame( $this->collision_warning(), $state['warnings']['publishing'] );
+	}
+
+	public function test_a_publishing_error_hides_the_warning(): void {
+		$post_api = $this->createMock( PostAPI::class );
+		$post_api->method( 'get_story_update_error' )->willReturn(
+			array(
+				array(
+					'code'    => 'story',
+					'message' => 'Story being published',
+					'data'    => 'aBc123',
+				),
+			)
+		);
+		$post_api->method( 'get_story_update_warning' )->willReturn( $this->collision_warning() );
+
+		$state = $this->make_editor( $post_api )->get_post_story_state( 7 );
+
+		$this->assertNull( $state['warnings']['publishing'] );
+	}
+
+	public function test_a_publish_in_progress_hides_the_warning(): void {
+		$post_api = $this->createMock( PostAPI::class );
+		$post_api->method( 'get_story_update_progress' )->willReturn( new StorySyncProgress( 40, 'Saving story to WordPress' ) );
+		$post_api->method( 'get_story_update_warning' )->willReturn( $this->collision_warning() );
+
+		$state = $this->make_editor( $post_api )->get_post_story_state( 7 );
+
+		$this->assertNull( $state['warnings']['publishing'] );
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function collision_warning(): array {
+		return array(
+			array(
+				'message' => 'assets/AbC/x.jpg and assets/abc/x.jpg',
+				'data'    => array( array( 'assets/AbC/x.jpg', 'assets/abc/x.jpg' ) ),
+				'code'    => 'collision',
+			),
 		);
 	}
 

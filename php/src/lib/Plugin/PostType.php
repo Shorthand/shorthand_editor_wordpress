@@ -243,7 +243,7 @@ class PostType {
 	}
 
 	public function is_protected_meta( $prot, $meta_key, $meta_type ) {
-		$protected_meta_keys = array( 'story_id', 'story_body', 'story_head', 'story_version', 'story_update_nonce', 'story_update_state', 'story_manifest', 'story_pulls', 'story_excerpt', 'story_cover', 'story_cover_attachment' );
+		$protected_meta_keys = array( 'story_id', 'story_body', 'story_head', 'story_version', 'story_update_nonce', 'story_update_state', 'story_update_warning', 'story_manifest', 'story_pulls', 'story_excerpt', 'story_cover', 'story_cover_attachment' );
 		if ( 'post' === $meta_type && in_array( $meta_key, $protected_meta_keys, true ) ) {
 			return true;
 		}

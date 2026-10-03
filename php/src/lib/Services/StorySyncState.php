@@ -24,12 +24,25 @@ class StorySyncState {
 	private $progress;
 
 	/**
-	 * @param array<int, array<string, mixed>>|null $publishing_error
+	 * Warning left by the last successful publish.
+	 *
+	 * @var array<int, array<string, mixed>>|null
 	 */
-	public function __construct( ?int $live_version, ?array $publishing_error, ?StorySyncProgress $progress ) {
-		$this->live_version     = $live_version;
-		$this->publishing_error = $publishing_error;
-		$this->progress         = $progress;
+	private $publishing_warning;
+
+	/**
+	 * The story's state, as the editor reads it.
+	 *
+	 * @param int|null                                   $live_version       Version last published, if any.
+	 * @param array<int, array<string, mixed>>|null      $publishing_error   Why the last publish failed.
+	 * @param \Shorthand\Services\StorySyncProgress|null $progress           Publish in progress.
+	 * @param array<int, array<string, mixed>>|null      $publishing_warning What the last publish warned of.
+	 */
+	public function __construct( ?int $live_version, ?array $publishing_error, ?StorySyncProgress $progress, ?array $publishing_warning = null ) {
+		$this->live_version       = $live_version;
+		$this->publishing_error   = $publishing_error;
+		$this->progress           = $progress;
+		$this->publishing_warning = $publishing_warning;
 	}
 
 	/**
@@ -39,6 +52,9 @@ class StorySyncState {
 		$state = array(
 			'errors'      => array(
 				'publishing' => $this->publishing_error,
+			),
+			'warnings'    => array(
+				'publishing' => $this->publishing_warning,
 			),
 			'liveVersion' => $this->live_version,
 		);
