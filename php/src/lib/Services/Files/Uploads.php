@@ -20,7 +20,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - `write()` puts a local file into uploads, overwriting.
  * - `read_into()` appends a file held in uploads to a local file. This is the
  *   only read, and downloaded chunks are the only thing it reads.
- * - `delete()` removes one named file.
+ * - `delete()` removes one named file. A false answer does not mean the file
+ *   is still there, and no caller stops on one.
  * - `make_dir()` may do nothing at all. An object store has no directories;
  *   the slashes in a key only imply them.
  *
@@ -58,7 +59,14 @@ interface Uploads {
 	/**
 	 * Deletes one file from uploads.
 	 *
+	 * Through `WP_Filesystem`, a file already gone and a delete the host
+	 * refused both answer false, so false means only that this call removed
+	 * nothing. Callers go on past it: a file that is already missing must
+	 * never stop an unpublish.
+	 *
 	 * @param string $path Absolute path in uploads.
+	 * @return bool True when this call removed the file. False otherwise,
+	 *              including when the file was already gone.
 	 */
 	public function delete( string $path ): bool;
 

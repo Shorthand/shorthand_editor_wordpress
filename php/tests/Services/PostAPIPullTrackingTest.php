@@ -71,6 +71,25 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		$this->assertSame( array( (int) $task->request_nonce ), array_keys( get_post_meta( 7, 'story_pulls', true ) ) );
 	}
 
+	/**
+	 * A delete cannot tell a chunk already gone from one the host refused. A
+	 * record kept until every delete succeeds would be swept on every pull,
+	 * for good.
+	 */
+	public function test_a_superseded_pull_is_forgotten_when_a_chunk_is_already_gone(): void {
+		$stale = 'vip://wp-content/uploads/shorthand/7/aBc123_11111';
+
+		$this->uploads->put( $stale . '_1.part', 'second' );
+
+		tests_wp_set_post_meta( 7, 'story_pulls', array( '11111' => 2 ) );
+
+		$task = $this->begin_pull();
+
+		$this->assertSame( array(), $this->uploads->objects() );
+		$this->assertSame( 2, $this->uploads->deletes() );
+		$this->assertSame( array( (int) $task->request_nonce ), array_keys( get_post_meta( 7, 'story_pulls', true ) ) );
+	}
+
 	public function test_a_pull_with_no_downloaded_chunks_is_swept_without_deleting_files(): void {
 		tests_wp_set_post_meta( 7, 'story_pulls', array( '11111' => 0 ) );
 

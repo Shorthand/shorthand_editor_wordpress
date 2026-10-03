@@ -82,8 +82,12 @@ class WpUploads implements Uploads {
 	/**
 	 * Deletes one file from uploads.
 	 *
+	 * `WP_Filesystem_Direct::delete()` answers with `unlink()`, which fails on
+	 * a file that is already gone.
+	 *
 	 * @param string $path File to delete.
-	 * @return bool True when the file is gone.
+	 * @return bool True when this call removed the file. False otherwise,
+	 *              including when the file was already gone.
 	 */
 	public function delete( string $path ): bool {
 		$file_system = FileSystem::boot();

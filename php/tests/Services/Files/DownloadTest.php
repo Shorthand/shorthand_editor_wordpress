@@ -65,6 +65,21 @@ final class DownloadTest extends WordPressTestCase {
 	}
 
 	/**
+	 * A delete cannot tell a chunk already gone from one the host refused, so
+	 * no false answer stops the rest.
+	 */
+	public function test_discarding_a_download_goes_on_past_a_chunk_already_gone(): void {
+		$download = $this->open();
+
+		$this->uploads->put( $download->chunk_path( 1 ), 'second' );
+
+		$download->discard( 2 );
+
+		$this->assertSame( array(), $this->uploads->objects() );
+		$this->assertSame( 2, $this->uploads->deletes() );
+	}
+
+	/**
 	 * A download queued before the chunk rename wrote into a directory beside
 	 * the bundle. The path is derived, never taken from the stored task.
 	 */
