@@ -39,6 +39,13 @@ class Archive {
 	private $manifest;
 
 	/**
+	 * Entry names that can be one file on some host, in groups.
+	 *
+	 * @var array<int, string[]>
+	 */
+	private $collisions;
+
+	/**
 	 * The story documents, by archive entry name.
 	 *
 	 * @var array<string, string>
@@ -53,10 +60,11 @@ class Archive {
 	 * @param array       $manifest Index of the archive.
 	 */
 	private function __construct( ZipArchive $zip, string $path, array $manifest ) {
-		$this->zip       = $zip;
-		$this->path      = $path;
-		$this->manifest  = $manifest;
-		$this->documents = array();
+		$this->zip        = $zip;
+		$this->path       = $path;
+		$this->manifest   = $manifest;
+		$this->collisions = Manifest::collisions( self::names( $zip ) );
+		$this->documents  = array();
 
 		foreach ( Manifest::DOCUMENTS as $name ) {
 			$contents                 = $zip->getFromName( $name );
@@ -102,6 +110,15 @@ class Archive {
 	}
 
 	/**
+	 * Entry names that can be one file on some host, from `Manifest::collisions()`.
+	 *
+	 * @return array<int, string[]>
+	 */
+	public function collisions(): array {
+		return $this->collisions;
+	}
+
+	/**
 	 * One story document, or an empty string where the archive has none.
 	 *
 	 * @param string $name Archive entry name, from `Manifest::DOCUMENTS`.
@@ -130,6 +147,28 @@ class Archive {
 		$error->add( 'zip', $this->zip->getStatusString(), $this->zip->status );
 
 		return $error;
+	}
+
+	/**
+	 * Every entry name, in archive order.
+	 *
+	 * @param \ZipArchive $zip Open archive.
+	 * @return string[]
+	 */
+	private static function names( ZipArchive $zip ): array {
+		$names = array();
+
+		$count = $zip->count();
+
+		for ( $idx = 0; $idx < $count; $idx++ ) {
+			$name = $zip->getNameIndex( $idx );
+
+			if ( false !== $name ) {
+				$names[] = $name;
+			}
+		}
+
+		return $names;
 	}
 
 	/**

@@ -578,6 +578,9 @@ class Editor {
 		$state         = $error ? null : $this->post_api->get_story_update_progress( $post_id );
 		$pending_title = $this->title_sync->get_pending( $post_id );
 
-		return ( new StorySyncState( $live_version, $error, $state, $pending_title ) )->to_array();
+		/* A warning describes a finished publish, so an error or a new publish replaces it. */
+		$warning = $error || $state ? null : $this->post_api->get_story_update_warning( $post_id );
+
+		return ( new StorySyncState( $live_version, $error, $state, $pending_title, $warning ) )->to_array();
 	}
 }

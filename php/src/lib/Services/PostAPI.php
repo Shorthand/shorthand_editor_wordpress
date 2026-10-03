@@ -190,6 +190,31 @@ class PostAPI {
 		}
 	}
 
+	/**
+	 * The warning left by the last successful publish, as stored.
+	 *
+	 * @param int $post_id Post the story belongs to.
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	public function get_story_update_warning( int $post_id ): ?array {
+		$warning = get_post_meta( $post_id, 'story_update_warning', true );
+		return is_array( $warning ) ? $warning : null;
+	}
+
+	/**
+	 * Records or clears the warning left by a successful publish.
+	 *
+	 * @param int            $post_id Post the story belongs to.
+	 * @param \WP_Error|null $warning What the author should know, or null to clear.
+	 */
+	public function set_story_update_warning( int $post_id, ?\WP_Error $warning = null ): void {
+		if ( null === $warning ) {
+			delete_post_meta( $post_id, 'story_update_warning' );
+		} else {
+			update_post_meta( $post_id, 'story_update_warning', $this->get_wp_error_as_array( $warning ) );
+		}
+	}
+
 	public function get_story_update_progress( int $post_id ): ?StorySyncProgress {
 		return StorySyncProgress::from_meta_value( get_post_meta( $post_id, 'story_update_state', true ) );
 	}
@@ -747,7 +772,32 @@ class PostAPI {
 		/* Last, so that a failure above leaves the previous manifest in place. */
 		$bundle->commit( $story['manifest'] );
 
+		$this->set_story_update_warning( absint( $post_id ), self::get_collision_warning( $story['collisions'] ) );
+
 		return null;
+	}
+
+	/**
+	 * The warning for file names that can be one file on some host.
+	 *
+	 * The fault is in the export, so the story is published regardless; the
+	 * author is told which files may show in place of another.
+	 *
+	 * @param array<int, string[]> $collisions Groups from `Manifest::collisions()`.
+	 * @return \WP_Error|null Null when there are none.
+	 */
+	private static function get_collision_warning( array $collisions ): ?WP_Error {
+		if ( empty( $collisions ) ) {
+			return null;
+		}
+
+		$groups = array();
+
+		foreach ( $collisions as $names ) {
+			$groups[] = implode( ' and ', $names );
+		}
+
+		return new WP_Error( 'collision', implode( '; ', $groups ), $collisions );
 	}
 
 	/**

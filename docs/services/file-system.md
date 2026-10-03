@@ -1,7 +1,7 @@
 ---
 title: File system service
 purpose: How the plugin writes story files into the WordPress uploads directory on any host, disk or object store.
-updated: 2026-10-02
+updated: 2026-10-03
 ---
 
 # File system service
@@ -148,31 +148,54 @@ full.
 
 `Manifest::from_archive()` validates every entry name in the story ZIP before
 it becomes a path, directory entries included, because `Archive::unpack_to()`
-extracts those too. It rejects an empty name, a null byte, a backslash, a
-leading `/`, a drive prefix such as `C:`, and any `..`, `.` or empty segment,
-and returns a `WP_Error` that fails the publish. A directory entry keeps its
-one trailing `/`.
+extracts those too. It refuses a name that can reach outside the bundle: an
+empty name, a null byte, a backslash, a leading `/`, a drive prefix such as
+`C:`, or any `..` segment. A refused name returns a `WP_Error` that fails the
+publish.
 
 Entry names are received rather than generated, and are interpolated into the
 bundle path the same way story IDs and nonces are. An unsafe name fails the
 whole publish instead of being skipped: a skipped entry would leave the bundle
 incomplete and the manifest naming a file that was never written.
 
-A `.` or empty segment stays inside the bundle, but makes an alias:
-`ZipArchive::extractTo()` and a disk resolve `assets/./theme.css` and
-`assets//theme.css` to `assets/theme.css`. Accepting one would let the manifest
-vouch for two files, with two CRC32 values, where the bundle holds one. The
-Shorthand story exports checked on 2026-10-02 use plain names only.
-
-It also rejects two entry names that differ only in case, such as
-`assets/media/Photo.JPG` and `assets/media/photo.jpg`, on every host. See the
-section "Case and the manifest" in `docs/services/file-system.md`.
+A `.` or empty segment stays inside the bundle, so it is accepted.
+`ZipArchive::extractTo()` resolves `assets/./theme.css` and `assets//theme.css`
+to `assets/theme.css`, so the manifest keys each entry by that plain name: the
+path the file lands at. When two entries name one plain path, the later entry
+is the file extracted, and the manifest holds its size and CRC32. The Shorthand
+story exports checked on 2026-10-02 use plain names only.
 
 `Manifest::from_meta()` holds the names in the stored `story_manifest` to the
 same rules, because `Bundle::prune()` and `Bundle::delete()` join each name
 onto the bundle path. A stored name that fails them is dropped and reported
 through `_doing_it_wrong()`, so no delete reaches outside the bundle; the file
-it names, if any, is left alone.
+it names, if any, is left alone. A stored name that passes is read back by its
+plain name.
+
+## Entry names that share a file
+
+Two entry names in one archive can land on one file, and that does not stop
+the publish. `assets/./theme.css` and `assets/theme.css` are one path on every
+host. `assets/media/Photo.JPG` and `assets/media/photo.jpg` are two files on a
+disk and one on an object store.
+
+The fault is in the export, and the Shorthand publishing service is where it
+is fixed. The plugin publishes what the archive holds and tells the author:
+
+1. `Manifest::collisions()` groups the archive's file names by plain name,
+   lowercased, and returns each group of two or more. `Archive::open()`
+   records the groups, and `Bundle::publish()` returns them as `collisions`.
+2. `Shorthand\Services\PostAPI::publish_story_bundle()` stores the groups in
+   the `story_update_warning` post meta key after the manifest is committed,
+   as a `WP_Error` with code `collision`. A publish with no collisions removes
+   the key.
+3. The editor toolbar shows a notice while the warning stands, and names the
+   files in its tooltip. A publish error or a publish in progress hides it.
+
+Names that differ only in case are not rewritten. The manifest keeps both, with
+two CRC32 values. On an object store the host keeps one file, holding whichever
+was written last, so one name may show the other's content until the export is
+fixed.
 
 ## Sidecar plugins
 
@@ -234,11 +257,9 @@ the post it links. Two posts therefore cannot fold onto one bundle, however
 their story IDs are cased. The download nonce is `wp_rand( 10000, 99999 )`, so
 the `.part` chunks beside the bundle carry no case either.
 
-Two file names inside one archive can fold to one. An object store keeps one
-file for both, holding whichever was written last, while the manifest names
-two with two CRC32s; every later publish then skips both.
-`Manifest::from_archive()` refuses such an archive on every host, a disk
-included, so a story publishes the same everywhere or nowhere.
+Two file names inside one archive can fold to one. Such an archive publishes,
+and the author is warned. See the section "Entry names that share a file" in
+`docs/services/file-system.md`.
 
 What case-insensitivity can still merge is two file names across publishes:
 one in the stored manifest, one in the manifest of the publish now running.
