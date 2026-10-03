@@ -1,7 +1,7 @@
 ---
 title: Story post meta
 purpose: The post meta keys a Shorthand story post carries, and the shape of the structured ones.
-updated: 2026-10-02
+updated: 2026-10-03
 ---
 
 # Story post meta
@@ -27,10 +27,12 @@ rendered page is built from `story_body`.
 | `story_cover` | object | The Shorthand cover image the last publish evaluated |
 | `story_cover_attachment` | number | Attachment the plugin set as the featured image |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
+| `story_update_warning` | array | What the last successful publish warned of, as a flattened `WP_Error` |
 
 `Shorthand\Plugin\PostType::register_post_type()` registers every key except
-`story_update_error`, which is written directly by
-`Shorthand\Services\PostAPI::set_story_update_error()`.
+`story_update_error` and `story_update_warning`, which are written directly by
+`Shorthand\Services\PostAPI::set_story_update_error()` and
+`set_story_update_warning()`.
 
 Only `story_id` and `story_version` are exposed over REST.
 
@@ -61,7 +63,8 @@ Built by `Shorthand\Services\Files\Manifest`: `from_archive()` from
 drops and reports a key that is not a safe bundle path, under the rules in
 `docs/services/file-system.md`, section "Archive entry names".
 
-Keys are bundle paths, which are the archive's own entry names.
+Keys are bundle paths: the archive's entry names, with any `.` or empty
+segment removed. Two entries that name one path share one key.
 
 An absent `story_manifest` means copy every file. That is the state after
 upgrading from a plugin version that did not write one, and it needs no
@@ -183,3 +186,30 @@ does not offer them.
 Progress of the in-flight pull, as produced by
 `Shorthand\Services\StorySyncProgress::to_array()` and read back by
 `from_meta_value()`. Removed when the pull finishes.
+
+## story_update_warning
+
+What the last successful publish warned of, as produced by
+`Shorthand\Services\PostAPI::get_wp_error_as_array()`. Written by
+`Shorthand\Services\PostAPI::set_story_update_warning()` after the manifest is
+committed, and removed by a publish with nothing to warn of. A failed publish
+leaves it alone.
+
+Today the one code is `collision`. Its message names each group of entry names
+that can be one file, joined by ` and ` within a group and `; ` between groups.
+Its data is the groups, from `Shorthand\Services\Files\Manifest::collisions()`.
+
+```php
+array(
+    array(
+        'message' => 'assets/AbC/x.jpg and assets/abc/x.jpg',
+        'data'    => array( array( 'assets/AbC/x.jpg', 'assets/abc/x.jpg' ) ),
+        'code'    => 'collision',
+    ),
+)
+```
+
+`Shorthand\Admin\Editor::get_post_story_state()` passes it to the editor as
+`warnings.publishing`, and passes null while `story_update_error` or
+`story_update_state` is set. Protected by
+`Shorthand\Plugin\PostType::is_protected_meta()`.

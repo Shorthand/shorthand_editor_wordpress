@@ -29,17 +29,20 @@ class Manifest {
 	/**
 	 * Reads an archive index, without extracting anything.
 	 *
-	 * Two names that fold to one are refused on every host. An object store
-	 * keeps one file for both, and the manifest would vouch for two.
+	 * Each file is keyed by its plain name, without `.` or empty segments,
+	 * because that is the file `ZipArchive::extractTo()` writes. Where two
+	 * entries name one file, the later entry is the one left on disk, so the
+	 * later entry is the one described. `collisions()` reports such names.
 	 *
 	 * @param \ZipArchive $zip Open archive.
-	 * @return array<string, array{size: int, crc: int}>|\WP_Error Entry name to size and CRC32.
+	 * @return array<string, array{size: int, crc: int}>|\WP_Error Bundle path to size and CRC32.
 	 */
 	public static function from_archive( ZipArchive $zip ) {
 		$manifest = array();
-		$folded   = array();
 
-		for ( $idx = 0; $idx < $zip->numFiles; $idx++ ) {
+		$count = $zip->count();
+
+		for ( $idx = 0; $idx < $count; $idx++ ) {
 			$stat = $zip->statIndex( $idx );
 
 			if ( false === $stat ) {
@@ -48,22 +51,20 @@ class Manifest {
 
 			/* `Archive::unpack_to()` extracts directory entries too. */
 			if ( ! self::is_safe_name( $stat['name'] ) ) {
-				return new WP_Error( 'file', "The story archive names {$stat['name']}, which is not a plain path inside the bundle.", $stat['name'] );
+				return self::get_unsafe_name_error( $stat['name'] );
 			}
 
 			if ( self::is_directory_entry( $stat['name'] ) ) {
 				continue;
 			}
 
-			$fold = strtolower( $stat['name'] );
+			$name = self::canonical( $stat['name'] );
 
-			if ( isset( $folded[ $fold ] ) ) {
-				return new WP_Error( 'file', "The story archive names {$folded[ $fold ]} and {$stat['name']}, which a host that ignores case stores as one file.", $stat['name'] );
+			if ( '' === $name ) {
+				return self::get_unsafe_name_error( $stat['name'] );
 			}
 
-			$folded[ $fold ] = $stat['name'];
-
-			$manifest[ $stat['name'] ] = array(
+			$manifest[ $name ] = array(
 				'size' => (int) $stat['size'],
 				'crc'  => (int) $stat['crc'],
 			);
@@ -75,17 +76,47 @@ class Manifest {
 	}
 
 	/**
-	 * Whether an entry name is a plain path inside the bundle.
+	 * Groups the file names that can be one file on some host.
+	 *
+	 * Two names are one file everywhere when they differ only by `.` or empty
+	 * segments, and one file on a host that ignores case when they differ only
+	 * in case. Either way one may show in place of the other. The story still
+	 * publishes; the fault is in the export, and the author is told.
+	 *
+	 * @param string[] $names Archive entry names, in archive order.
+	 * @return array<int, string[]> Each group of two or more names, in archive order.
+	 */
+	public static function collisions( array $names ): array {
+		$groups = array();
+
+		foreach ( $names as $name ) {
+			if ( self::is_directory_entry( $name ) ) {
+				continue;
+			}
+
+			$groups[ strtolower( self::canonical( $name ) ) ][] = $name;
+		}
+
+		$collisions = array();
+
+		foreach ( $groups as $group ) {
+			if ( count( $group ) > 1 ) {
+				$collisions[] = $group;
+			}
+		}
+
+		return $collisions;
+	}
+
+	/**
+	 * Whether an entry name stays inside the bundle.
 	 *
 	 * Entry names become path segments the same way a story ID and a request
 	 * nonce do, and unlike those two they are received rather than generated.
 	 * A name that escapes fails the whole publish: skipping it would leave the
 	 * bundle incomplete, and the manifest naming a file that is not on disk.
 	 *
-	 * An empty or `.` segment fails too. `ZipArchive::extractTo()` and a disk
-	 * resolve `assets/./theme.css` and `assets//theme.css` to
-	 * `assets/theme.css`, so the manifest would vouch for two files where the
-	 * bundle holds one.
+	 * A `.` or empty segment stays inside, and is dropped by `canonical()`.
 	 *
 	 * @param string $name Archive entry name.
 	 */
@@ -94,18 +125,33 @@ class Manifest {
 			return false;
 		}
 
-		if ( 1 === preg_match( '/^[A-Za-z]:/', $name ) ) {
+		if ( '/' === $name[0] || 1 === preg_match( '/^[A-Za-z]:/', $name ) ) {
 			return false;
 		}
 
-		$segments = explode( '/', $name );
+		return ! in_array( '..', explode( '/', $name ), true );
+	}
 
-		/* A directory entry ends in one slash. */
-		if ( '' === end( $segments ) ) {
-			array_pop( $segments );
-		}
+	/**
+	 * The name of the file an entry is written to.
+	 *
+	 * `ZipArchive::extractTo()` and a disk resolve `assets/./theme.css` and
+	 * `assets//theme.css` to `assets/theme.css`.
+	 *
+	 * @param string $name Entry name that `is_safe_name()` accepts.
+	 * @return string The name without `.` or empty segments; empty for the bundle itself.
+	 */
+	private static function canonical( string $name ): string {
+		return implode( '/', array_diff( explode( '/', $name ), array( '', '.' ) ) );
+	}
 
-		return array() === array_intersect( $segments, array( '', '.', '..' ) );
+	/**
+	 * The error that ends a publish over an entry name outside the bundle.
+	 *
+	 * @param string $name Archive entry name.
+	 */
+	private static function get_unsafe_name_error( string $name ): WP_Error {
+		return new WP_Error( 'file', "The story archive names {$name}, which is not a plain path inside the bundle.", $name );
 	}
 
 	/**
@@ -155,7 +201,8 @@ class Manifest {
 	 *
 	 * A name is held to the rules an archive entry is, because `prune()` and
 	 * `delete()` join it onto the bundle path. One that fails them is dropped
-	 * and reported.
+	 * and reported. One that passes is read back by its plain name, the way
+	 * `from_archive()` keys it, so it is never pruned as a second file.
 	 *
 	 * @param mixed $value Stored meta value.
 	 * @return array<string, array{size: int, crc: int}>
@@ -168,7 +215,9 @@ class Manifest {
 		$manifest = array();
 
 		foreach ( $value as $name => $entry ) {
-			if ( ! self::is_safe_name( (string) $name ) ) {
+			$path = self::is_safe_name( (string) $name ) ? self::canonical( (string) $name ) : '';
+
+			if ( '' === $path ) {
 				_doing_it_wrong(
 					__METHOD__,
 					sprintf(
@@ -196,7 +245,7 @@ class Manifest {
 				continue;
 			}
 
-			$manifest[ (string) $name ] = array(
+			$manifest[ $path ] = array(
 				'size' => (int) $entry['size'],
 				'crc'  => (int) $entry['crc'],
 			);

@@ -504,6 +504,9 @@ class Editor {
 		$error = $this->post_api->get_story_update_error( $post_id );
 		$state = $error ? null : $this->post_api->get_story_update_progress( $post_id );
 
-		return ( new StorySyncState( $live_version, $error, $state ) )->to_array();
+		/* A warning describes a finished publish, so an error or a new publish replaces it. */
+		$warning = $error || $state ? null : $this->post_api->get_story_update_warning( $post_id );
+
+		return ( new StorySyncState( $live_version, $error, $state, $warning ) )->to_array();
 	}
 }

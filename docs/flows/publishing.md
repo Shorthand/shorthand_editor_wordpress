@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-10-02
+updated: 2026-10-03
 ---
 
 # Publishing a story
@@ -59,7 +59,9 @@ different meaning.
 9. `Shorthand\Services\StoryCover::sync()` fetches the story settings and,
    where the featured image rule allows, imports the cover into the media
    library and sets it as the featured image. See the cover section below.
-10. `story_manifest` post meta is written.
+10. `story_manifest` post meta is written, then `story_update_warning` is
+    written or removed. See the section "Entry names that share a file" in
+    `docs/services/file-system.md`.
 11. The chunks are deleted, and the pull record with them.
 
 Steps 3 to 6 are one call, `Shorthand\Services\Files\Bundle::publish()`, and

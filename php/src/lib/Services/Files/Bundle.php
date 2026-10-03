@@ -129,9 +129,12 @@ class Bundle {
 	 * only files whose size or CRC32 differ from the stored manifest are
 	 * written; and files that left the story are deleted.
 	 *
+	 * Entry names that can be one file on some host do not stop the publish.
+	 * They are returned as `collisions`, for the author to be told.
+	 *
 	 * @param string $nonce  Request nonce identifying the download.
 	 * @param int    $chunks Number of chunks downloaded.
-	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array}|\WP_Error
+	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array, collisions: array}|\WP_Error
 	 */
 	public function publish( string $nonce, int $chunks ) {
 		$download = $this->download( $nonce );
@@ -186,7 +189,7 @@ class Bundle {
 	 * @param \Shorthand\Services\Files\Staging  $staging  Scratch directory for this publish.
 	 * @param \Shorthand\Services\Files\Download $download Transfer the archive arrived in.
 	 * @param int                                $chunks   Number of chunks downloaded.
-	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array}|\WP_Error
+	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array, collisions: array}|\WP_Error
 	 */
 	private function unpack( Staging $staging, Download $download, int $chunks ) {
 		$archive_path = $staging->gather( $download->chunk_paths( $chunks ), 'archive.zip' );
@@ -232,6 +235,7 @@ class Bundle {
 			'head_path'    => $this->path() . '/head.html',
 			'article_path' => $this->path() . '/article.html',
 			'manifest'     => $copied,
+			'collisions'   => $archive->collisions(),
 		);
 	}
 

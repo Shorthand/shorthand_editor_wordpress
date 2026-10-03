@@ -240,13 +240,14 @@ final class ManifestTest extends WordPressTestCase {
 
 	/**
 	 * `ZipArchive::extractTo()` and a disk resolve each of these to a plainer
-	 * name, so the manifest would vouch for a file that is another one.
+	 * name, and the later entry is the file left there. The manifest names
+	 * that file once, by the plain name, with the later entry's CRC32.
 	 *
 	 * @dataProvider aliasing_entry_names
 	 *
 	 * @param string $name Archive entry name.
 	 */
-	public function test_an_entry_that_aliases_another_path_is_refused( string $name ): void {
+	public function test_an_entry_that_aliases_another_path_is_kept_under_the_plain_name( string $name ): void {
 		$zip = $this->open_archive(
 			array(
 				'assets/theme.css' => 'first',
@@ -254,10 +255,15 @@ final class ManifestTest extends WordPressTestCase {
 			)
 		);
 
-		$result = Manifest::from_archive( $zip );
-
-		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( $name, $result->get_error_data( 'file' ) );
+		$this->assertSame(
+			array(
+				'assets/theme.css' => array(
+					'size' => 6,
+					'crc'  => crc32( 'second' ),
+				),
+			),
+			Manifest::from_archive( $zip )
+		);
 
 		$zip->close();
 	}
@@ -274,11 +280,32 @@ final class ManifestTest extends WordPressTestCase {
 	}
 
 	/**
+	 * A stored alias names the same file the plain name does, so it is read
+	 * back as the plain name rather than pruned as a separate one.
+	 *
+	 * @dataProvider aliasing_entry_names
+	 *
+	 * @param string $name Name as stored in post meta.
+	 */
+	public function test_a_stored_alias_reads_back_under_the_plain_name( string $name ): void {
+		$manifest = Manifest::from_meta(
+			array(
+				$name => array(
+					'size' => 6,
+					'crc'  => 1,
+				),
+			)
+		);
+
+		$this->assertSame( array( 'assets/theme.css' ), array_keys( $manifest ) );
+		$this->assertSame( array(), tests_wp_doing_it_wrong() );
+	}
+
+	/**
 	 * `Bundle::prune()` and `Bundle::delete()` join a stored name onto the
 	 * bundle path, so a stored name is held to the archive's rules.
 	 *
 	 * @dataProvider escaping_entry_names
-	 * @dataProvider aliasing_entry_names
 	 *
 	 * @param string $name Name as stored in post meta.
 	 */
@@ -314,14 +341,15 @@ final class ManifestTest extends WordPressTestCase {
 			'absolute path'      => array( '/etc/passwd' ),
 			'backslash'          => array( 'abc\\def' ),
 			'windows drive'      => array( 'C:/Windows/x' ),
+			'the bundle itself'  => array( '.' ),
 		);
 	}
 
 	/**
-	 * An object store folds case, so the second write would land on the first
-	 * file while the manifest named both.
+	 * Two names that differ only in case are two files on a disk, so both are
+	 * kept. On an object store they are one; `collisions()` reports them.
 	 */
-	public function test_two_entries_that_differ_only_in_case_are_refused(): void {
+	public function test_two_entries_that_differ_only_in_case_are_both_kept(): void {
 		$zip = $this->open_archive(
 			array(
 				'assets/media/Photo.JPG' => 'first',
@@ -329,12 +357,46 @@ final class ManifestTest extends WordPressTestCase {
 			)
 		);
 
-		$result = Manifest::from_archive( $zip );
-
-		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( 'assets/media/photo.jpg', $result->get_error_data( 'file' ) );
+		$this->assertSame(
+			array( 'assets/media/Photo.JPG', 'assets/media/photo.jpg' ),
+			array_keys( Manifest::from_archive( $zip ) )
+		);
 
 		$zip->close();
+	}
+
+	/**
+	 * Names that are one file on some host are grouped, in archive order, so
+	 * the author can be told which files may show in place of another.
+	 */
+	public function test_names_that_can_be_one_file_are_reported_together(): void {
+		$this->assertSame(
+			array(
+				array( 'assets/AbC/x.jpg', 'assets/abc/x.jpg' ),
+				array( 'assets/theme.css', 'assets/./theme.css' ),
+			),
+			Manifest::collisions(
+				array(
+					'assets/',
+					'assets/AbC/x.jpg',
+					'article.html',
+					'assets/theme.css',
+					'assets/abc/x.jpg',
+					'assets/./theme.css',
+				)
+			)
+		);
+	}
+
+	/**
+	 * A directory that differs only in case holds different files, and a
+	 * directory entry is not a file at all.
+	 */
+	public function test_distinct_files_are_no_collision(): void {
+		$this->assertSame(
+			array(),
+			Manifest::collisions( array( 'Assets/', 'assets/', 'Assets/x.jpg', 'assets/y.jpg', 'article.html' ) )
+		);
 	}
 
 	/**

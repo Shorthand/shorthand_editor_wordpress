@@ -492,21 +492,34 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertSame( 0, $this->uploads->make_dir_calls() );
 	}
 
-	public function test_an_archive_with_two_names_that_fold_to_one_publishes_nothing(): void {
+	/**
+	 * Two names that differ only in case are a fault in the export. The story
+	 * still publishes, and the author is told which files may be one.
+	 */
+	public function test_an_archive_with_two_names_that_fold_to_one_publishes_and_warns(): void {
 		$result = $this->publish(
 			'pull1',
 			array(
+				'article.html'           => 'article',
 				'assets/media/Photo.JPG' => 'first',
 				'assets/media/photo.jpg' => 'second',
 			)
 		);
 
-		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( array(), $this->bundle_objects() );
-		$this->assertSame( 0, $this->uploads->writes() );
+		$this->assertNull( $result );
+		$this->assertSame( 3, $this->uploads->writes() );
+
+		$warning = $this->make_post_api()->get_story_update_warning( 7 );
+
+		$this->assertSame( 'collision', $warning[0]['code'] );
+		$this->assertSame( 'assets/media/Photo.JPG and assets/media/photo.jpg', $warning[0]['message'] );
 	}
 
-	public function test_an_archive_with_two_names_for_one_path_publishes_nothing(): void {
+	/**
+	 * The later entry is the file `ZipArchive::extractTo()` leaves, so it is
+	 * the one copied, and the one the manifest describes.
+	 */
+	public function test_an_archive_with_two_names_for_one_path_publishes_the_later_one(): void {
 		$result = $this->publish(
 			'pull1',
 			array(
@@ -515,9 +528,65 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			)
 		);
 
-		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( array(), $this->bundle_objects() );
-		$this->assertSame( 0, $this->uploads->writes() );
+		$this->assertNull( $result );
+		$this->assertSame( array( self::BUNDLE . '/assets/theme.css' => 'second' ), $this->bundle_objects() );
+		$this->assertSame(
+			array(
+				'assets/theme.css' => array(
+					'size' => 6,
+					'crc'  => crc32( 'second' ),
+				),
+			),
+			\get_post_meta( 7, 'story_manifest', true )
+		);
+
+		$warning = $this->make_post_api()->get_story_update_warning( 7 );
+
+		$this->assertSame( 'assets/theme.css and assets/./theme.css', $warning[0]['message'] );
+	}
+
+	/**
+	 * Groups of names are told apart in the one message.
+	 */
+	public function test_each_collision_is_named_in_the_warning(): void {
+		$this->publish(
+			'pull1',
+			array(
+				'assets/a.css'   => 'a',
+				'assets/./a.css' => 'a',
+				'assets/B.css'   => 'b',
+				'assets/b.css'   => 'b',
+			)
+		);
+
+		$warning = $this->make_post_api()->get_story_update_warning( 7 );
+
+		$this->assertSame( 'assets/a.css and assets/./a.css; assets/B.css and assets/b.css', $warning[0]['message'] );
+		$this->assertSame(
+			array(
+				array( 'assets/a.css', 'assets/./a.css' ),
+				array( 'assets/B.css', 'assets/b.css' ),
+			),
+			$warning[0]['data']
+		);
+	}
+
+	/**
+	 * The warning describes the bundle as it stands, so the next clean publish
+	 * clears it.
+	 */
+	public function test_a_publish_without_a_collision_clears_the_warning(): void {
+		$this->publish(
+			'pull1',
+			array(
+				'assets/media/Photo.JPG' => 'first',
+				'assets/media/photo.jpg' => 'second',
+			)
+		);
+
+		$this->publish( 'pull2', array( 'assets/media/photo.jpg' => 'second' ) );
+
+		$this->assertNull( $this->make_post_api()->get_story_update_warning( 7 ) );
 	}
 
 	/**

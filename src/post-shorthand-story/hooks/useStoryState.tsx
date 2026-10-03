@@ -11,6 +11,7 @@ export const PULL_ENDED_EVENT = "shorthand:pull-ended";
 export interface IStoryState {
   liveVersion: number | null;
   errors: IStoryErrors;
+  warnings: IStoryWarnings;
   progress: IStoryProgress | null;
   updateErrors: (errors: PHPErrors | undefined) => void;
 }
@@ -18,6 +19,11 @@ export interface IStoryState {
 export interface IStoryErrors {
   publishing?: IStoryError;
   preview?: IStoryError;
+}
+
+/* Things the author should know about a publish that succeeded */
+export interface IStoryWarnings {
+  publishing?: IStoryError;
 }
 
 export interface IStoryError {
@@ -48,6 +54,7 @@ export function StoryStateProvider({
   const [liveVersion, setLiveVersion] = React.useState(initialState.liveVersion);
   const [progress, setProgress] = React.useState(initialState.progress);
   const [errors, setErrors] = React.useState(() => applyErrors({}, initialState.errors));
+  const [warnings, setWarnings] = React.useState(() => applyErrors({}, initialState.warnings));
 
   const refreshTimerRef = React.useRef<number>(0);
 
@@ -79,10 +86,11 @@ export function StoryStateProvider({
         }
 
         const { data } = await response.json();
-        const { liveVersion = null, progress = null, errors } = data;
+        const { liveVersion = null, progress = null, errors, warnings } = data;
 
         setLiveVersion(liveVersion);
         setErrors(current => applyErrors(current, errors));
+        setWarnings(current => applyErrors(current, warnings));
         setProgress(progress);
 
         if (!data.progress) {
@@ -111,8 +119,8 @@ export function StoryStateProvider({
   }, []);
 
   const context = React.useMemo(
-    () => ({ errors, progress, liveVersion, updateErrors }),
-    [errors, progress, liveVersion, updateErrors]
+    () => ({ errors, warnings, progress, liveVersion, updateErrors }),
+    [errors, warnings, progress, liveVersion, updateErrors]
   );
   return <StoryStateContext.Provider value={context}>{children}</StoryStateContext.Provider>;
 }
@@ -125,6 +133,7 @@ export function useStoryState(): IStoryState {
 export const StoryStateContext = React.createContext<IStoryState>({
   liveVersion: null,
   errors: {},
+  warnings: {},
   progress: null,
   updateErrors: () => {},
 });
@@ -133,6 +142,7 @@ export const StoryStateContext = React.createContext<IStoryState>({
 export interface PHPStoryState {
   liveVersion: number | null;
   errors: PHPErrors;
+  warnings?: PHPErrors;
   progress: IStoryProgress | null;
 }
 
