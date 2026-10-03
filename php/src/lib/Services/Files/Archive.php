@@ -46,7 +46,7 @@ class Archive {
 	private $collisions;
 
 	/**
-	 * The story documents, by archive entry name.
+	 * The story documents, by bundle path.
 	 *
 	 * @var array<string, string>
 	 */
@@ -63,13 +63,9 @@ class Archive {
 		$this->zip        = $zip;
 		$this->path       = $path;
 		$this->manifest   = $manifest;
-		$this->collisions = Manifest::collisions( self::names( $zip ) );
-		$this->documents  = array();
-
-		foreach ( Manifest::DOCUMENTS as $name ) {
-			$contents                 = $zip->getFromName( $name );
-			$this->documents[ $name ] = false === $contents ? '' : $contents;
-		}
+		$names            = self::names( $zip );
+		$this->collisions = Manifest::collisions( $names );
+		$this->documents  = self::documents( $zip, $names );
 	}
 
 	/**
@@ -153,7 +149,7 @@ class Archive {
 	 * Every entry name, in archive order.
 	 *
 	 * @param \ZipArchive $zip Open archive.
-	 * @return string[]
+	 * @return array<int, string> Entry name by index.
 	 */
 	private static function names( ZipArchive $zip ): array {
 		$names = array();
@@ -164,11 +160,42 @@ class Archive {
 			$name = $zip->getNameIndex( $idx );
 
 			if ( false !== $name ) {
-				$names[] = $name;
+				$names[ $idx ] = $name;
 			}
 		}
 
 		return $names;
+	}
+
+	/**
+	 * The story documents, each read from the entry that lands at its path.
+	 *
+	 * `./article.html` lands at `article.html`, and where two entries land at
+	 * one path the later is the file left, as in `Manifest::from_archive()`.
+	 *
+	 * @param \ZipArchive        $zip   Open archive.
+	 * @param array<int, string> $names Entry name by index.
+	 * @return array<string, string> Contents by document name; empty where absent.
+	 */
+	private static function documents( ZipArchive $zip, array $names ): array {
+		$found = array();
+
+		foreach ( $names as $idx => $name ) {
+			$path = Manifest::path( $name );
+
+			if ( in_array( $path, Manifest::DOCUMENTS, true ) ) {
+				$found[ $path ] = $idx;
+			}
+		}
+
+		$documents = array();
+
+		foreach ( Manifest::DOCUMENTS as $name ) {
+			$contents           = isset( $found[ $name ] ) ? $zip->getFromIndex( $found[ $name ] ) : false;
+			$documents[ $name ] = false === $contents ? '' : $contents;
+		}
+
+		return $documents;
 	}
 
 	/**
