@@ -22,7 +22,7 @@ use ZipArchive;
 class Manifest {
 
 	/**
-	 * The two files rewritten on every publish.
+	 * The two story documents, which publishing stores as post meta.
 	 */
 	const DOCUMENTS = array( 'article.html', 'head.html' );
 
@@ -212,56 +212,5 @@ class Manifest {
 	 */
 	private static function is_directory_entry( string $name ): bool {
 		return '' === $name || '/' === substr( $name, -1 );
-	}
-
-	/**
-	 * Moves the story documents under a per-publish directory.
-	 *
-	 * The bundle path is fixed for the life of a post, so `article.html` and
-	 * `head.html` would otherwise be rewritten in place on every publish, and
-	 * a host that caps modifications per path would eventually refuse them.
-	 *
-	 * The entry keeps a `from` key naming where the file was unpacked, which
-	 * is what `Shorthand\Services\Files\Bundle` copies from. The previous
-	 * directory is removed by the next publish's manifest diff.
-	 *
-	 * An archive that already names the new path, in any case, fails: its own
-	 * entry would be dropped from the manifest and never copied, or share one
-	 * file with the document on a host that folds case.
-	 *
-	 * @param array  $manifest Manifest read out of the archive index.
-	 * @param string $prefix   Directory to move the documents into, relative to the bundle.
-	 * @return array<string, array{size: int, crc: int, from?: string}>|\WP_Error
-	 */
-	public static function relocate_documents( array $manifest, string $prefix ) {
-		$folded = array();
-
-		foreach ( array_keys( $manifest ) as $key ) {
-			$folded[ strtolower( $key ) ] = $key;
-		}
-
-		foreach ( self::DOCUMENTS as $name ) {
-			if ( ! isset( $manifest[ $name ] ) ) {
-				continue;
-			}
-
-			$path = $prefix . '/' . $name;
-			$fold = strtolower( $path );
-
-			if ( isset( $folded[ $fold ] ) ) {
-				return new WP_Error( 'file', "The story archive names {$folded[ $fold ]}, where this publish moves {$name}.", $folded[ $fold ] );
-			}
-
-			$entry         = $manifest[ $name ];
-			$entry['from'] = $name;
-
-			unset( $manifest[ $name ] );
-
-			$manifest[ $path ] = $entry;
-		}
-
-		ksort( $manifest );
-
-		return $manifest;
 	}
 }

@@ -78,7 +78,7 @@ final class DownloadTest extends WordPressTestCase {
 	}
 
 	/**
-	 * The nonce is interpolated into the documents directory of a publish, so
+	 * The nonce is interpolated into the staging directory of a publish, so
 	 * one that is not a path segment is refused rather than escaped.
 	 */
 	public function test_a_nonce_that_is_not_a_path_segment_has_no_segment(): void {

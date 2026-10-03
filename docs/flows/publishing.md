@@ -32,8 +32,8 @@ different meaning.
 
 - **Bundle directory** — the published story files. In uploads, at
   `shorthand/{post_id}/{story_id}/`, one per story, overwritten in place on
-  republish, kept until the post is deleted. Media sits at the paths the
-  archive names; the two documents sit under `docs/{nonce}/`.
+  republish, kept until the post is deleted. Every file sits at the path the
+  archive names.
 
 - **Manifest** — the name, size, and CRC32 of every file in the bundle
   directory, stored in the `story_manifest` post meta key. Shape:
@@ -49,8 +49,7 @@ different meaning.
 3. On the final chunk, the chunks are concatenated into the staging directory.
 4. The archive is unpacked into the staging directory.
 5. The unpacked tree is copied into the bundle directory, skipping files whose
-   name, size, and CRC32 match the stored manifest. `article.html` and
-   `head.html` are copied to `docs/{nonce}/`.
+   name, size, and CRC32 match the stored manifest.
 6. Files present in the manifest but absent from the archive are deleted. The
    staging directory goes with them.
 7. `story_head` and `story_body` post meta are written, with asset URLs
@@ -115,42 +114,38 @@ A copy that fails part way is the one manifest write that does not come last:
 write, carried on the `WP_Error` as `partial_manifest`. Those files are on the
 host, so the next publish is right to skip them.
 
-## Decision: version the two documents by pull nonce
+## Decision: keep every file at the path the archive names
+
+The documents stay at the bundle root, beside the rest of the export, and a
+path the host refuses after 2000 modifications is an accepted limit.
 
 The bundle path is a function of `(post_id, story_id)`, both fixed for the life
 of the post, so a republish writes the same paths again. A remote uploads host
-refuses a path after 2000 modifications. With the copy diff in place, only
-these paths accrue any:
+refuses a path after 2000 modifications. The copy diff writes a path only when
+its size or CRC32 changed, so a path accrues a modification each time
+Shorthand re-exports it with different bytes.
 
-| Path | Accrues a modification |
-| --- | --- |
-| `assets/*`, `static/*` | On real edits only |
-| `theme-{hash}.min.css` | Never; the file name carries a hash of its content |
-| `docs/{nonce}/article.html`, `docs/{nonce}/head.html` | Never; the nonce is unique per publish |
+Plugin versions 1.0.8 and 1.0.9 moved `article.html` and `head.html` under
+`docs/{nonce}/`, a new path each publish, so that those two never reached the
+limit. That was reverted, for two reasons:
 
-`{nonce}` is the pull nonce, already stored in `story_update_nonce`. It is
-always present and never repeats, unlike the content version, which is nullable
-and repeats on a forced re-sync. It is interpolated into two paths — the
-documents directory and the staging directory name — so it is validated with
-`Shorthand\Services\StoryId::is_valid()` before either. A nonce that fails
-leaves the documents at the root of the bundle, where they sat before they were
-versioned, and the publish otherwise proceeds.
+- Most files at the root of an export change on every publish, not just the
+  two documents. Moving two of them moves the limit nowhere.
+- Shorthand gives no contract on what the root of an export holds, so no list
+  of files to move can be complete.
 
-The previous publish's documents are removed by the copy diff, at a cost of two
-deletes.
-
-Moving the documents makes the manifest key differ from the archive name for
-those two entries. `docs/models/story-post-meta.md` describes how that is
-recorded.
+A bundle written by 1.0.8 or 1.0.9 needs no migration. Its stored manifest
+names `docs/{nonce}/article.html` and `docs/{nonce}/head.html`; the next
+publish writes the root documents, and `Manifest::removed()` deletes the
+`docs/{nonce}` pair.
 
 Nothing in this plugin reads the documents back from disk — their content is
 stored in `story_head` and `story_body`. They are written because their path is
 the third argument of the `theshed_post_process_body` and
 `theshed_post_process_head` filters.
 
-A republish of an unedited story performs two writes and two deletes, both of
-them documents, whatever the size of the story. See
-`Shorthand\Tests\Services\PostAPIUnpackTest`.
+A republish of an unedited story writes nothing and deletes nothing, whatever
+the size of the story. See `Shorthand\Tests\Services\PostAPIUnpackTest`.
 
 ## Cover image
 

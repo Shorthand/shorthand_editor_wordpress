@@ -721,7 +721,7 @@ class PostAPI {
 	 *
 	 * @param int|string $post_id  Post the story belongs to.
 	 * @param string     $story_id Shorthand story ID.
-	 * @param string     $nonce    Request nonce of this pull, versioning the documents.
+	 * @param string     $nonce    Request nonce of this pull.
 	 * @param int        $chunks   Number of chunks downloaded for this pull.
 	 */
 	public function publish_story_bundle( $post_id, $story_id, string $nonce, int $chunks ): ?\WP_Error {

@@ -61,13 +61,7 @@ Built by `Shorthand\Services\Files\Manifest`: `from_archive()` from
 drops and reports a key that is not a safe bundle path, under the rules in
 `docs/services/file-system.md`, section "Archive entry names".
 
-Keys are bundle paths, not archive paths. The two differ for `article.html` and
-`head.html`, which the archive names at its root and the bundle holds under
-`docs/{nonce}/`. During a publish those entries carry an extra `from` key
-naming the archive path, added by
-`Shorthand\Services\Files\Manifest::relocate_documents()`. The copy step
-reads it, then strips it before storage, so the stored manifest describes the
-bundle only.
+Keys are bundle paths, which are the archive's own entry names.
 
 An absent `story_manifest` means copy every file. That is the state after
 upgrading from a plugin version that did not write one, and it needs no
