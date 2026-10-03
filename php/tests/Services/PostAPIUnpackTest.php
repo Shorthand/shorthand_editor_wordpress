@@ -336,6 +336,35 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	}
 
 	/**
+	 * A delete cannot tell a file already gone from one the host refused, so
+	 * no false answer stops an unpublish.
+	 */
+	public function test_deleting_the_bundle_goes_on_past_a_file_already_gone(): void {
+		$post_api = $this->make_post_api();
+
+		$this->publish(
+			'pull1',
+			array(
+				'head.html'              => 'head',
+				'article.html'           => 'article',
+				'assets/media/photo.jpg' => 'binary',
+			),
+			$post_api
+		);
+
+		/* The first name the delete reaches, so a stop would leave the rest. */
+		$names = array_keys( get_post_meta( 7, 'story_manifest', true ) );
+		$this->uploads->delete( self::BUNDLE . '/' . $names[0] );
+		$this->uploads->reset_counts();
+
+		$post_api->delete_story_bundle( 7, 'aBc123' );
+
+		$this->assertSame( array(), $this->bundle_objects() );
+		$this->assertSame( 3, $this->uploads->deletes() );
+		$this->assertSame( '', get_post_meta( 7, 'story_manifest', true ) );
+	}
+
+	/**
 	 * The manifest comes back out of post meta, so a name in it is not trusted
 	 * to stay inside the bundle.
 	 */
