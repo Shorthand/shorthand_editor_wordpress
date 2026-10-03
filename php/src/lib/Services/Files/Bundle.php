@@ -127,9 +127,7 @@ class Bundle {
 	 * Everything expensive is hidden here. The archive is assembled and
 	 * unpacked locally, because `ZipArchive` cannot target a stream wrapper;
 	 * only files whose size or CRC32 differ from the stored manifest are
-	 * written; files that left the story are deleted; and the documents move
-	 * to a new path each publish, so no path is rewritten often enough to meet
-	 * a host's modification cap.
+	 * written; and files that left the story are deleted.
 	 *
 	 * @param string $nonce  Request nonce identifying the download.
 	 * @param int    $chunks Number of chunks downloaded.
@@ -211,19 +209,9 @@ class Bundle {
 			return $extracted;
 		}
 
-		$documents_dir = self::documents_dir( $download->segment() );
-		$manifest      = $archive->manifest();
-
-		if ( '' !== $documents_dir ) {
-			$manifest = Manifest::relocate_documents( $manifest, $documents_dir );
-
-			if ( is_wp_error( $manifest ) ) {
-				return $manifest;
-			}
-		}
-
-		$stored = $this->manifest();
-		$copied = $this->copy( $unpacked, $manifest, $stored );
+		$manifest = $archive->manifest();
+		$stored   = $this->manifest();
+		$copied   = $this->copy( $unpacked, $manifest, $stored );
 
 		if ( is_wp_error( $copied ) ) {
 			$written = $copied->get_error_data( 'partial_manifest' );
@@ -238,13 +226,11 @@ class Bundle {
 
 		$this->prune( Manifest::removed( $stored, $copied ) );
 
-		$documents_path = '' === $documents_dir ? $this->path() : $this->path() . '/' . $documents_dir;
-
 		return array(
 			'head'         => $archive->document( 'head.html' ),
 			'article'      => $archive->document( 'article.html' ),
-			'head_path'    => $documents_path . '/head.html',
-			'article_path' => $documents_path . '/article.html',
+			'head_path'    => $this->path() . '/head.html',
+			'article_path' => $this->path() . '/article.html',
 			'manifest'     => $copied,
 		);
 	}
@@ -256,7 +242,7 @@ class Bundle {
 	 * unchanged when its name, size and CRC32 all match the stored entry.
 	 *
 	 * @param string $source_dir Unpacked tree in the staging directory.
-	 * @param array  $manifest   The tree to copy: bundle path to size, CRC32, and the unpacked name where it differs.
+	 * @param array  $manifest   The tree to copy: bundle path to size and CRC32.
 	 * @param array  $stored     Manifest of the last successful publish.
 	 * @return array|\WP_Error The bundle as it now stands, or an error.
 	 */
@@ -281,9 +267,7 @@ class Bundle {
 				$made[ $parent_path ] = true;
 			}
 
-			$source_path = $source_dir . '/' . ( isset( $entry['from'] ) ? $entry['from'] : $name );
-
-			$result = $this->uploads->write( $source_path, $dest_path );
+			$result = $this->uploads->write( $source_dir . '/' . $name, $dest_path );
 
 			if ( is_wp_error( $result ) ) {
 				return self::partial( $result, $written );
@@ -296,7 +280,7 @@ class Bundle {
 			$written[ $name ] = $entry;
 		}
 
-		return self::without_sources( $manifest );
+		return $manifest;
 	}
 
 	/**
@@ -309,7 +293,7 @@ class Bundle {
 	 * @param array     $written Entries written before it, keyed by bundle path.
 	 */
 	private static function partial( WP_Error $error, array $written ): WP_Error {
-		$error->add( 'partial_manifest', 'Files written before the failure.', self::without_sources( $written ) );
+		$error->add( 'partial_manifest', 'Files written before the failure.', $written );
 
 		return $error;
 	}
@@ -347,38 +331,5 @@ class Bundle {
 		return isset( $previous['size'], $previous['crc'] )
 			&& (int) $previous['size'] === $entry['size']
 			&& (int) $previous['crc'] === $entry['crc'];
-	}
-
-	/**
-	 * Drops the copy instructions, leaving a description of the bundle.
-	 *
-	 * @param array $manifest Manifest that drove the copy.
-	 * @return array<string, array{size: int, crc: int}>
-	 */
-	private static function without_sources( array $manifest ): array {
-		foreach ( $manifest as $name => $entry ) {
-			if ( ! isset( $entry['from'] ) ) {
-				continue;
-			}
-
-			unset( $entry['from'] );
-
-			$manifest[ $name ] = $entry;
-		}
-
-		return $manifest;
-	}
-
-	/**
-	 * Bundle-relative directory holding the documents of one publish.
-	 *
-	 * A nonce that cannot be a path segment leaves the documents at the root
-	 * of the bundle, which is where they were before they were versioned.
-	 *
-	 * @param string $segment Download nonce, where it can be part of a path.
-	 * @return string Directory relative to the bundle, or an empty string.
-	 */
-	private static function documents_dir( string $segment ): string {
-		return '' === $segment ? '' : "docs/{$segment}";
 	}
 }

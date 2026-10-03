@@ -70,10 +70,10 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 
 		$this->assertSame(
 			array(
-				self::BUNDLE . '/assets/media/photo.jpg'  => 'binary',
-				self::BUNDLE . '/assets/theme.css'        => 'body{}',
-				self::BUNDLE . '/docs/pull1/article.html' => '<h1>Story</h1>',
-				self::BUNDLE . '/docs/pull1/head.html'    => '<link rel="stylesheet" href="assets/theme.css">',
+				self::BUNDLE . '/article.html'           => '<h1>Story</h1>',
+				self::BUNDLE . '/assets/media/photo.jpg' => 'binary',
+				self::BUNDLE . '/assets/theme.css'       => 'body{}',
+				self::BUNDLE . '/head.html'              => '<link rel="stylesheet" href="assets/theme.css">',
 			),
 			$this->bundle_objects()
 		);
@@ -97,7 +97,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertNull( $this->make_post_api()->publish_story_bundle( 7, 'aBc123', 'pull1', 2 ) );
 
 		$this->assertSame(
-			array( self::BUNDLE . '/docs/pull1/article.html' ),
+			array( self::BUNDLE . '/article.html' ),
 			array_keys( $this->bundle_objects() )
 		);
 	}
@@ -125,12 +125,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 
 	/**
 	 * The whole point of the manifest: a republish costs the size of the edit.
-	 *
-	 * The two documents move to a new directory on every publish, so they are
-	 * the floor, not zero. Media is what makes a bundle large, and media that
-	 * did not change is not touched.
 	 */
-	public function test_a_republish_with_no_change_rewrites_only_the_documents(): void {
+	public function test_a_republish_with_no_change_writes_nothing(): void {
 		$entries = array(
 			'head.html'              => 'head',
 			'article.html'           => 'article',
@@ -142,46 +138,14 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 
 		$this->publish( 'pull2', $entries );
 
-		$this->assertSame( 2, $this->uploads->writes() );
-
-		$this->assertSame(
-			array(
-				self::BUNDLE . '/assets/media/photo.jpg'  => 'binary',
-				self::BUNDLE . '/docs/pull2/article.html' => 'article',
-				self::BUNDLE . '/docs/pull2/head.html'    => 'head',
-			),
-			$this->bundle_objects()
-		);
+		$this->assertSame( 0, $this->uploads->writes() );
+		$this->assertSame( 0, $this->uploads->deletes() );
 	}
 
 	/**
-	 * A publish must not write a path it has already written with this content.
+	 * The documents sit at the bundle root, at the paths the archive names.
 	 */
-	public function test_the_documents_land_on_a_new_path_every_publish(): void {
-		$entries = array(
-			'head.html'    => 'head',
-			'article.html' => 'article',
-		);
-
-		$this->publish( 'pull1', $entries );
-		$this->publish( 'pull2', $entries );
-		$this->publish( 'pull3', $entries );
-
-		$this->assertSame(
-			array(
-				self::BUNDLE . '/docs/pull3/article.html',
-				self::BUNDLE . '/docs/pull3/head.html',
-			),
-			array_keys( $this->bundle_objects() )
-		);
-		$this->assertSame( 6, $this->uploads->writes() );
-	}
-
-	/**
-	 * The document path is a public extension point, so it names where the
-	 * document actually is.
-	 */
-	public function test_the_post_processing_filters_receive_the_versioned_document_paths(): void {
+	public function test_the_post_processing_filters_receive_the_document_paths(): void {
 		$this->publish(
 			'pull1',
 			array(
@@ -191,25 +155,54 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		);
 
 		$this->assertSame(
-			array( array( self::BUNDLE, self::BUNDLE . '/docs/pull1/article.html' ) ),
+			array( array( self::BUNDLE, self::BUNDLE . '/article.html' ) ),
 			tests_wp_get_filter_args( 'theshed_post_process_body' )
 		);
 		$this->assertSame(
-			array( array( self::BUNDLE, self::BUNDLE . '/docs/pull1/head.html' ) ),
+			array( array( self::BUNDLE, self::BUNDLE . '/head.html' ) ),
 			tests_wp_get_filter_args( 'theshed_post_process_head' )
 		);
 	}
 
 	/**
-	 * A nonce is interpolated into a path, so it is validated like a story ID.
+	 * Releases 1.0.8 and 1.0.9 moved the documents to `docs/{nonce}/`. The
+	 * stored manifest names that pair, so the next publish removes it.
 	 */
-	public function test_an_unusable_nonce_leaves_the_documents_at_the_bundle_root(): void {
-		$this->publish( '../../etc', array( 'article.html' => 'article' ) );
+	public function test_documents_moved_by_an_earlier_release_return_to_the_bundle_root(): void {
+		$this->uploads->put( self::BUNDLE . '/docs/12345/article.html', 'article' );
+		$this->uploads->put( self::BUNDLE . '/docs/12345/head.html', 'head' );
+
+		tests_wp_set_post_meta(
+			7,
+			'story_manifest',
+			array(
+				'docs/12345/article.html' => array(
+					'size' => 7,
+					'crc'  => crc32( 'article' ),
+				),
+				'docs/12345/head.html'    => array(
+					'size' => 4,
+					'crc'  => crc32( 'head' ),
+				),
+			)
+		);
+
+		$this->publish(
+			'pull1',
+			array(
+				'head.html'    => 'head',
+				'article.html' => 'article',
+			)
+		);
 
 		$this->assertSame(
-			array( self::BUNDLE . '/article.html' ),
-			array_keys( $this->bundle_objects() )
+			array(
+				self::BUNDLE . '/article.html' => 'article',
+				self::BUNDLE . '/head.html'    => 'head',
+			),
+			$this->bundle_objects()
 		);
+		$this->assertSame( array( 'article.html', 'head.html' ), array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
 	}
 
 	public function test_a_republish_writes_only_the_files_that_changed(): void {
@@ -234,8 +227,8 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 
 		$objects = $this->bundle_objects();
 
-		$this->assertSame( 3, $this->uploads->writes() );
-		$this->assertSame( 'article, edited', $objects[ self::BUNDLE . '/docs/pull2/article.html' ] );
+		$this->assertSame( 2, $this->uploads->writes() );
+		$this->assertSame( 'article, edited', $objects[ self::BUNDLE . '/article.html' ] );
 		$this->assertSame( 'binary, edited', $objects[ self::BUNDLE . '/assets/media/photo.jpg' ] );
 	}
 
@@ -251,13 +244,12 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 
 		$this->publish( 'pull2', array( 'article.html' => 'article' ) );
 
-		/* The departed asset, and the document of the previous publish. */
-		$this->assertSame( 2, $this->uploads->deletes() );
+		$this->assertSame( 1, $this->uploads->deletes() );
 		$this->assertSame(
-			array( self::BUNDLE . '/docs/pull2/article.html' ),
+			array( self::BUNDLE . '/article.html' ),
 			array_keys( $this->bundle_objects() )
 		);
-		$this->assertSame( array( 'docs/pull2/article.html' ), array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
+		$this->assertSame( array( 'article.html' ), array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
 	}
 
 	/**
@@ -282,8 +274,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			)
 		);
 
-		/* Only the document of the previous publish. */
-		$this->assertSame( 1, $this->uploads->deletes() );
+		$this->assertSame( 0, $this->uploads->deletes() );
 		$this->assertContains( self::BUNDLE . '/assets/media/Photo.JPG', array_keys( $this->bundle_objects() ) );
 	}
 
@@ -369,8 +360,9 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$result = $this->publish(
 			'pull2',
 			array(
-				'article.html'           => 'article, edited',
+				'article.html'           => 'article',
 				'assets/media/photo.jpg' => 'binary',
+				'assets/theme.css'       => 'body{}',
 			)
 		);
 
@@ -379,15 +371,15 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$names = array_keys( get_post_meta( 7, 'story_manifest', true ) );
 		sort( $names );
 
-		$this->assertSame( array( 'assets/media/photo.jpg', 'docs/pull1/article.html' ), $names );
+		$this->assertSame( array( 'article.html', 'assets/media/photo.jpg' ), $names );
 
 		$written = array_keys( $this->bundle_objects() );
 		sort( $written );
 
 		$this->assertSame(
 			array(
+				self::BUNDLE . '/article.html',
 				self::BUNDLE . '/assets/media/photo.jpg',
-				self::BUNDLE . '/docs/pull1/article.html',
 			),
 			$written
 		);
@@ -415,7 +407,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$names = array_map( 'strval', array_keys( get_post_meta( 7, 'story_manifest', true ) ) );
 		sort( $names );
 
-		$this->assertSame( array( '123', 'docs/pull1/article.html' ), $names );
+		$this->assertSame( array( '123', 'article.html' ), $names );
 		$this->assertArrayHasKey( self::BUNDLE . '/123', $this->bundle_objects() );
 	}
 
@@ -520,21 +512,6 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			array(
 				'assets/theme.css'   => 'first',
 				'assets/./theme.css' => 'second',
-			)
-		);
-
-		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( array(), $this->bundle_objects() );
-		$this->assertSame( 0, $this->uploads->writes() );
-	}
-
-	public function test_an_archive_that_names_the_documents_directory_publishes_nothing(): void {
-		$result = $this->publish(
-			'pull1',
-			array(
-				'article.html'            => '<h1>Story</h1>',
-				'head.html'               => '<title>Story</title>',
-				'docs/pull1/article.html' => 'asset',
 			)
 		);
 
