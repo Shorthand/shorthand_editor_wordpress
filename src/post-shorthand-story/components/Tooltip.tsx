@@ -10,7 +10,7 @@ export interface ITooltipProps {
 
 export function Tooltip({ message, content, children }: React.PropsWithChildren<ITooltipProps>): React.JSX.Element {
   return (
-    <div className={styles.tooltipContainer}>
+    <div className={styles.tooltipContainer} tabIndex={0}>
       {children}
       <div className={styles.tooltipPanel}>
         <p className={styles.tooltipMessage}>{message}</p>
