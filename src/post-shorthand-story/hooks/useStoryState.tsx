@@ -154,7 +154,8 @@ interface PHPErrors {
 interface PHPErrorItem {
   code: string;
   message: string;
-  data?: number | boolean | string;
+  /* Whatever PHP attached: a code, a path, or groups of file names */
+  data?: unknown;
 }
 
 function processErrorList(errors?: PHPErrorItem[]): IStoryError | undefined {
@@ -166,7 +167,7 @@ function processErrorList(errors?: PHPErrorItem[]): IStoryError | undefined {
   const codeError = errors.find(e => e.code === "code");
 
   return {
-    code: codeError?.data?.toString(),
+    code: codeError?.data == null ? undefined : String(codeError.data),
     message: prettyError?.message,
     tooltip: errors
       .filter(e => e.code !== "pretty")
