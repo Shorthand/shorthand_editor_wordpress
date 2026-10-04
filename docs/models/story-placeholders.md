@@ -44,7 +44,7 @@ never requires renaming a key an author has already written into a story.
 
 A Shorthand story bundle is a whole HTML page, stored in the `story_head`
 and `story_body` post meta of a `tse_story` post (registered in
-`/Users/simon/Repos/Shorthand/shorthand_editor_wordpress/php/src/lib/Plugin/PostType.php`).
+`php/src/lib/Plugin/PostType.php`).
 The story carries no WordPress block template, so no theme fills any part
 of it in. A WordPress value an author wants inside the story is written
 into the story HTML as a placeholder and substituted at render.
@@ -136,7 +136,7 @@ and pass an unknown namespace to the filters. Correct: add
 
 The rule keeps three properties true for every future namespace:
 
-- The first `_` after `tse_resolve_placeholder_` in a hook name always ends
+- The first `_` after `theshed_resolve_placeholder_` in a hook name always ends
   the namespace. See "Hook names are unique".
 - The first `.` after `wp.` in a token always ends the namespace. See
   "Ambiguity rules".
@@ -324,11 +324,11 @@ tests for the detector. Each match lists the captured `ns` and `key`.
 ### Hook name tests
 
 - For every must-match case, the specific hook name differs from the
-  generic hook name `tse_resolve_placeholder`.
+  generic hook name `theshed_resolve_placeholder`.
 - No two must-match cases with different (`ns`, `key`) pairs share a
   specific hook name.
 - For every must-match case, splitting the hook name at the first `_`
-  after `tse_resolve_placeholder_` gives back the same `ns` and `key`.
+  after `theshed_resolve_placeholder_` gives back the same `ns` and `key`.
 - Every entry in the namespace list matches `/^[a-z]+$/`, so no namespace
   holds the `_` that the split relies on.
 
@@ -408,9 +408,9 @@ choose the escape.
 
 Every detected token passes through two filters, in this order:
 
-1. The generic filter, `tse_resolve_placeholder`, for every token except a
+1. The generic filter, `theshed_resolve_placeholder`, for every token except a
    denied meta key. See "Denied meta keys".
-2. The specific filter, `tse_resolve_placeholder_{$namespace}_{$key}`, for
+2. The specific filter, `theshed_resolve_placeholder_{$namespace}_{$key}`, for
    that one token, always.
 
 Both take the same four arguments. The plugin coerces the value after each
@@ -419,15 +419,15 @@ filter and escapes once, after the second.
 ```php
 $value = $default;
 if ( ! $denied ) {
-	$value = apply_filters( 'tse_resolve_placeholder', $value, $namespace, $key, $post );
+	$value = apply_filters( 'theshed_resolve_placeholder', $value, $namespace, $key, $post );
 	$value = is_scalar( $value ) ? (string) $value : '';
 }
-$value = apply_filters( "tse_resolve_placeholder_{$namespace}_{$key}", $value, $namespace, $key, $post );
+$value = apply_filters( "theshed_resolve_placeholder_{$namespace}_{$key}", $value, $namespace, $key, $post );
 $value = is_scalar( $value ) ? (string) $value : '';
 ```
 
-The prefix `tse_` is as proposed. The plugin's eight existing hooks use
-`theshed_`; see "Open decision: hook prefix".
+Both names carry the plugin's hook prefix, `theshed_`; see "Decision: hook
+prefix".
 
 `$denied` is true only for a denied meta key. See "Denied meta keys".
 
@@ -455,7 +455,7 @@ it, and the resolver already holds it.
 Three values are named, so a callback author knows which one they see:
 
 1. `$default` — the built-in value, from the Keys table.
-2. The generic value — `$default` after `tse_resolve_placeholder`,
+2. The generic value — `$default` after `theshed_resolve_placeholder`,
    coerced.
 3. The resolved value — the generic value after the specific filter,
    coerced. This is what gets escaped.
@@ -491,19 +491,19 @@ callback the final word, not on core precedent.
 The specific hook name is built by plain interpolation:
 
 ```php
-"tse_resolve_placeholder_{$namespace}_{$key}"
+"theshed_resolve_placeholder_{$namespace}_{$key}"
 ```
 
 | Token | Specific hook name |
 | --- | --- |
-| `{{wp.story.title}}` | `tse_resolve_placeholder_story_title` |
-| `{{wp.story.date_iso}}` | `tse_resolve_placeholder_story_date_iso` |
-| `{{wp.parent.url}}` | `tse_resolve_placeholder_parent_url` |
-| `{{wp.meta.subtitle}}` | `tse_resolve_placeholder_meta_subtitle` |
-| `{{wp.meta.og:image}}` | `tse_resolve_placeholder_meta_og:image` |
-| `{{wp.meta._price}}` | `tse_resolve_placeholder_meta__price` |
-| `{{wp.terms.category}}` | `tse_resolve_placeholder_terms_category` |
-| `{{wp.filter.reading_time}}` | `tse_resolve_placeholder_filter_reading_time` |
+| `{{wp.story.title}}` | `theshed_resolve_placeholder_story_title` |
+| `{{wp.story.date_iso}}` | `theshed_resolve_placeholder_story_date_iso` |
+| `{{wp.parent.url}}` | `theshed_resolve_placeholder_parent_url` |
+| `{{wp.meta.subtitle}}` | `theshed_resolve_placeholder_meta_subtitle` |
+| `{{wp.meta.og:image}}` | `theshed_resolve_placeholder_meta_og:image` |
+| `{{wp.meta._price}}` | `theshed_resolve_placeholder_meta__price` |
+| `{{wp.terms.category}}` | `theshed_resolve_placeholder_terms_category` |
+| `{{wp.filter.reading_time}}` | `theshed_resolve_placeholder_filter_reading_time` |
 
 The key goes into the hook name verbatim: no `sanitize_key()`, no case
 folding. A hook name is an array key and accepts any string, and core does
@@ -517,9 +517,9 @@ Every (namespace, key) pair has its own hook name, and no specific hook
 name equals the generic one.
 
 - The generic name lacks the `_` that the specific template puts after
-  `tse_resolve_placeholder`, so the two can never be equal.
+  `theshed_resolve_placeholder`, so the two can never be equal.
 - A namespace name is letters only (see "Namespace names"), so it never
-  contains `_`. The first `_` after `tse_resolve_placeholder_` always ends
+  contains `_`. The first `_` after `theshed_resolve_placeholder_` always ends
   the namespace, and the rest is the key. One hook name therefore splits
   back into exactly one (namespace, key) pair.
 
@@ -528,7 +528,7 @@ this. Only the namespace must be free of `_`.
 
 Correct: a future namespace named `author`. Incorrect: a future namespace
 named `meta_extra`; its key `x` and the `meta` key `extra_x` would share
-`tse_resolve_placeholder_meta_extra_x`. Name it `extra` instead. Incorrect:
+`theshed_resolve_placeholder_meta_extra_x`. Name it `extra` instead. Incorrect:
 `featured_image`, from the full language; name it `thumbnail` instead.
 
 The unit test in "Namespace names" asserts the letters-only rule over the
@@ -542,8 +542,8 @@ including any odd characters in the key. The quickest way is to log every
 token a story resolves:
 
 ```php
-add_filter( 'tse_resolve_placeholder', function ( $value, $namespace, $key ) {
-	error_log( "tse_resolve_placeholder_{$namespace}_{$key}" );
+add_filter( 'theshed_resolve_placeholder', function ( $value, $namespace, $key ) {
+	error_log( "theshed_resolve_placeholder_{$namespace}_{$key}" );
 	return $value;
 }, 10, 3 );
 ```
@@ -551,7 +551,7 @@ add_filter( 'tse_resolve_placeholder', function ( $value, $namespace, $key ) {
 Then register the logged name:
 
 ```php
-add_filter( 'tse_resolve_placeholder_meta_og:image', function ( $value, $namespace, $key, $post ) {
+add_filter( 'theshed_resolve_placeholder_meta_og:image', function ( $value, $namespace, $key, $post ) {
 	return get_the_post_thumbnail_url( $post, 'large' ) ?: $value;
 }, 10, 4 );
 ```
@@ -565,7 +565,7 @@ skips it. See "Denied meta keys".
 default is always `''`, and the plugin reads nothing for it.
 
 - The specific filter serves one key:
-  `tse_resolve_placeholder_filter_reading_time`.
+  `theshed_resolve_placeholder_filter_reading_time`.
 - The generic filter can serve the whole namespace, by testing
   `'filter' === $namespace`.
 - With neither, the token renders as `''`.
@@ -578,7 +578,7 @@ name. The rendered value stays `''`.
 
 `_doing_it_wrong()` has an effect only when `WP_DEBUG` is on (its own
 `if ( WP_DEBUG && … )` check), so a production page shows nothing. The check is
-`! has_filter( 'tse_resolve_placeholder' ) && ! has_filter( $hook )`: when
+`! has_filter( 'theshed_resolve_placeholder' ) && ! has_filter( $hook )`: when
 any generic callback exists, the resolver cannot tell whether it served
 the key, and stays silent.
 
@@ -593,7 +593,7 @@ disclosure.
 Correct:
 
 ```php
-add_filter( 'tse_resolve_placeholder', function ( $value, $namespace, $key, $post ) {
+add_filter( 'theshed_resolve_placeholder', function ( $value, $namespace, $key, $post ) {
 	$allowed = array( 'reading_time', 'byline' );
 	if ( 'filter' !== $namespace || ! in_array( $key, $allowed, true ) ) {
 		return $value;
@@ -662,7 +662,7 @@ Any meta key on the story resolves. Two classes of key are denied:
 2. One of the plugin's own nine keys — `story_id`, `story_body`,
    `story_head`, `story_version`, `story_update_nonce`,
    `story_update_state`, `story_manifest`, `story_pulls`, `story_excerpt`
-   (`/Users/simon/Repos/Shorthand/shorthand_editor_wordpress/php/src/lib/Plugin/PostType.php`).
+   (`php/src/lib/Plugin/PostType.php`).
 
 The second check reads that list directly, not through
 `is_protected_meta()`, because that function is filterable. A site that
@@ -701,7 +701,7 @@ key by accident. A generic fallback such as
 The specific filter still runs because naming one exact key in
 `add_filter()` is a deliberate act, and it keeps every placeholder
 overridable. A site that wants `{{wp.meta._price}}` to show a value
-registers `tse_resolve_placeholder_meta__price` and decides what to
+registers `theshed_resolve_placeholder_meta__price` and decides what to
 return.
 
 ## Resolution order
@@ -789,7 +789,7 @@ detected at all and is ordinary story content.
 - A generic callback sees every token's key, including author-chosen
   `filter` keys. See "Filter keys are author input".
 - Hook names can hold characters PHP code rarely puts in a hook name
-  (`tse_resolve_placeholder_meta_og:image`). They work, but are hard to
+  (`theshed_resolve_placeholder_meta_og:image`). They work, but are hard to
   guess; "Finding a hook name" gives the way to discover them.
 
 ## Known gaps
@@ -819,10 +819,11 @@ detected at all and is ordinary story content.
   reset without `(?J)`, is expected to work there but was not run. Run the
   detection tests on PHP 7.4 before shipping.
 
-## Open decision: hook prefix
+## Decision: hook prefix
 
-Recommendation: rename the two filters to `theshed_resolve_placeholder`
-and `theshed_resolve_placeholder_{$namespace}_{$key}`.
+Decided on 2026-10-04: the two filters are `theshed_resolve_placeholder`
+and `theshed_resolve_placeholder_{$namespace}_{$key}`. The first draft's
+`tse_` prefix is not used.
 
 - The plugin's eight existing hooks all use `theshed_`
   (`theshed_story_content`, `theshed_post_process_body`,
@@ -830,5 +831,4 @@ and `theshed_resolve_placeholder_{$namespace}_{$key}`.
 - The Plugin Handbook asks for one unique prefix per plugin.
 - `tse_` reads as the post type `tse_story`, not as the plugin.
 
-The rename is one string in two places. Nothing else in this document
-depends on the prefix.
+Nothing else in this document depends on the prefix.
