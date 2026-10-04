@@ -1,7 +1,7 @@
 ---
 title: Documentation index
 purpose: How this documentation is organised, and what it currently covers.
-updated: 2026-08-25
+updated: 2026-09-12
 ---
 
 # Documentation index
@@ -41,6 +41,8 @@ Data:
 
 - `docs/models/story-post-meta.md` — the post meta a story post carries.
 - `docs/models/options.md` — every WordPress option the plugin owns.
+- `docs/models/story-placeholders.md` — the value-only placeholder language
+  an author writes into a story, and how each key resolves against a post.
 
 ## Not yet written
 
