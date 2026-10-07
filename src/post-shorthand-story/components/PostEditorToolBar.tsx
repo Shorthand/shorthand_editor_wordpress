@@ -31,11 +31,11 @@ function AuthStateNotice(): React.JSX.Element | null {
       break;
     case "invalid":
       message =
-        "Your Shorthand connection has expired or been revoked. Please reconnect your workspace from the WordPress admin.";
+        "Your Shorthand connection has expired or been revoked. Post properties still save, but new story content cannot be fetched from Shorthand until you reconnect your workspace from the WordPress admin.";
       break;
     case "disconnected":
       message =
-        "Your Shorthand workspace is disconnected. Reconnect from the WordPress admin to resume creating and publishing stories.";
+        "Your Shorthand workspace is disconnected. Post properties still save, but new story content cannot be fetched from Shorthand until you reconnect from the WordPress admin.";
       break;
     default:
       message =
@@ -48,10 +48,22 @@ function AuthStateNotice(): React.JSX.Element | null {
   );
 }
 
+function PendingTitleNotice({ title }: { title: string | null }): React.JSX.Element | null {
+  if (title === null) {
+    return null;
+  }
+
+  return (
+    <p className={styles.toolbarWarning}>
+      The title &ldquo;{title}&rdquo; has not reached Shorthand yet. It will be sent when the connection returns.
+    </p>
+  );
+}
+
 export function PostEditorToolBar({
   editUrl,
 }: IPostEditorToolBarProps): React.JSX.Element {
-  const { errors, progress, liveVersion, updateErrors } = useStoryState();
+  const { errors, progress, liveVersion, pendingTitle, updateErrors } = useStoryState();
 
   const [latestVersion, setLatestVersion] = React.useState<number | null>(null);
   React.useEffect(() => {
@@ -87,6 +99,7 @@ export function PostEditorToolBar({
       <div className={styles.toolbarHstack}>
         <div className={styles.toolbarLeft}>
           <AuthStateNotice />
+          <PendingTitleNotice title={pendingTitle} />
           <StoryError error={errors.publishing}>
             The last publishing attempt was unsuccessful.{" "}
             {additionalPublishingErrorMessage(errors.publishing?.code)}

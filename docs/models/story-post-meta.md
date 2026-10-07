@@ -26,6 +26,7 @@ rendered page is built from `story_body`.
 | `story_excerpt` | string | The excerpt last generated from the story body |
 | `story_cover` | object | The Shorthand cover image the last publish evaluated |
 | `story_cover_attachment` | number | Attachment the plugin set as the featured image |
+| `story_title_pending` | string | A title saved in WordPress that Shorthand has not yet received |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
 
 `Shorthand\Plugin\PostType::register_post_type()` registers every key except
@@ -174,3 +175,13 @@ does not offer them.
 Progress of the in-flight pull, as produced by
 `Shorthand\Services\StorySyncProgress::to_array()` and read back by
 `from_meta_value()`. Removed when the pull finishes.
+
+## story_title_pending
+
+Written by `Shorthand\Services\StoryTitleSync::push()` when a title change
+cannot be sent to Shorthand, because the auth state is not `connected` or
+because Shorthand refused it. Removed when a later push is accepted.
+
+The value is the title at the time it was held. The retry sends the post's
+current title, so the value is informational: the editor toolbar shows it as a
+known divergence. See `docs/flows/publishing.md`.
