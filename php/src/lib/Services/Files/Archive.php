@@ -13,7 +13,8 @@ use ZipArchive;
  * A story archive, opened once and read before it is unpacked.
  *
  * The index and the two documents are taken while the handle is open, so a
- * caller never has to hold one. `unpack_to()` closes it.
+ * caller never has to hold one. `unpack_to()` closes it, whether or not the
+ * extract works.
  */
 class Archive {
 
@@ -129,20 +130,35 @@ class Archive {
 	 * `ZipArchive::extractTo()` writes through native syscalls, so the target
 	 * has to be a real directory rather than a stream wrapper.
 	 *
+	 * The archive is closed whether or not the extract worked, so the staging
+	 * directory it sits in can be removed.
+	 *
 	 * @param string $dir Local directory to extract into.
 	 * @return true|\WP_Error
 	 */
 	public function unpack_to( string $dir ) {
 		wp_mkdir_p( $dir );
 
-		if ( $this->zip->extractTo( $dir ) && $this->zip->close() ) {
-			return true;
+		$extracted = $this->zip->extractTo( $dir );
+
+		/* Read first: PHP 7 cannot report the status of a closed archive. */
+		$status  = $this->zip->status;
+		$message = $this->zip->getStatusString();
+
+		$closed = $this->zip->close();
+
+		if ( ! $extracted ) {
+			$error = self::get_error( 'Could not extract story archive', $this->path );
+			$error->add( 'zip', $message, $status );
+
+			return $error;
 		}
 
-		$error = self::get_error( 'Could not extract story archive', $this->path );
-		$error->add( 'zip', $this->zip->getStatusString(), $this->zip->status );
+		if ( ! $closed ) {
+			return self::get_error( 'Could not close story archive', $this->path );
+		}
 
-		return $error;
+		return true;
 	}
 
 	/**
