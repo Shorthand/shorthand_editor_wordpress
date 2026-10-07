@@ -1,0 +1,12 @@
+{
+	"description": "PHPUnit for the integration suite. Installed on the host, run inside wp-env.",
+	"require-dev": {
+		"phpunit/phpunit": "^9.6",
+		"yoast/phpunit-polyfills": "^2.0"
+	},
+	"config": {
+		"platform": {
+			"php": "7.4.0"
+		}
+	}
+}

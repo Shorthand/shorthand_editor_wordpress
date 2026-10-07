@@ -10,8 +10,25 @@ jobs:
       - image: cimg/base:current
     steps:
       - checkout
+      - run:
+          # Only a tag on a commit reachable from master may release. Tags on
+          # other branches are allowed; the release workflow is not generated.
+          name: Decide whether this tag may release
+          command: |
+            tag_on_master=false
+            if [[ -n "${CIRCLE_TAG:-}" ]]; then
+              git fetch --no-tags origin master
+              if git merge-base --is-ancestor HEAD origin/master; then
+                tag_on_master=true
+                echo "Tag ${CIRCLE_TAG} is on master: release workflow enabled."
+              else
+                echo "Tag ${CIRCLE_TAG} is not on master: release workflow skipped."
+              fi
+            fi
+            printf '{"tag_on_master": %s}\n' "$tag_on_master" > /tmp/pipeline-parameters.json
       - continuation/continue:
           configuration_path: .circleci/prod-config.yml
+          parameters: /tmp/pipeline-parameters.json
 
 workflows:
   setup_workflow:

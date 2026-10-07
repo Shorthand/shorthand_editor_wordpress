@@ -6,6 +6,7 @@
 	<testsuites>
 		<testsuite name="The Shorthand Editor PHP Tests">
 			<directory>tests</directory>
+			<exclude>tests/integration</exclude>
 		</testsuite>
 	</testsuites>
 </phpunit>
