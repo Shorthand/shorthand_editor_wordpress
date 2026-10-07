@@ -26,6 +26,7 @@ rendered page is built from `story_body`.
 | `story_excerpt` | string | The excerpt last generated from the story body |
 | `story_cover` | object | The Shorthand cover image the last publish evaluated |
 | `story_cover_attachment` | number | Attachment the plugin set as the featured image |
+| `story_title_pending` | string | A title saved in WordPress that Shorthand has not yet received |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
 | `story_update_warning` | array | What the last successful publish warned of, as a flattened `WP_Error` |
 
@@ -213,3 +214,13 @@ array(
 `warnings.publishing`, and passes null while `story_update_error` or
 `story_update_state` is set. Protected by
 `Shorthand\Plugin\PostType::is_protected_meta()`.
+
+## story_title_pending
+
+Written by `Shorthand\Services\StoryTitleSync::push()` when a title change
+cannot be sent to Shorthand, because the auth state is not `connected` or
+because Shorthand refused it. Removed when a later push is accepted.
+
+The value is the title at the time it was held. The retry sends the post's
+current title, so the value is informational: the editor toolbar shows it as a
+known divergence. See `docs/flows/publishing.md`.

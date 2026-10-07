@@ -13,6 +13,8 @@ export interface IStoryState {
   errors: IStoryErrors;
   warnings: IStoryWarnings;
   progress: IStoryProgress | null;
+  /** A title saved in WordPress that Shorthand has not yet received */
+  pendingTitle: string | null;
   updateErrors: (errors: PHPErrors | undefined) => void;
 }
 
@@ -55,6 +57,7 @@ export function StoryStateProvider({
   const [progress, setProgress] = React.useState(initialState.progress);
   const [errors, setErrors] = React.useState(() => applyErrors({}, initialState.errors));
   const [warnings, setWarnings] = React.useState(() => applyErrors({}, initialState.warnings));
+  const [pendingTitle, setPendingTitle] = React.useState(initialState.pendingTitle ?? null);
 
   const refreshTimerRef = React.useRef<number>(0);
 
@@ -86,9 +89,10 @@ export function StoryStateProvider({
         }
 
         const { data } = await response.json();
-        const { liveVersion = null, progress = null, errors, warnings } = data;
+        const { liveVersion = null, progress = null, errors, warnings, pendingTitle = null } = data;
 
         setLiveVersion(liveVersion);
+        setPendingTitle(pendingTitle);
         setErrors(current => applyErrors(current, errors));
         setWarnings(current => applyErrors(current, warnings));
         setProgress(progress);
@@ -119,8 +123,8 @@ export function StoryStateProvider({
   }, []);
 
   const context = React.useMemo(
-    () => ({ errors, warnings, progress, liveVersion, updateErrors }),
-    [errors, warnings, progress, liveVersion, updateErrors]
+    () => ({ errors, warnings, progress, liveVersion, pendingTitle, updateErrors }),
+    [errors, warnings, progress, liveVersion, pendingTitle, updateErrors]
   );
   return <StoryStateContext.Provider value={context}>{children}</StoryStateContext.Provider>;
 }
@@ -135,6 +139,7 @@ export const StoryStateContext = React.createContext<IStoryState>({
   errors: {},
   warnings: {},
   progress: null,
+  pendingTitle: null,
   updateErrors: () => {},
 });
 
@@ -144,6 +149,7 @@ export interface PHPStoryState {
   errors: PHPErrors;
   warnings?: PHPErrors;
   progress: IStoryProgress | null;
+  pendingTitle?: string | null;
 }
 
 interface PHPErrors {

@@ -73,8 +73,14 @@ final class StorySyncStateTest extends WordPressTestCase {
 			),
 		);
 
-		$state = new StorySyncState( 4, null, null, $warning );
+		$state = new StorySyncState( 4, null, null, null, $warning );
 
 		$this->assertSame( $warning, $state->to_array()['warnings']['publishing'] );
+	}
+
+	public function test_to_array_carries_a_title_shorthand_has_not_received(): void {
+		$state = new StorySyncState( 4, null, null, 'Held title' );
+
+		$this->assertSame( 'Held title', $state->to_array()['pendingTitle'] );
 	}
 }

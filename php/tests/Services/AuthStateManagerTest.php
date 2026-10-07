@@ -163,6 +163,27 @@ final class AuthStateManagerTest extends WordPressTestCase {
 	 *
 	 * @group set-state
 	 */
+	public function test_set_state_announces_a_transition(): void {
+		$manager = $this->make_manager();
+		$this->set_state_option( AuthStateManager::STATE_DISCONNECTED, 42 );
+
+		$manager->set_state( AuthStateManager::STATE_CONNECTED );
+
+		$this->assertSame(
+			array( array( AuthStateManager::STATE_CONNECTED, AuthStateManager::STATE_DISCONNECTED ) ),
+			\tests_wp_actions_done( 'shorthand_auth_state_changed' )
+		);
+	}
+
+	public function test_set_state_stays_quiet_when_only_pending_upgrade_changes(): void {
+		$manager = $this->make_manager();
+		$this->set_state_option( AuthStateManager::STATE_INVALID, 42, true );
+
+		$manager->set_state( AuthStateManager::STATE_INVALID );
+
+		$this->assertSame( array(), \tests_wp_actions_done( 'shorthand_auth_state_changed' ) );
+	}
+
 	public function test_set_state_updates_timestamp_on_transition(): void {
 		$manager = $this->make_manager();
 
