@@ -7,6 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use Shorthand\Core\Version;
+use Shorthand\Plugin\FrontPage;
 use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
@@ -42,6 +43,10 @@ class Dependencies {
 	 * @var \Shorthand\Plugin\Templates
 	 */
 	protected $templates;
+	/**
+	 * @var \Shorthand\Plugin\FrontPage
+	 */
+	protected $front_page;
 	/**
 	 * @var \Shorthand\Services\Options
 	 */
@@ -116,6 +121,9 @@ class Dependencies {
 		$this->templates = $this->create_templates( $this->post_type->post_type, $this->options, $this->version );
 		$this->templates->init();
 
+		$this->front_page = $this->create_front_page( $this->post_type->post_type, $this->templates );
+		$this->front_page->init();
+
 		$this->live_preview = $this->create_live_preview( $this->post_type->post_type, $this->auth_state_manager, $this->version, $this );
 		$this->live_preview->init();
 
@@ -153,6 +161,10 @@ class Dependencies {
 		return new Templates( $post_type, $options, $version );
 	}
 
+	protected function create_front_page( string $post_type, Templates $templates ): FrontPage {
+		return new FrontPage( $post_type, $templates );
+	}
+
 	protected function create_live_preview( string $post_type, AuthStateManager $auth_state_manager, Version $version, Dependencies $dependencies ): LivePreview {
 		return new LivePreview( $post_type, $auth_state_manager, $version, $dependencies );
 	}
@@ -177,6 +189,11 @@ class Dependencies {
 	public function get_templates(): Templates {
 		$this->boot();
 		return $this->templates;
+	}
+
+	public function get_front_page(): FrontPage {
+		$this->boot();
+		return $this->front_page;
 	}
 
 	public function get_post_api(): PostAPI {
