@@ -34,6 +34,9 @@ final class StorySyncStateTest extends WordPressTestCase {
 						),
 					),
 				),
+				'warnings'    => array(
+					'publishing' => null,
+				),
 				'liveVersion' => 9,
 				'progress'    => array(
 					'percent' => 60.0,
@@ -52,10 +55,27 @@ final class StorySyncStateTest extends WordPressTestCase {
 				'errors'      => array(
 					'publishing' => null,
 				),
+				'warnings'    => array(
+					'publishing' => null,
+				),
 				'liveVersion' => 4,
 			),
 			$state->to_array()
 		);
+	}
+
+	public function test_to_array_includes_a_publishing_warning(): void {
+		$warning = array(
+			array(
+				'message' => 'assets/AbC/x.jpg and assets/abc/x.jpg',
+				'data'    => array( array( 'assets/AbC/x.jpg', 'assets/abc/x.jpg' ) ),
+				'code'    => 'collision',
+			),
+		);
+
+		$state = new StorySyncState( 4, null, null, null, $warning );
+
+		$this->assertSame( $warning, $state->to_array()['warnings']['publishing'] );
 	}
 
 	public function test_to_array_carries_a_title_shorthand_has_not_received(): void {

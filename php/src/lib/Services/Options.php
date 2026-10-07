@@ -7,6 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use Shorthand\Core\Version;
+use Shorthand\Services\Files\FileSystem;
 use Shorthand\Core\Loader;
 
 class Options {
@@ -61,19 +62,6 @@ class Options {
 				'type'              => 'string',
 				'sanitize_callback' => array( $this, 'sanitize_regex_list' ),
 				'default'           => '',
-			)
-		);
-
-		/* Source: settings form checkbox.  At rest: bool; forced on where uploads are remote. */
-		register_setting(
-			'theshed-general-options-group',
-			'shorthand_disable_staging',
-			array(
-				'type'              => 'boolean',
-				'label'             => __( 'Disable staging directory', 'the-shorthand-editor' ),
-				'description'       => __( 'Unpack story archives straight into the uploads directory', 'the-shorthand-editor' ),
-				'sanitize_callback' => array( $this, 'sanitize_checkbox' ),
-				'default'           => false,
 			)
 		);
 
@@ -168,12 +156,20 @@ class Options {
 		$loader->register();
 	}
 
+	/**
+	 * The bundled stylesheet, or nothing where it cannot be read.
+	 *
+	 * A host without file system credentials has no `WP_Filesystem`, and the
+	 * settings screen still has to render.
+	 */
 	public function get_default_css(): string {
-		FileSystem::init();
-		global $wp_filesystem;
+		$fs = FileSystem::boot();
+		if ( null === $fs ) {
+			return '';
+		}
 
 		$default_css_path = $this->version->get_plugin_path( 'assets/css/options-css.default.css' );
-		$default_css      = $wp_filesystem->get_contents( $default_css_path );
+		$default_css      = $fs->get_contents( $default_css_path );
 		if ( $default_css === false ) {
 			return '';
 		}
@@ -312,37 +308,6 @@ class Options {
 		return get_option( 'shorthand_regex_list' );
 	}
 
-	/**
-	 * Reports whether story archives are unpacked in a staging directory first.
-	 *
-	 * Staging is the default, and cannot be turned off where uploads are
-	 * remote: `ZipArchive::extractTo()` ignores stream wrappers, so unpacking
-	 * straight into uploads would write nothing there.
-	 */
-	public function is_staging_enabled(): bool {
-		if ( ! $this->can_disable_staging() ) {
-			return true;
-		}
-
-		return ! get_option( 'shorthand_disable_staging', false );
-	}
-
-	/**
-	 * Reports whether the staging setting is the author's to choose.
-	 */
-	public function can_disable_staging(): bool {
-		return ! FileSystem::is_remote_uploads();
-	}
-
-	/**
-	 * Reads a checkbox as a boolean.
-	 *
-	 * @param mixed $value Submitted value; absent when the box is unticked.
-	 */
-	public function sanitize_checkbox( $value ): bool {
-		return ! empty( $value );
-	}
-
 	public function get_v2_token() {
 		$token = get_option( 'shorthand_v2_token' );
 		return empty( $token ) ? '' : $token;
@@ -447,6 +412,11 @@ class Options {
 		/* Publishing is always asynchronous; the synchronous debug override is gone. */
 		if ( null !== get_option( 'shorthand_disable_cron', null ) ) {
 			delete_option( 'shorthand_disable_cron' );
+		}
+
+		/* Unpacking is always local; there is no longer a path that skips it. */
+		if ( null !== get_option( 'shorthand_disable_staging', null ) ) {
+			delete_option( 'shorthand_disable_staging' );
 		}
 	}
 }

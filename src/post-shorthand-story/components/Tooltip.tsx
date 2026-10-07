@@ -9,10 +9,12 @@ export interface ITooltipProps {
 }
 
 export function Tooltip({ message, content, children }: React.PropsWithChildren<ITooltipProps>): React.JSX.Element {
+  const panelId = React.useId();
+
   return (
-    <div className={styles.tooltipContainer}>
+    <div className={styles.tooltipContainer} tabIndex={0} aria-describedby={panelId}>
       {children}
-      <div className={styles.tooltipPanel}>
+      <div id={panelId} role="tooltip" className={styles.tooltipPanel}>
         <p className={styles.tooltipMessage}>{message}</p>
         <p className={styles.tooltipDetail}>{content}</p>
       </div>

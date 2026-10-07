@@ -11,6 +11,7 @@ export const PULL_ENDED_EVENT = "shorthand:pull-ended";
 export interface IStoryState {
   liveVersion: number | null;
   errors: IStoryErrors;
+  warnings: IStoryWarnings;
   progress: IStoryProgress | null;
   /** A title saved in WordPress that Shorthand has not yet received */
   pendingTitle: string | null;
@@ -20,6 +21,11 @@ export interface IStoryState {
 export interface IStoryErrors {
   publishing?: IStoryError;
   preview?: IStoryError;
+}
+
+/* Things the author should know about a publish that succeeded */
+export interface IStoryWarnings {
+  publishing?: IStoryError;
 }
 
 export interface IStoryError {
@@ -50,6 +56,7 @@ export function StoryStateProvider({
   const [liveVersion, setLiveVersion] = React.useState(initialState.liveVersion);
   const [progress, setProgress] = React.useState(initialState.progress);
   const [errors, setErrors] = React.useState(() => applyErrors({}, initialState.errors));
+  const [warnings, setWarnings] = React.useState(() => applyErrors({}, initialState.warnings));
   const [pendingTitle, setPendingTitle] = React.useState(initialState.pendingTitle ?? null);
 
   const refreshTimerRef = React.useRef<number>(0);
@@ -82,11 +89,12 @@ export function StoryStateProvider({
         }
 
         const { data } = await response.json();
-        const { liveVersion = null, progress = null, errors, pendingTitle = null } = data;
+        const { liveVersion = null, progress = null, errors, warnings, pendingTitle = null } = data;
 
         setLiveVersion(liveVersion);
         setPendingTitle(pendingTitle);
         setErrors(current => applyErrors(current, errors));
+        setWarnings(current => applyErrors(current, warnings));
         setProgress(progress);
 
         if (!data.progress) {
@@ -115,8 +123,8 @@ export function StoryStateProvider({
   }, []);
 
   const context = React.useMemo(
-    () => ({ errors, progress, liveVersion, pendingTitle, updateErrors }),
-    [errors, progress, liveVersion, pendingTitle, updateErrors]
+    () => ({ errors, warnings, progress, liveVersion, pendingTitle, updateErrors }),
+    [errors, warnings, progress, liveVersion, pendingTitle, updateErrors]
   );
   return <StoryStateContext.Provider value={context}>{children}</StoryStateContext.Provider>;
 }
@@ -129,6 +137,7 @@ export function useStoryState(): IStoryState {
 export const StoryStateContext = React.createContext<IStoryState>({
   liveVersion: null,
   errors: {},
+  warnings: {},
   progress: null,
   pendingTitle: null,
   updateErrors: () => {},
@@ -138,6 +147,7 @@ export const StoryStateContext = React.createContext<IStoryState>({
 export interface PHPStoryState {
   liveVersion: number | null;
   errors: PHPErrors;
+  warnings?: PHPErrors;
   progress: IStoryProgress | null;
   pendingTitle?: string | null;
 }
@@ -150,7 +160,8 @@ interface PHPErrors {
 interface PHPErrorItem {
   code: string;
   message: string;
-  data?: number | boolean | string;
+  /* Whatever PHP attached: a code, a path, or groups of file names */
+  data?: unknown;
 }
 
 function processErrorList(errors?: PHPErrorItem[]): IStoryError | undefined {
@@ -162,7 +173,7 @@ function processErrorList(errors?: PHPErrorItem[]): IStoryError | undefined {
   const codeError = errors.find(e => e.code === "code");
 
   return {
-    code: codeError?.data?.toString(),
+    code: codeError?.data == null ? undefined : String(codeError.data),
     message: prettyError?.message,
     tooltip: errors
       .filter(e => e.code !== "pretty")

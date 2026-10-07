@@ -63,7 +63,7 @@ function PendingTitleNotice({ title }: { title: string | null }): React.JSX.Elem
 export function PostEditorToolBar({
   editUrl,
 }: IPostEditorToolBarProps): React.JSX.Element {
-  const { errors, progress, liveVersion, pendingTitle, updateErrors } = useStoryState();
+  const { errors, warnings, progress, liveVersion, pendingTitle, updateErrors } = useStoryState();
 
   const [latestVersion, setLatestVersion] = React.useState<number | null>(null);
   React.useEffect(() => {
@@ -108,6 +108,11 @@ export function PostEditorToolBar({
             The preview is currently unavailable. Please reload the page or
             contact your administrator.
           </StoryError>
+          <StoryWarning warning={warnings.publishing}>
+            The story was published, but some of its files share a name, so
+            one may show in place of another. Please report this to Shorthand
+            support.
+          </StoryWarning>
         </div>
         {isConnected && editUrl && <EditButton url={editUrl} />}
       </div>
@@ -155,6 +160,23 @@ function StoryError({
       message={error.message || "An error has occurred."}
     >
       <p className={styles.toolbarError}>{children}</p>
+    </Tooltip>
+  );
+}
+
+function StoryWarning({
+  warning,
+  children,
+}: React.PropsWithChildren<{
+  warning: IStoryError | undefined;
+}>): React.JSX.Element | null {
+  if (!warning) {
+    return null;
+  }
+
+  return (
+    <Tooltip content={warning.tooltip} message="Files that share a name">
+      <p className={styles.toolbarWarning}>{children}</p>
     </Tooltip>
   );
 }
