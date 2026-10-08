@@ -119,6 +119,9 @@ class PostPreview {
 		$story_body    = $preview_content->get_body();
 		$user_style    = $this->options->get_post_css();
 
+		// The story that placeholders in the head and body resolve against.
+		$post = get_post( $post_id );
+
 		// Enqueue scripts and stylesheets from story head content.
 		if ( ! empty( $story_head ) ) {
 			StoryKses::enqueue_head_assets( $story_head, false, $story_version );

@@ -135,7 +135,7 @@ class Templates {
 		}
 
 		// Echo meta tags with escaped attributes - scripts and styles are handled in enqueue_scripts().
-		StoryKses::echo_meta_tags( $story_head );
+		StoryKses::echo_meta_tags( $story_head, get_post() );
 	}
 
 	/**

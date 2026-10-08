@@ -15,6 +15,23 @@ use Shorthand\Services\StoryId;
 class PostType {
 
 	/**
+	 * The post meta keys the plugin stores a story in, kept out of the Custom Fields box.
+	 */
+	public const PROTECTED_META_KEYS = array(
+		'story_id',
+		'story_body',
+		'story_head',
+		'story_version',
+		'story_update_nonce',
+		'story_update_state',
+		'story_manifest',
+		'story_pulls',
+		'story_excerpt',
+		'story_cover',
+		'story_cover_attachment',
+	);
+
+	/**
 	 * @readonly
 	 * @var string
 	 */
@@ -243,8 +260,7 @@ class PostType {
 	}
 
 	public function is_protected_meta( $prot, $meta_key, $meta_type ) {
-		$protected_meta_keys = array( 'story_id', 'story_body', 'story_head', 'story_version', 'story_update_nonce', 'story_update_state', 'story_manifest', 'story_pulls', 'story_excerpt', 'story_cover', 'story_cover_attachment' );
-		if ( 'post' === $meta_type && in_array( $meta_key, $protected_meta_keys, true ) ) {
+		if ( 'post' === $meta_type && in_array( $meta_key, self::PROTECTED_META_KEYS, true ) ) {
 			return true;
 		}
 		return $prot;

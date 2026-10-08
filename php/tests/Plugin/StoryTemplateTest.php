@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Shorthand\Tests\Plugin;
 
+use Shorthand\Services\StoryPlaceholders;
 use Shorthand\Tests\WordPressTestCase;
 
 final class StoryTemplateTest extends WordPressTestCase {
@@ -109,6 +110,24 @@ final class StoryTemplateTest extends WordPressTestCase {
 		$output = $this->render_template();
 
 		$this->assertStringContainsString( '<article id="story"></article>', $output );
+	}
+
+	public function test_story_placeholders_resolve_in_the_story_body(): void {
+		StoryPlaceholders::flush();
+		\tests_wp_set_current_post(
+			new \WP_Post(
+				array(
+					'ID'         => 42,
+					'post_type'  => 'tse_story',
+					'post_title' => 'Story title',
+				)
+			)
+		);
+		$this->stage_story( '<p>{{wp.story.title}}</p>' );
+
+		$output = $this->render_template();
+
+		$this->assertStringContainsString( '<p>Story title</p>', $output );
 	}
 
 	/**

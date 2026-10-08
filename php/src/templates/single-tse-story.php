@@ -67,7 +67,7 @@ if ( post_password_required( $post->ID ) ) {
 			$theshed_story_version = is_numeric( $theshed_story_version ) ? (int) $theshed_story_version : null;
 
 			\Shorthand\Services\StoryKses::enable();
-			\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $theshed_story_body, $theshed_story_version );
+			\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $theshed_story_body, $theshed_story_version, get_post() );
 			\Shorthand\Services\StoryKses::disable();
 		}
 

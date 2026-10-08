@@ -35,6 +35,18 @@ if ( ! class_exists( 'WP_Post' ) ) {
 		 * @var string
 		 */
 		public $post_status = 'draft';
+		/**
+		 * @var string
+		 */
+		public $post_title = '';
+		/**
+		 * @var string
+		 */
+		public $post_date = '';
+		/**
+		 * @var int
+		 */
+		public $post_parent = 0;
 
 		/**
 		 * @param array<string, mixed> $fields
@@ -214,8 +226,13 @@ function tests_wp_reset_state(): void {
 		'queried_object_id'    => 0,
 		'have_posts'           => 0,
 		'actions_done'         => array(),
+		'doing_it_wrong'       => array(),
+		'object_taxonomies'    => array(),
+		'term_lists'           => array(),
+		'permalinks'           => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
+	unset( $GLOBALS['post'] );
 }
 
 tests_wp_reset_state();
@@ -339,6 +356,29 @@ function tests_wp_hook_callbacks( string $hook_name ): array {
 }
 
 function remove_filter( string $hook_name, $callback, int $priority = 10 ): void {}
+
+/**
+ * Mirrors core: with no callback, whether anything is hooked; with one, its
+ * priority or false.
+ *
+ * @param callable|false $callback
+ * @return bool|int
+ */
+function has_filter( string $hook_name, $callback = false ) {
+	$registrations = tests_wp_hook_callbacks( $hook_name );
+
+	if ( false === $callback ) {
+		return array() !== $registrations;
+	}
+
+	foreach ( $registrations as $registration ) {
+		if ( $registration['callback'] === $callback ) {
+			return $registration['priority'];
+		}
+	}
+
+	return false;
+}
 
 function register_activation_hook( string $file, $callback ): void {}
 
@@ -526,6 +566,10 @@ function tests_wp_safe_redirects(): array {
 }
 
 function esc_url( string $url ): string {
+	if ( preg_match( '/^([a-z][a-z0-9+.-]*):/i', $url, $scheme ) && ! in_array( strtolower( $scheme[1] ), wp_allowed_protocols(), true ) ) {
+		return '';
+	}
+
 	return $url;
 }
 
@@ -909,10 +953,30 @@ function tests_wp_set_post( int $post_id, $post ): void {
 }
 
 /**
+ * Sets the current post, which get_post() returns for an empty argument.
+ */
+function tests_wp_set_current_post( WP_Post $post ): void {
+	// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Stages the current post, as the loop does.
+	$GLOBALS['post'] = $post;
+}
+
+/**
+ * Mirrors core: an empty argument means the current post, from the `post`
+ * global, and a post object is returned as it is.
+ *
+ * @param int|WP_Post|null $post
  * @return mixed
  */
-function get_post( int $post_id ) {
-	return $GLOBALS['tests_wp_state']['stub_posts'][ $post_id ] ?? null;
+function get_post( $post = null ) {
+	if ( empty( $post ) ) {
+		$post = $GLOBALS['post'] ?? null;
+	}
+
+	if ( is_object( $post ) ) {
+		return $post instanceof WP_Post ? $post : new WP_Post( get_object_vars( $post ) );
+	}
+
+	return $GLOBALS['tests_wp_state']['stub_posts'][ (int) $post ] ?? null;
 }
 
 /**
@@ -1205,7 +1269,7 @@ function wp_die( $message = '', $title = '', $args = array() ): void {
 }
 
 function esc_html( string $text ): string {
-	return htmlspecialchars( $text, ENT_QUOTES );
+	return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8', false );
 }
 
 function esc_html__( string $text, string $domain = '' ): string {
@@ -1213,7 +1277,7 @@ function esc_html__( string $text, string $domain = '' ): string {
 }
 
 function esc_attr( string $text ): string {
-	return htmlspecialchars( $text, ENT_QUOTES );
+	return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8', false );
 }
 
 /**
@@ -1223,6 +1287,13 @@ function esc_attr( string $text ): string {
  */
 function apply_filters( string $hook_name, $value, ...$args ) {
 	$GLOBALS['tests_wp_state']['filter_args'][ $hook_name ][] = $args;
+
+	foreach ( tests_wp_hook_callbacks_in_order( $hook_name ) as $registration ) {
+		$value = call_user_func_array(
+			$registration['callback'],
+			array_slice( array_merge( array( $value ), $args ), 0, $registration['accepted_args'] )
+		);
+	}
 
 	return $value;
 }
@@ -1701,3 +1772,124 @@ function tests_wp_json_responses(): array {
 }
 
 require_once __DIR__ . '/WordPressTestCase.php';
+
+function _doing_it_wrong( string $function_name, string $message, string $version ): void {
+	$GLOBALS['tests_wp_state']['doing_it_wrong'][] = array(
+		'function' => $function_name,
+		'message'  => $message,
+		'version'  => $version,
+	);
+}
+
+/**
+ * Calls to _doing_it_wrong(), in order.
+ *
+ * @return array<int, array<string, string>>
+ */
+function tests_wp_doing_it_wrong(): array {
+	return $GLOBALS['tests_wp_state']['doing_it_wrong'];
+}
+
+/**
+ * @param int|WP_Post $post
+ */
+function get_the_title( $post = 0 ): string {
+	$post = get_post( $post );
+
+	return isset( $post->post_title ) ? (string) $post->post_title : '';
+}
+
+/**
+ * Formats `post_date` in UTC: the site date format when `$format` is empty.
+ *
+ * @param int|WP_Post|null $post
+ * @return string|false
+ */
+function get_the_date( string $format = '', $post = null ) {
+	$post = get_post( $post );
+
+	if ( ! $post || empty( $post->post_date ) ) {
+		return false;
+	}
+
+	$format = '' !== $format ? $format : get_option( 'date_format', 'F j, Y' );
+
+	return gmdate( $format, (int) strtotime( $post->post_date . ' UTC' ) );
+}
+
+/**
+ * @param int|WP_Post|null $post
+ * @return mixed
+ */
+function get_post_parent( $post = null ) {
+	$post = get_post( $post );
+
+	return ! empty( $post->post_parent ) ? get_post( $post->post_parent ) : null;
+}
+
+function tests_wp_set_permalink( int $post_id, string $url ): void {
+	$GLOBALS['tests_wp_state']['permalinks'][ $post_id ] = $url;
+}
+
+/**
+ * @param int|WP_Post $post
+ * @return string|false
+ */
+function get_permalink( $post = 0 ) {
+	$post = get_post( $post );
+
+	if ( ! $post ) {
+		return false;
+	}
+
+	return $GLOBALS['tests_wp_state']['permalinks'][ (int) $post->ID ] ?? 'https://example.test/?p=' . (int) $post->ID;
+}
+
+/**
+ * @param string[] $taxonomies
+ */
+function tests_wp_set_object_taxonomies( string $object_type, array $taxonomies ): void {
+	$GLOBALS['tests_wp_state']['object_taxonomies'][ $object_type ] = $taxonomies;
+}
+
+function is_object_in_taxonomy( string $object_type, string $taxonomy ): bool {
+	return in_array( $taxonomy, $GLOBALS['tests_wp_state']['object_taxonomies'][ $object_type ] ?? array(), true );
+}
+
+/**
+ * @param string[]|false|WP_Error $term_list Term links, or what get_the_term_list() returns instead.
+ */
+function tests_wp_set_term_list( int $post_id, string $taxonomy, $term_list ): void {
+	$GLOBALS['tests_wp_state']['term_lists'][ $post_id ][ $taxonomy ] = $term_list;
+}
+
+/**
+ * Joins the staged term links as core does. A staged false or WP_Error is
+ * returned as it is, and nothing staged gives false, as core returns for a
+ * post with no terms.
+ *
+ * @return string|false|WP_Error
+ */
+function get_the_term_list( int $post_id, string $taxonomy, string $before = '', string $sep = '', string $after = '' ) {
+	$term_list = $GLOBALS['tests_wp_state']['term_lists'][ $post_id ][ $taxonomy ] ?? false;
+
+	return is_array( $term_list ) ? $before . implode( $sep, $term_list ) . $after : $term_list;
+}
+
+/**
+ * Mirrors core: a key is protected when it starts with `_` once unprintable
+ * characters are stripped, and the `is_protected_meta` filter has the last word.
+ */
+function is_protected_meta( string $meta_key, string $meta_type = '' ): bool {
+	$sanitized_key = (string) preg_replace( "/[^\x20-\x7E\p{L}]/", '', $meta_key );
+	$protected     = '' !== $sanitized_key && '_' === $sanitized_key[0];
+
+	return (bool) apply_filters( 'is_protected_meta', $protected, $meta_key, $meta_type );
+}
+
+/**
+ * Keeps the few tags the tests use and drops every other tag.
+ */
+function wp_kses_post( string $data ): string {
+	return strip_tags( $data, '<a><em><strong>' );
+}

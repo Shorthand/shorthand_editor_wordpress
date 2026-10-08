@@ -7,6 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use Shorthand\Core\Loader;
+use WP_Post;
 
 /**
  * Configures wp_kses to allow Shorthand story HTML content.
@@ -427,16 +428,25 @@ class StoryKses {
 	 * Unlike wp_kses(), this does not filter HTML tags, attributes, or CSS properties.
 	 * Use only with trusted content sources.
 	 *
-	 * @param string   $content       The HTML content.
-	 * @param int|null $story_version Story version for cache busting.
+	 * Story placeholders in the content are resolved against the post, after the
+	 * scripts and styles are taken out.
+	 *
+	 * @param string       $content       The HTML content.
+	 * @param int|null     $story_version Story version for cache busting.
+	 * @param WP_Post|null $post          The story the content belongs to. Default the current post.
 	 */
-	public static function echo_extract_and_enqueue_assets( string $content, ?int $story_version = null ): void {
+	public static function echo_extract_and_enqueue_assets( string $content, ?int $story_version = null, ?WP_Post $post = null ): void {
 		$parser          = new StoryAssetParser();
 		$script_result   = $parser->extract_script_tags( $content );
 		$style_result    = $parser->extract_style_tags( $script_result['content'] );
 		$asset_enqueuer  = new StoryAssetEnqueuer();
 		self::$scripts   = array_merge( self::$scripts, $script_result['scripts'] );
 		$content         = $style_result['content'];
+
+		$post = $post ?? get_post();
+		if ( $post instanceof WP_Post ) {
+			$content = StoryPlaceholders::replace( $content, $post );
+		}
 
 		$asset_enqueuer->enqueue_inline_styles( $style_result['styles'], 'theshed-story-body-style-' );
 
@@ -475,9 +485,15 @@ class StoryKses {
 	/**
 	 * Echoes meta tags from head content with escaped attributes.
 	 *
-	 * @param string $head_content The story head HTML content.
+	 * Story placeholders in each attribute value are resolved against the post,
+	 * after the value is decoded and before it is escaped again.
+	 *
+	 * @param string       $head_content The story head HTML content.
+	 * @param WP_Post|null $post         The story the head belongs to. Default the current post.
 	 */
-	public static function echo_meta_tags( string $head_content ): void {
+	public static function echo_meta_tags( string $head_content, ?WP_Post $post = null ): void {
+		$post = $post ?? get_post();
+
 		foreach ( ( new StoryAssetParser() )->extract_meta_tags( $head_content ) as $attrs ) {
 			if ( empty( $attrs ) ) {
 				continue;
@@ -489,6 +505,11 @@ class StoryKses {
 
 			echo '<meta';
 			foreach ( $attrs as $name => $value ) {
+				// A boolean attribute's value is `true`, not a string.
+				if ( is_string( $value ) && $post instanceof WP_Post ) {
+					$value = StoryPlaceholders::replace( $value, $post );
+				}
+
 				echo ' ' . esc_attr( $name ) . '="' . esc_attr( $value ) . '"';
 			}
 			echo ">\n";

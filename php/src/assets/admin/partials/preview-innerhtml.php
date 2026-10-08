@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<meta charset="<?php bloginfo( 'charset' ); ?>">
 	<?php
 	if ( ! empty( $story_head_for_meta ) ) {
-		\Shorthand\Services\StoryKses::echo_meta_tags( $story_head_for_meta );
+		\Shorthand\Services\StoryKses::echo_meta_tags( $story_head_for_meta, $post );
 	}
 	wp_print_styles();
 	wp_print_head_scripts();
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 <body <?php body_class(); ?>>
 	<?php
 	\Shorthand\Services\StoryKses::enable();
-	\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $story_body, $story_version );
+	\Shorthand\Services\StoryKses::echo_extract_and_enqueue_assets( $story_body, $story_version, $post );
 	\Shorthand\Services\StoryKses::disable();
 	?>
 

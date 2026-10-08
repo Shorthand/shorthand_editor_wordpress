@@ -9,9 +9,12 @@ updated: 2026-10-04
 The value-only placeholder language for Shorthand stories, and the two
 filters every token resolves through.
 
-**Status:** specified, not built. No resolver exists in the plugin yet. The
-call sites named in "Product context" are where it is to run; today they
-handle only assets and meta-tag escaping.
+**Status:** built. The resolver is `Shorthand\Services\StoryPlaceholders`
+(`php/src/lib/Services/StoryPlaceholders.php`). Its unit tests are
+`php/tests/Services/StoryPlaceholdersTest.php` and
+`php/tests/Services/StoryKsesPlaceholdersTest.php`. "Where resolution
+runs" names the call sites. One check is left before shipping: the PHP 7.4
+run named in "Known gaps: rendering".
 
 ## Scope
 
@@ -53,7 +56,13 @@ into the story HTML as a placeholder and substituted at render.
 `author`, `custom-fields`; registers the taxonomies `category` and
 `post_tag`; and does not pass `hierarchical`, so it defaults to `false`.
 
-Resolution is to run in four places, against the same code:
+Resolution happens at render, not at publish, so a title, taxonomy, or
+parent change on the WordPress side shows up without the story being
+republished.
+
+## Where resolution runs
+
+Resolution runs in four places, against the same code:
 
 | Path | Resolved in |
 | --- | --- |
@@ -62,21 +71,26 @@ Resolution is to run in four places, against the same code:
 | WordPress preview | The same two, against the post `Shorthand\Services\LivePreview` is previewing |
 | Editor preview | The same two, called from `php/src/assets/admin/partials/preview-innerhtml.php`, which `Shorthand\Admin\Actions\PostPreview::render_page()` includes |
 
-Neither `StoryKses` method receives a post today. Each call site passes
-the `WP_Post` in. `PostPreview::render_page()` holds only `$post_id`, so it
-loads the post with `get_post( $post_id )` first.
+Both `StoryKses` methods take an optional last argument, `?WP_Post $post`.
+When it is `null`, they use `get_post()`; with no post at all, they print
+the content as written. The front-end call sites pass `get_post()`.
+`PostPreview::render_page()` holds only `$post_id`, so it loads the post
+with `get_post( $post_id )`, and `preview-innerhtml.php` passes that post
+to both methods.
 
-Resolution happens at render, not at publish, so a title, taxonomy, or
-parent change on the WordPress side shows up without the story being
-republished.
+### The story head
 
 The story head is never echoed whole. `StoryKses::echo_meta_tags()` lifts
 each `<meta>` tag's attributes out and re-emits them through `esc_attr()`
-(`StoryKses.php:467`), so a head token always ends up inside an attribute
-value that is escaped again downstream. That second escape is harmless:
-`esc_attr()` leaves `$double_encode` at its default `false`, so an
-already-escaped value is not re-encoded. Markup in a head token always
-shows as escaped text, whatever its type.
+(`StoryKses.php:513`). `StoryAssetParser::parse_html_attributes()` decodes
+the entities in each attribute value first, and the resolver runs on the
+decoded value.
+
+So a head token always ends up inside an attribute value that is escaped
+again downstream. That second escape is harmless: `esc_attr()` leaves
+`$double_encode` at its default `false`, so an already-escaped value is
+not re-encoded. Markup in a head token always shows as escaped text,
+whatever its type.
 
 ## Grammar
 
@@ -267,7 +281,9 @@ wider first match.
 
 The pattern was run against these cases on PHP 8.5.5 (PCRE2 10.48) and on
 PHP 8.3.33 (PCRE2 10.42), and all behaved as listed. They are the unit
-tests for the detector. Each match lists the captured `ns` and `key`.
+tests for the detector: the `matching_tokens`, `unmatched_text` and
+`hook_names` data providers in `php/tests/Services/StoryPlaceholdersTest.php`.
+Each match lists the captured `ns` and `key`.
 
 ### Must match
 
@@ -398,8 +414,8 @@ covers a token wherever it sits. The resolver escapes once, after both
 filters return, and never lets a callback escape.
 
 `filter` is text only. Markup a callback returns is escaped and shows as
-text. A head token is escaped to text whatever its type (see "Product
-context"), and one namespace with one type behaves the same in head and
+text. A head token is escaped to text whatever its type (see "The story
+head"), and one namespace with one type behaves the same in head and
 body. Correct: a later version that needs markup from a filter adds a new
 namespace with its own fixed `html` type. Incorrect: letting a callback
 choose the escape.
@@ -576,6 +592,11 @@ When a `filter` token has no callback on either filter, the resolver calls
 `_doing_it_wrong()` with a message naming the token and its specific hook
 name. The rendered value stays `''`.
 
+The function argument is `Shorthand\Services\StoryPlaceholders::replace`,
+the public method a developer can find. The version argument is `1.0.10`,
+the release after `1.0.9`. Correct: change it to the release that first
+ships the resolver, if that is not `1.0.10`.
+
 `_doing_it_wrong()` has an effect only when `WP_DEBUG` is on (its own
 `if ( WP_DEBUG && … )` check), so a production page shows nothing. The check is
 `! has_filter( 'theshed_resolve_placeholder' ) && ! has_filter( $hook )`: when
@@ -652,6 +673,10 @@ style: "The dynamic portions of the hook name, `$namespace` and `$key`,
 refer to the token's namespace and key." Both DocBlocks link to this
 document for the list of namespaces and keys.
 
+No DocBlock in the resolver carries `@since`. No file under `php/src` uses
+the tag, so the resolver follows the code around it rather than
+`php/AGENTS.md`.
+
 ## Decision: meta keys are open, minus two denials
 
 Any meta key on the story resolves. Two classes of key are denied:
@@ -659,10 +684,12 @@ Any meta key on the story resolves. Two classes of key are denied:
 1. A key WordPress treats as protected — `is_protected_meta( $key, 'post' )`
    returns true. That covers every key starting with `_`, and anything a
    site has protected through the `is_protected_meta` filter.
-2. One of the plugin's own nine keys — `story_id`, `story_body`,
+2. One of the plugin's own eleven keys, listed in
+   `Shorthand\Plugin\PostType::PROTECTED_META_KEYS`
+   (`php/src/lib/Plugin/PostType.php`): `story_id`, `story_body`,
    `story_head`, `story_version`, `story_update_nonce`,
-   `story_update_state`, `story_manifest`, `story_pulls`, `story_excerpt`
-   (`php/src/lib/Plugin/PostType.php`).
+   `story_update_state`, `story_manifest`, `story_pulls`, `story_excerpt`,
+   `story_cover`, `story_cover_attachment`.
 
 The second check reads that list directly, not through
 `is_protected_meta()`, because that function is filterable. A site that
@@ -792,27 +819,63 @@ detected at all and is ordinary story content.
   (`theshed_resolve_placeholder_meta_og:image`). They work, but are hard to
   guess; "Finding a hook name" gives the way to discover them.
 
-## Known gaps
+## Known gaps: authoring
+
+The authoring gaps are in how a token gets into a story, or is kept out
+of one. Resolution itself is not at fault. A token typed as plain text
+reaches the story HTML unchanged: the Shorthand editor escapes only `"`,
+`'`, `&`, `<` and `>`.
 
 - `wp.parent.url` is correct in principle and dead in practice today.
   Nothing writes a non-zero `post_parent` on a `tse_story`: the post type
   is not hierarchical, so neither editor shows a parent control, and
   `WP_REST_Posts_Controller` drops `parent` from the schema for a
-  non-hierarchical type. The gap is the authoring path, not resolution.
-- A story cannot display a placeholder as literal text.
+  non-hierarchical type.
+- A link's "Static URL" field in the Shorthand editor adds `http://` to a
+  value it does not read as a URL, so `{{wp.parent.url}}` typed there
+  becomes `http://{{wp.parent.url}}` and resolves to a broken link.
+  Correct: a "Dynamic URL" link with the label `wp.parent.url`; the editor
+  adds the braces. Incorrect: the label `{{wp.parent.url}}`, which the
+  editor wraps again as `{{{{wp.parent.url}}}}`.
+- A token split by inline markup is not detected. Bolding half of a typed
+  token gives `{{wp.<strong>story.title}}</strong>`, which prints as
+  written.
+- A mistyped placeholder renders as visible text on the front end.
+  `{{wp.story.titel}}` matches no alternative, so nothing reports it.
+- A story cannot display a placeholder as literal text in its head, and
+  can in its body only with encoded braces.
   `<pre><code>{{wp.story.title}}</code></pre>` is detected and resolved
   like any other token: `StoryAssetParser` carves out only `<script>` and
   `<style>`. In a Shorthand custom-HTML block an author can write
-  `&#123;&#123;wp.story.title&#125;&#125;`, which the scanner does not
-  match. The named fix, if needed: an `extract_verbatim_tags()` pass in
-  `StoryAssetParser` that lifts `<pre>` and `<code>` out before
-  substitution, mirroring the script/style pass.
-- A mistyped placeholder renders as visible text on the front end.
-  `{{wp.story.titel}}` matches no alternative, so nothing reports it.
+  `&#123;&#123;wp.story.title&#125;&#125;`, which the body scan does not
+  match. The head decodes entities before resolution (see "The story
+  head"), so the same text in a `<meta>` value resolves. The named fix, if
+  needed: an `extract_verbatim_tags()` pass in `StoryAssetParser` that
+  lifts `<pre>` and `<code>` out before substitution, mirroring the
+  script/style pass.
+
+## Known gaps: rendering
+
 - A live preview and the published page can resolve differently.
   `LivePreview::filter_meta()` swaps only `story_body`, `story_head` and
   `story_version`; every other value is read from the saved post. A
   placeholder resolves live by design.
+- The story's stored plain text keeps its tokens. At publish,
+  `PostAPI::store_story_text()` copies the story's text into
+  `post_content` and `post_excerpt` through `StoryTextExtractor`, and the
+  resolver never runs on that text. Search results, feeds and theme
+  excerpts show `{{wp.story.title}}` as written. A site can strip or
+  resolve tokens in the `theshed_story_content` and `theshed_story_excerpt`
+  filters.
+- A password-protected story still prints its head `<meta>` tags, with
+  their tokens resolved: `Templates::single_head()` does not check
+  `post_password_required()`. The static head was printed the same way
+  before the resolver, but a token such as `{{wp.meta.price}}` now adds a
+  WordPress value to it.
+- Content that is not valid UTF-8 is not scanned. The pattern's `u`
+  modifier makes `preg_replace_callback()` fail, and
+  `StoryPlaceholders::replace()` then returns the content unchanged, so
+  every token in it prints as written.
 - The detection pattern is untested on PHP 7.4, the plugin's minimum. It
   passed on PHP 8.3.33 and 8.5.5. PHP 7.4 bundles PCRE2 10.33; the
   pattern's one unusual feature, a group name repeated inside a branch
@@ -825,9 +888,9 @@ Decided on 2026-10-04: the two filters are `theshed_resolve_placeholder`
 and `theshed_resolve_placeholder_{$namespace}_{$key}`. The first draft's
 `tse_` prefix is not used.
 
-- The plugin's eight existing hooks all use `theshed_`
+- The plugin's nine existing hooks all use `theshed_`
   (`theshed_story_content`, `theshed_post_process_body`,
-  `theshed_before_story`, and five more).
+  `theshed_before_story`, and six more).
 - The Plugin Handbook asks for one unique prefix per plugin.
 - `tse_` reads as the post type `tse_story`, not as the plugin.
 
