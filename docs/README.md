@@ -1,7 +1,7 @@
 ---
 title: Documentation index
 purpose: How this documentation is organised, and what it currently covers.
-updated: 2026-09-12
+updated: 2026-10-08
 ---
 
 # Documentation index
@@ -12,7 +12,7 @@ install documentation is in `README.md`; release process is in
 
 ## Organisation
 
-Each document covers exactly one of four kinds of subject.
+Each subject document covers exactly one of four kinds of subject.
 
 | Directory | Kind of subject |
 | --- | --- |
@@ -24,6 +24,16 @@ Each document covers exactly one of four kinds of subject.
 Key decisions are recorded in the document that owns the subject, under a
 heading beginning `Decision:`. Justification is given only where the decision
 would otherwise look arbitrary or be reversed by accident.
+
+Plans and research are kept apart from subject documents. They record work in
+progress and the reasoning behind it, not current behaviour. Where a plan or
+research note disagrees with a subject document, the subject document wins.
+
+| Directory | Kind of document |
+| --- | --- |
+| `docs/plans/` | Plans, parked designs and hand-offs |
+| `docs/research/` | Research notes behind a decision |
+| `docs/research/superseded/` | Original notes that a research note corrects |
 
 ## Contents
 
@@ -43,6 +53,22 @@ Data:
 - `docs/models/options.md` — every WordPress option the plugin owns.
 - `docs/models/story-placeholders.md` — the value-only placeholder language
   an author writes into a story, and how each key resolves against a post.
+
+Plans:
+
+- `docs/plans/story-placeholders-handoff.md` — the state of the story
+  placeholders build: commits, checks, security gaps and open decisions.
+- `docs/plans/story-placeholders-full-language.md` — the full placeholder
+  language with sections and loops, parked in favour of the value-only subset.
+
+Research:
+
+- `docs/research/dynamic-content-handoff.md` — why a story gets live values by
+  token substitution at render, with no HTML parsing.
+- `docs/research/caching-the-story-render-handoff.md` — caching the render in
+  two layers: the compiled story, and each live value.
+- `docs/research/superseded/` — the original Drive copies of both research
+  notes, which assumed placeholders are HTML elements.
 
 ## Not yet written
 

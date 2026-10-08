@@ -1,7 +1,7 @@
 ---
 title: Story placeholders
 purpose: The value-only placeholder grammar an author writes into a Shorthand story — seven token forms covering five WordPress values and one user-defined namespace — and the two filters every token passes through.
-updated: 2026-10-04
+updated: 2026-10-08
 ---
 
 # Story placeholders
@@ -35,7 +35,7 @@ Out of scope, deliberately: sections and inverted sections
 arguments (`key="value"`). See "What this leaves out".
 
 The full language this is a subset of is specified, unaltered, at
-`/Users/simon/Projects/Shorthand for WordPress/plans/story-placeholders-full-language.md`.
+`docs/plans/story-placeholders-full-language.md`.
 That copy wrote the story's own fields as `wp.title`, `wp.date` and
 `wp.date_iso`; its note "Renamed since parking" records that a later
 iteration adopts this subset's `wp.story.` names instead. With that rename,
