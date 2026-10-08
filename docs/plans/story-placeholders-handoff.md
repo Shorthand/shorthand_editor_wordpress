@@ -10,12 +10,12 @@ State of the story placeholders build in The Shorthand Editor (S4W) WordPress pl
 
 ## Status
 
-- The resolver is built, tested and committed as `c0aadb6`. The branch is not rebased and not pushed.
+- The resolver is built, tested and committed as `c0aadb6`. The branch is pushed to `origin` on 2026-10-08, not rebased.
 - The done criteria pass on all three render paths (S4W admin preview, live preview and published front end), using stand-ins for a story typed in the Shorthand editor.
 - A real Shorthand story with typed tokens is blocked on a user choice.
 - The security review confirmed two gaps in the story body. The user must choose a fix.
 - `origin/master` has moved since the branch was cut. A rebase conflicts in one file.
-- On 2026-10-08 this file and the related plans and research moved from the project folder into `docs/plans/` and `docs/research/`, in the docs commit that follows `c0aadb6`.
+- On 2026-10-08 this file and the related plans and research moved from the project folder into `docs/plans/` and `docs/research/`, in commit `6c67c05`.
 - Four user decisions are open. The section "Open decisions" lists them.
 
 Correct: wait for the user's answer to each open decision before acting on it.
@@ -41,7 +41,8 @@ Later additions from the user:
 - "Make sure those doc changes are committed first, for posterity". Done as commit `90a92cd`.
 - "Write a hand-off document capturing everything in flight." This file.
 - "Commit the outstanding changes in this branch". Done as commit `c0aadb6`, on 2026-10-08. Not pushed, not rebased: neither was asked.
-- "Then, move the plans, handoff and research documents dealing with placeholders, dynamic content and caching into appropriate paths in this repository and add them as a new commit." Done as the docs commit after `c0aadb6`, on 2026-10-08.
+- "Then, move the plans, handoff and research documents dealing with placeholders, dynamic content and caching into appropriate paths in this repository and add them as a new commit." Done as commit `6c67c05`, on 2026-10-08.
+- "Commit and push the branch". Pushed to `origin/test/story-placeholders` on 2026-10-08, without a rebase. The only change left to commit was this file's push status.
 
 The specification is `docs/models/story-placeholders.md` in the plugin worktree. The specification wins over this document on any point of design.
 
@@ -54,9 +55,9 @@ The specification is `docs/models/story-placeholders.md` in the plugin worktree.
 | Branch | `test/story-placeholders` |
 | Branch base | `1d847ea` (origin/master on 2026-10-04) |
 | Last code commit | `c0aadb6` |
-| Branch head | The docs commit after `c0aadb6`; `git log --oneline -1` shows it |
+| Branch head | The commit that records the push in this file; `git log --oneline -1` shows it |
 | Current origin/master | `3f68ea4` |
-| Pushed | No |
+| Pushed | Yes, to `origin/test/story-placeholders` on 2026-10-08. Not rebased |
 | Plugin version | 1.0.9 |
 | Post type | `tse_story` |
 | This file | `docs/plans/story-placeholders-handoff.md` in the worktree |
@@ -83,17 +84,18 @@ Before 2026-10-08 these plans and research notes lived in `/Users/simon/Projects
 | `90a92cd` | 📝 Add the story placeholders model | The specification and the `docs/README.md` index line, committed at the user's request |
 | `48a3a8c` | 📝 Decide the placeholder resolver hook prefix | Specification edits only; unrequested; kept |
 | `c0aadb6` | 🧩 Resolve story placeholders in the story head and body | The whole implementation, its tests and the specification status "built", committed at the user's request |
-| After `c0aadb6` | 📝 Move the placeholder plans and research into the repository | This file, the plans, the research notes and the `docs/README.md` index, committed at the user's request |
+| `6c67c05` | 📝 Move the placeholder plans and research into the repository | This file, the plans, the research notes and the `docs/README.md` index, committed at the user's request |
+| After `6c67c05` | 📝 Record the pushed story placeholders branch in the hand-off | This file's push status, committed with the push at the user's request |
 
 Only `c0aadb6` holds code. The worktree is clean apart from git-ignored files.
 
 Commit trailers and messages:
 
-- `90a92cd`, `c0aadb6` and the docs commit end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- `90a92cd`, `c0aadb6`, `6c67c05` and the push-status commit end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - `48a3a8c` ends with a "Claude Sonnet 5" trailer, as does `14610b5` in the project folder. A stray workflow agent made both; see "Earlier agent commits".
 - The `48a3a8c` message says "eight existing theshed_ hooks". Specification line 891 says nine.
 
-Ask the user whether to reword `48a3a8c` before pushing. The open decision "Rebase and push" includes this.
+The branch was pushed without a reword of `48a3a8c`. A reword now rewrites published history and needs a force push. The open decision "Rebase" includes it.
 
 ## Files in the implementation commit
 
@@ -378,11 +380,13 @@ Why the conflict: upstream adds `story_title_pending` to the inline protected li
 - `10933f5` 🐳 Replace docker-compose with wp-env and gate releases on PHP tests (#30)
 - `3f68ea4` 🔌 Save WordPress properties without a Shorthand connection (PLA-2806) (#29)
 
-A dry-run merge (`git merge-tree`) on 2026-10-08 finds only that conflict. The doc commits merge cleanly.
+A dry-run merge (`git merge-tree`) on 2026-10-08, after `6c67c05`, finds only that conflict. The doc commits merge cleanly.
 
-After the rebase, CircleCI runs `wp-plugin-php-unit` (PHP 8.4) and `wp-plugin-php-integration` on every branch, so a push runs the new tests in CI. Before the rebase, CI ran no PHP tests and no phpcs.
+The branch is on `origin`, so a rebase needs `git push --force-with-lease origin test/story-placeholders` afterwards.
 
-Correct: rebase only on the user's yes to the open decision "Rebase and push". Incorrect: rebasing or pushing because the tree is ready.
+After the rebase, CircleCI runs `wp-plugin-php-unit` (PHP 8.4) and `wp-plugin-php-integration` on every branch, so a push runs the new tests in CI. Before the rebase, CI runs no PHP tests and no phpcs, so the 2026-10-08 push ran neither.
+
+Correct: rebase and force-push only on the user's yes to the open decision "Rebase". Incorrect: rebasing or force-pushing because the tree is ready.
 
 ## End-to-end environment: current state
 
@@ -541,7 +545,7 @@ The project folder's `git status` and staged diffs from before the undo plan are
 
 - **Security:** option A or option B? See "Fix options".
 - **Real story:** (a), (b) or (c)? See "Blocked: a real story".
-- **Rebase and push:** rebase `test/story-placeholders` onto `origin/master`, resolve `PostType.php` as "Rebase onto origin/master" says, and push? Optionally reword `48a3a8c` first; see "Commits on the branch".
+- **Rebase:** rebase `test/story-placeholders` onto `origin/master`, resolve `PostType.php` as "Rebase onto origin/master" says, and force-push with `--force-with-lease`? Optionally reword `48a3a8c` in the same rewrite; see "Commits on the branch".
 - **Project folder:** undo `14610b5`? See "Undo steps for 14610b5".
 
 ## Notes
