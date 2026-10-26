@@ -3,7 +3,7 @@ Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
 Tested up to: 7.1
-Stable tag: 1.0.9
+Stable tag: 1.0.10
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -366,6 +366,16 @@ page.
 For further support and feedback, contact help@shorthand.com.
 
 == Changelog ==
+
+= 1.0.10 =
+
+- Use the Shorthand story cover as the post's featured image.
+- Save WordPress post properties, such as the title, author and featured image, when the connection to Shorthand is lost.
+- Fetch story content from Shorthand only when the story has changed.
+- Keep the plugin's error pages when a CDN sits in front of WordPress and connecting to Shorthand fails.
+- Send the WordPress site name to Shorthand as plain text, so apostrophes and other characters are not escaped.
+- Keep ampersands and data URIs in the plugin's custom CSS.
+- Rename "Teams" to "Sites" in the plugin settings, to match Shorthand.
 
 = 1.0.9 =
 
