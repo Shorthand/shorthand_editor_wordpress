@@ -17,6 +17,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * All customer copy for the connect flow lives in the named constructors
  * here so the modes can be reviewed side by side (see PLA-2670).
+ *
+ * The status describes the browser-to-WordPress exchange, never the
+ * upstream call WordPress made. A blocked or failed call to Shorthand
+ * still produced a page, so those modes are 2xx: a CDN in front of the
+ * site replaces a 5xx body with its own error page, and the copy below
+ * never reaches the reader (PLA-2804). Only a genuine fault in the
+ * incoming request — no permission, stale input — earns a 4xx.
  */
 class ConnectionFailure {
 
@@ -222,7 +229,7 @@ class ConnectionFailure {
 				self::settings_action(),
 				self::retry_action(),
 			),
-			500
+			200
 		);
 	}
 
@@ -314,7 +321,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -331,7 +338,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -348,7 +355,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -365,7 +372,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -382,7 +389,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -400,7 +407,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -417,7 +424,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -434,7 +441,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			503
+			200
 		);
 	}
 
@@ -451,7 +458,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -468,7 +475,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			502
+			200
 		);
 	}
 
@@ -485,7 +492,7 @@ class ConnectionFailure {
 			array(
 				self::retry_action(),
 			),
-			500
+			200
 		);
 	}
 

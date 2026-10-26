@@ -44,7 +44,7 @@ final class ConnectionFailureClassifierTest extends WordPressTestCase {
 		$failure = $this->classifier->classify( $error );
 
 		$this->assertSame( 'connect.transport.dns', $failure->get_slug() );
-		$this->assertSame( 502, $failure->get_status() );
+		$this->assertSame( 200, $failure->get_status() );
 	}
 
 	public function test_certificate_errors_classify_as_transport_tls(): void {
@@ -109,7 +109,7 @@ final class ConnectionFailureClassifierTest extends WordPressTestCase {
 		$failure = $this->classifier->classify( $this->response( 429, '{"error":"too many requests"}' ) );
 
 		$this->assertSame( 'connect.rate-limited', $failure->get_slug() );
-		$this->assertSame( 503, $failure->get_status() );
+		$this->assertSame( 200, $failure->get_status() );
 	}
 
 	public function test_a_5xx_is_a_server_error_with_the_status_in_diagnostics(): void {
