@@ -25,7 +25,8 @@ final class ConnectionFailureTest extends WordPressTestCase {
 				continue;
 			}
 
-			if ( ConnectionFailure::class === $returns->getName() ) {
+			// PHP 8.5 resolves a `self` return type to the class name; earlier versions report `self`.
+			if ( in_array( $returns->getName(), array( 'self', ConnectionFailure::class ), true ) ) {
 				$modes[ $method->getName() ] = array( $method->getName() );
 			}
 		}
