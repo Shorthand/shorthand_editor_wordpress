@@ -3,7 +3,7 @@ Contributors: shorthandconnect
 Tags: visual storytelling, page builder, content creation, AI layouts
 Requires at least: 6.0
 Tested up to: 7.1
-Stable tag: 1.0.10
+Stable tag: 1.0.11
 Requires PHP: 7.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -367,7 +367,7 @@ For further support and feedback, contact help@shorthand.com.
 
 == Changelog ==
 
-= 1.0.10 =
+= 1.0.11 =
 
 - Use the Shorthand story cover as the post's featured image.
 - Save WordPress post properties, such as the title, author and featured image, when the connection to Shorthand is lost.
