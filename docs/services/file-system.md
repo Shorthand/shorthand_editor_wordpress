@@ -1,7 +1,7 @@
 ---
 title: File system service
 purpose: How the plugin writes story files into the WordPress uploads directory on any host, disk or object store.
-updated: 2026-10-03
+updated: 2026-10-28
 ---
 
 # File system service
@@ -210,15 +210,21 @@ things; nothing else crosses the boundary.
 | `theshed_uploads` | This plugin | Filter, applied once in `Dependencies::get_post_api()`. Receives the default `WpUploads`; must return an `Uploads` |
 | `theshed_get_story_url` | This plugin | Filter, already applied in `Bundle::url()`. Receives the local bundle URL; returns the URL a browser should use |
 
-`theshed_uploads` covers every operation `Uploads` exposes, and download chunks
-are the one thing that does not go through all of it. `Download::chunk_path()`
-puts them in uploads because they span WP Cron requests, and `Staging::gather()`
-reads them back through `Uploads::read_into()`, so a decorator sees the read.
-It does not see the write: `PostAPI::pull_story_chunk()` passes the chunk path
-to the HTTP transport as `filename`, and the transport streams the response
-there itself. The path is inside uploads either way, so a host whose uploads are
-a stream wrapper still stores the chunk; a sidecar that redirects uploads by
-some other means sees only the finished bundle, not the transfer.
+`theshed_uploads` covers every operation `Uploads` exposes, download chunks
+included. `PostAPI::pull_story_chunk()` has the HTTP transport stream each
+chunk into a local file from `wp_tempnam()`, then `Download::store()` writes it
+to `Download::chunk_path()` through `Uploads::write()`, and deletes the local
+file. `Staging::gather()` reads the chunks back through `Uploads::read_into()`.
+A decorator therefore sees every chunk written and read, and uploads only ever
+holds whole chunks. Chunks are in uploads, not the temp directory, because they
+span WP Cron requests, and a temp directory is not shared between requests on
+every host.
+
+The experimental single-request download is the one exception. Its archive is
+received into a local file and unpacked in the same request by
+`Bundle::publish_archive()`, so it never passes through `Uploads`. A decorator
+sees the bundle files written, and no chunk. See the section "Single-request
+download" in `docs/flows/publishing.md`.
 
 Rules that follow:
 

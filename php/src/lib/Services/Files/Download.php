@@ -17,6 +17,11 @@ use Shorthand\Services\StoryId;
  * directory of their own: an empty directory cannot be removed on every host,
  * and one would be left behind by every publish.
  *
+ * A chunk is received into a local temp file and then stored through
+ * `Uploads::write()`, as WordPress core's `download_url()` receives a
+ * sideload. Uploads therefore only ever holds whole chunks, and a sidecar
+ * that decorates `Uploads` sees every chunk written.
+ *
  * A download is finished once the archive is assembled. Nothing reads it after
  * that, which is why it is not part of `Bundle`.
  *
@@ -78,6 +83,17 @@ class Download {
 	}
 
 	/**
+	 * Stores one received chunk in uploads.
+	 *
+	 * @param int    $index      Position of the chunk in the archive.
+	 * @param string $local_path Local file the chunk was received into.
+	 * @return bool|\WP_Error True on success, false on failure, or an error the host named.
+	 */
+	public function store( int $index, string $local_path ) {
+		return $this->uploads->write( $local_path, $this->chunk_path( $index ) );
+	}
+
+	/**
 	 * Every chunk path, in order.
 	 *
 	 * @param int $chunks Number of chunks downloaded.
@@ -108,7 +124,7 @@ class Download {
 	}
 
 	/**
-	 * Removes one chunk, such as the one a failed request left unfinished.
+	 * Removes one chunk, such as one a failed write left part-stored.
 	 *
 	 * @param int $index Chunk number, from 0.
 	 */

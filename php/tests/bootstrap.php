@@ -1549,6 +1549,11 @@ function get_temp_dir(): string {
 	return $GLOBALS['tests_wp_state']['temp_dir'];
 }
 
+function wp_tempnam( string $filename = '', string $dir = '' ): string {
+	$path = tempnam( '' === $dir ? get_temp_dir() : $dir, $filename );
+	return false === $path ? '' : $path;
+}
+
 function tests_wp_set_temp_dir( string $path ): void {
 	$GLOBALS['tests_wp_state']['temp_dir'] = trailingslashit( $path );
 }

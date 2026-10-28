@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 use Shorthand\Services\Files\Bundle;
 use Shorthand\Services\Files\BundleStore;
+use Shorthand\Services\Files\Download;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
 
@@ -21,6 +22,20 @@ use WP_Error;
 class PostAPI {
 
 	const HTTP_TOO_MANY_REQUESTS = 429;
+
+	/**
+	 * Seconds one chunk request may take, from connect to last byte.
+	 *
+	 * Core's 5 s default needs 1 MB/s to move a 5 MB chunk. 30 s needs about
+	 * 170 KB/s, and leaves room under a 60 s limit on the whole request for
+	 * the write to uploads.
+	 */
+	const CHUNK_TIMEOUT = 30;
+
+	/**
+	 * Seconds a single-request download may take. Matches core's `download_url()`.
+	 */
+	const ARCHIVE_TIMEOUT = 300;
 
 	/**
 	 * @var \Shorthand\Services\Shorthand
@@ -449,6 +464,11 @@ class PostAPI {
 			return $res;
 		}
 
+		if ( $this->options->is_single_download() && 0 === $args->files ) {
+			/* A pull that has stored a chunk finishes in chunks. */
+			return $this->pull_story_archive( $args );
+		}
+
 		$args->ensure_chunk_window();
 
 		if ( $args->is_download_complete() ) {
@@ -484,38 +504,21 @@ class PostAPI {
 			return $this->get_invalid_story_id_error( $args->story_id );
 		}
 
-		$download  = $bundle->download( $args->request_nonce );
-		$file_path = $download->chunk_path( $args->files );
+		$download = $bundle->download( $args->request_nonce );
 
-		$url      = $args->file_url;
-		$start    = $args->start;
-		$end      = $args->end - 1;
-		$response = $this->shorthand->shorthand_api_authed_request(
-			$url,
-			'GET',
-			array(
-				'stream'   => true,
-				'filename' => $file_path,
-				'headers'  => array(
-					'Range' => "bytes={$start}-{$end}",
-				),
-			)
-		);
+		require_once ABSPATH . 'wp-admin/includes/file.php';
 
-		/*
-		 * Streaming opens the chunk file before the status is known, and
-		 * `files` counts only chunks that arrived, so cleanup would miss it.
-		 */
-		if ( is_wp_error( $response ) ) {
-			$download->discard_chunk( $args->files );
-			return $response;
+		/* The transport streams into this file; uploads only takes a whole chunk. */
+		$local_path = wp_tempnam( 'sh_chunk_' );
+
+		try {
+			$stored = $this->receive_chunk( $args, $download, $local_path );
+		} finally {
+			wp_delete_file( $local_path );
 		}
 
-		$status_code = wp_remote_retrieve_response_code( $response );
-
-		if ( $status_code !== 206 ) {
-			$download->discard_chunk( $args->files );
-			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
+		if ( is_wp_error( $stored ) ) {
+			return $stored;
 		}
 
 		$args->mark_chunk_downloaded();
@@ -527,6 +530,165 @@ class PostAPI {
 		$this->set_story_update_progress( $args->post_id, new StorySyncProgress( $progress, 'Saving story to WordPress' ) );
 
 		return new WP_Error( 'retry', 'Request further file data', 0 );
+	}
+
+	/**
+	 * Downloads the task's next range into a local file, then stores it in uploads.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args       Task naming the range.
+	 * @param \Shorthand\Services\Files\Download  $download   Transfer the chunk belongs to.
+	 * @param string                              $local_path Local file to receive into.
+	 * @return true|\WP_Error
+	 */
+	private function receive_chunk( StoryUpdateTask $args, Download $download, string $local_path ) {
+		$start    = $args->start;
+		$end      = $args->end - 1;
+		$response = $this->shorthand->shorthand_api_authed_request(
+			$args->file_url,
+			'GET',
+			array(
+				'stream'   => true,
+				'filename' => $local_path,
+				'timeout'  => self::download_timeout( self::CHUNK_TIMEOUT, $end - $start + 1 ),
+				'headers'  => array(
+					'Range' => "bytes={$start}-{$end}",
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+
+		if ( $status_code !== 206 ) {
+			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
+		}
+
+		if ( $args->size > 0 ) {
+			$short = self::check_received( $local_path, min( $args->end, $args->size ) - $start );
+
+			if ( null !== $short ) {
+				return $short;
+			}
+		}
+
+		$stored = $download->store( $args->files, $local_path );
+
+		if ( true === $stored ) {
+			return true;
+		}
+
+		/* `files` counts only chunks that were stored, so cleanup would miss a part-written one. */
+		$download->discard_chunk( $args->files );
+
+		return is_wp_error( $stored ) ? $stored : new WP_Error( 'file', 'Failed to store story chunk.', $download->chunk_path( $args->files ) );
+	}
+
+	/**
+	 * Downloads the whole archive in one request, then publishes it.
+	 *
+	 * The archive is received into a local temp file and unpacked from there,
+	 * so it never goes into uploads. Used when `Options::is_single_download()`.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args Pull to download.
+	 */
+	private function pull_story_archive( StoryUpdateTask $args ): ?WP_Error {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+
+		$local_path = wp_tempnam( 'sh_story_' );
+
+		try {
+			$error = $this->receive_archive( $args, $local_path );
+
+			if ( null === $error ) {
+				$error = $this->publish_story(
+					$args->post_id,
+					$args->story_id,
+					static function ( Bundle $bundle ) use ( $args, $local_path ) {
+						return $bundle->publish_archive( $args->request_nonce, $local_path );
+					}
+				);
+			}
+		} finally {
+			wp_delete_file( $local_path );
+		}
+
+		return $this->finish_pull( $args, $error );
+	}
+
+	/**
+	 * Downloads the whole archive, with no Range header, into a local file.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args       Pull to download.
+	 * @param string                              $local_path Local file to receive into.
+	 */
+	private function receive_archive( StoryUpdateTask $args, string $local_path ): ?WP_Error {
+		$response = $this->shorthand->shorthand_api_authed_request(
+			$args->file_url,
+			'GET',
+			array(
+				'stream'   => true,
+				'filename' => $local_path,
+				'timeout'  => self::download_timeout( self::ARCHIVE_TIMEOUT, $args->size ),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+
+		if ( 200 !== $status_code ) {
+			return new WP_Error( 'status', "Pulling story received HTTP status {$status_code}.", $status_code );
+		}
+
+		return $args->size > 0 ? self::check_received( $local_path, $args->size ) : null;
+	}
+
+	/**
+	 * Seconds one download request may take.
+	 *
+	 * A longer timeout does not help where the host ends the whole PHP request
+	 * sooner. See "Decision: a chunk request may take 30 seconds" in
+	 * `docs/flows/publishing.md`.
+	 *
+	 * @param int $timeout Default for the request.
+	 * @param int $bytes   Bytes the request asks for; 0 when not known.
+	 */
+	private static function download_timeout( int $timeout, int $bytes ): int {
+		/**
+		 * Filters the seconds one story download request may take.
+		 *
+		 * @since 1.0.10
+		 *
+		 * @param int $timeout Seconds; 30 for a chunk, 300 for a whole archive.
+		 * @param int $bytes   Bytes the request asks for; 0 when not known.
+		 */
+		return (int) apply_filters( 'theshed_story_download_timeout', $timeout, $bytes );
+	}
+
+	/**
+	 * Checks a received file holds the bytes asked for.
+	 *
+	 * The HTTP transport does not check its writes to the file, so a full
+	 * disk can leave a short file behind a 2xx response.
+	 *
+	 * @param string $local_path Local file the transport streamed into.
+	 * @param int    $expected   Bytes asked for.
+	 */
+	private static function check_received( string $local_path, int $expected ): ?WP_Error {
+		clearstatcache( true, $local_path );
+
+		$received = (int) filesize( $local_path );
+
+		if ( $expected === $received ) {
+			return null;
+		}
+
+		return new WP_Error( 'file', "Received {$received} of {$expected} bytes of the story download." );
 	}
 
 	public function pull_story_failed( StoryUpdateTask $args, WP_Error $result ): void {
@@ -682,8 +844,16 @@ class PostAPI {
 	}
 
 	public function pull_story_completed( StoryUpdateTask $args ): ?\WP_Error {
-		$error = $this->publish_story_bundle( $args->post_id, $args->story_id, $args->request_nonce, $args->files );
+		return $this->finish_pull( $args, $this->publish_story_bundle( $args->post_id, $args->story_id, $args->request_nonce, $args->files ) );
+	}
 
+	/**
+	 * Ends a pull: on a publish without error, records it and cleans up.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args  Pull to end.
+	 * @param \WP_Error|null                      $error What the publish returned.
+	 */
+	private function finish_pull( StoryUpdateTask $args, ?WP_Error $error ): ?WP_Error {
 		if ( null !== $error ) {
 			return $error;
 		}
@@ -742,7 +912,7 @@ class PostAPI {
 	}
 
 	/**
-	 * Publishes a downloaded story: bundle first, then the post's documents.
+	 * Publishes a story from the chunks it was downloaded in.
 	 *
 	 * @param int|string $post_id  Post the story belongs to.
 	 * @param string     $story_id Shorthand story ID.
@@ -750,13 +920,30 @@ class PostAPI {
 	 * @param int        $chunks   Number of chunks downloaded for this pull.
 	 */
 	public function publish_story_bundle( $post_id, $story_id, string $nonce, int $chunks ): ?\WP_Error {
+		return $this->publish_story(
+			$post_id,
+			$story_id,
+			static function ( Bundle $bundle ) use ( $nonce, $chunks ) {
+				return $bundle->publish( $nonce, $chunks );
+			}
+		);
+	}
+
+	/**
+	 * Publishes a downloaded story: bundle first, then the post's documents.
+	 *
+	 * @param int|string $post_id  Post the story belongs to.
+	 * @param string     $story_id Shorthand story ID.
+	 * @param callable   $unpack   Given the bundle, answers what `Bundle::publish()` does.
+	 */
+	private function publish_story( $post_id, $story_id, callable $unpack ): ?\WP_Error {
 		$bundle = $this->bundles->open( $post_id, (string) $story_id );
 
 		if ( null === $bundle ) {
 			return $this->get_invalid_story_id_error( (string) $story_id );
 		}
 
-		$story = $bundle->publish( $nonce, $chunks );
+		$story = $unpack( $bundle );
 
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );

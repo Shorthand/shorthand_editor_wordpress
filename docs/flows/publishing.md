@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-10-03
+updated: 2026-10-28
 ---
 
 # Publishing a story
@@ -100,7 +100,11 @@ different meaning.
    bundle sits in. A `429` from Shorthand means the workspace is at its
    concurrent build cap; the publish fails at once, and the author chooses when
    to retry.
-2. Successive WP-Cron events download 5 MB ranges into the chunk files.
+2. Successive WP-Cron events download 5 MB ranges. Each range is received
+   into a local temp file and then written to its chunk file in uploads. A
+   range request may take 30 seconds, and a file shorter than the range asked
+   for fails the pull. See the section "Decision: a chunk request may take 30
+   seconds".
 3. On the final chunk, the chunks are concatenated into the staging directory.
 4. The archive is unpacked into the staging directory.
 5. The unpacked tree is copied into the bundle directory, skipping files whose
@@ -120,9 +124,62 @@ different meaning.
 11. The chunks are deleted, and the pull record with them.
 
 Steps 3 to 6 are one call, `Shorthand\Services\Files\Bundle::publish()`, and
-step 10 is `Shorthand\Services\Files\Bundle::commit()`.
+step 10 is `Shorthand\Services\Files\Bundle::commit()`. The experimental
+single-request download replaces steps 2 and 3. See the section
+"Single-request download".
 `Shorthand\Services\PostAPI` names no path, opens no archive, and makes no
 choice between hosts. See `docs/services/file-system.md`.
+
+## Decision: a chunk request may take 30 seconds
+
+`PostAPI::CHUNK_TIMEOUT` is 30 seconds, passed as the `timeout` of each range
+request. The `theshed_story_download_timeout` filter changes it; the filter
+receives the default and the bytes asked for.
+
+WordPress core's default `timeout` is 5 seconds. With the cURL transport it
+covers the whole transfer, so a 5 MB chunk would need 1 MB/s. 30 seconds needs
+about 170 KB/s. WordPress VIP does not change the timeout of
+`wp_remote_request()`; its 5 second cap applies only to
+`vip_safe_wp_remote_request()`.
+
+A longer timeout cannot be relied on. The host ends the whole PHP request at
+its own limit, whatever the HTTP timeout says:
+
+| Host | Limit on one request |
+| --- | --- |
+| WP Engine | 60 s |
+| Pantheon | 120 s; 180 s for cron |
+| Kinsta | 300 s |
+| WordPress VIP cron | None; Cron Control runs each event through WP-CLI |
+| Any PHP-FPM host | `request_terminate_timeout` |
+
+30 seconds leaves room under 60 for the write to uploads. On VIP that write
+is an upload with its own timeout of about 20 seconds for 5 MB.
+
+The HTTP transport does not check its writes to the local file. A full disk
+leaves a short file behind a `206`, so `PostAPI::check_received()` compares
+the file size with the range asked for.
+
+## Single-request download
+
+Experimental, and off by default. Define `THESHED_SINGLE_DOWNLOAD` as `true`
+in `wp-config.php` to turn it on. `Options::is_single_download()` reads it.
+There is no settings screen control.
+
+The first WP-Cron event asks for the whole archive with no Range header, with
+a timeout of `PostAPI::ARCHIVE_TIMEOUT`, 300 seconds, which matches core's
+`download_url()`. The archive is received into a local temp file, checked
+against the size from the `HEAD` request, and published by
+`Bundle::publish_archive()` in the same event. The temp file is deleted
+whether or not the publish succeeds.
+
+The archive never goes into uploads. Reading it back would load it whole into
+memory, and the temp directory is not shared between cron events on every
+host, so the download and the publish must be one request.
+
+Use it only where cron has no limit on run time, such as WordPress VIP. A host
+with a 60 second limit ends the request before a large story arrives. A pull
+that stored a chunk before the constant was set finishes in chunks.
 
 ## Decision: unpack into a local staging directory, then copy
 
@@ -295,10 +352,11 @@ pull left behind: a chunk count per request nonce.
 - `pull_story_begin()` sweeps every entry, deleting chunk `0` to `{count-1}` by
   name, then records its own. The sweep runs before the new pull writes
   anything, so an entry that shares the new nonce holds only stale chunks.
-- `pull_story_chunk()` raises the recorded count after each chunk lands. A
-  chunk request that fails or returns other than `206` has already opened its
-  file, which the count does not cover, so `pull_story_chunk()` deletes it
-  through `Download::discard_chunk()`.
+- `pull_story_chunk()` raises the recorded count after each chunk is stored.
+  A chunk request that fails or returns other than `206` wrote only its local
+  temp file, which is deleted, so uploads holds nothing for it. A write to
+  uploads that fails may leave part of the chunk, which the count does not
+  cover, so `pull_story_chunk()` deletes it through `Download::discard_chunk()`.
 - `pull_story_cleanup()` deletes the chunks and drops the entry, on both a
   successful and a failed pull.
 
@@ -310,8 +368,9 @@ that stored `{path, files}` names chunks at the older layout, and is swept by
 A superseded pull returns early without cleaning up. Its entry survives until
 the next `pull_story_begin()` sweeps it.
 
-A process that dies during a chunk request runs neither path. That chunk is
-left behind, named by no entry.
+A process that dies during a chunk request runs neither path. Its local temp
+file is left for the system to clear. A process that dies while writing the
+chunk to uploads leaves that chunk, named by no entry.
 
 ## Removing a bundle
 

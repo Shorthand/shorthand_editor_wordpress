@@ -325,6 +325,20 @@ class Options {
 		return defined( 'THESHED_API_URL' ) ? THESHED_API_URL : 'https://api.shorthand.com';
 	}
 
+	/**
+	 * Whether a story archive is downloaded in one request, not in chunks.
+	 *
+	 * Experimental. One request must finish inside the host's limit on a
+	 * request's run time, so this suits only a host whose cron runs without
+	 * one. Set `THESHED_SINGLE_DOWNLOAD` to `true` in `wp-config.php` to turn
+	 * it on. See "Single-request download" in `docs/flows/publishing.md`.
+	 *
+	 * @since 1.0.10
+	 */
+	public function is_single_download(): bool {
+		return defined( 'THESHED_SINGLE_DOWNLOAD' ) && true === THESHED_SINGLE_DOWNLOAD;
+	}
+
 
 	public function get_editor_url( $story_id ) {
 		return $this->get_app_url() . '/organisations/' . $this->get_token_org_id() . '/stories/' . $story_id;

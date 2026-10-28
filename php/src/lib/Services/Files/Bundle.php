@@ -138,14 +138,67 @@ class Bundle {
 	 */
 	public function publish( string $nonce, int $chunks ) {
 		$download = $this->download( $nonce );
-		$staging  = Staging::open( $this->uploads, 'sh_pull_' . $download->segment() . '_' );
+
+		return $this->staged(
+			$download,
+			function ( Staging $staging ) use ( $download, $chunks ): ?string {
+				return $staging->gather( $download->chunk_paths( $chunks ), 'archive.zip' );
+			}
+		);
+	}
+
+	/**
+	 * Publishes an archive already held locally, as `publish()` does chunks.
+	 *
+	 * For an archive received whole, in the request that publishes it. The
+	 * archive never goes into uploads, so nothing reads it back.
+	 *
+	 * @param string $nonce        Request nonce identifying the download.
+	 * @param string $archive_path Local path of the whole archive.
+	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array, collisions: array}|\WP_Error
+	 */
+	public function publish_archive( string $nonce, string $archive_path ) {
+		return $this->staged(
+			$this->download( $nonce ),
+			function () use ( $archive_path ): ?string {
+				return is_readable( $archive_path ) ? $archive_path : null;
+			}
+		);
+	}
+
+	/**
+	 * Removes every file the manifest names, and forgets the manifest.
+	 *
+	 * The `{post_id}` parent is left alone: it cannot be listed, so it cannot
+	 * be known to be empty.
+	 *
+	 * The manifest goes whether or not every delete landed. This runs on
+	 * `before_delete_post`, and WordPress drops the post's meta straight after,
+	 * so keeping the record would buy nothing: a file the host refused is an
+	 * orphan either way.
+	 */
+	public function delete(): void {
+		$this->prune( $this->manifest() );
+
+		delete_post_meta( $this->post_id, self::MANIFEST_META );
+	}
+
+	/**
+	 * Runs a publish in a staging directory of its own, and removes it after.
+	 *
+	 * @param \Shorthand\Services\Files\Download $download Transfer the archive arrived in.
+	 * @param callable                           $assemble Given the staging directory, answers the local archive path, or null.
+	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array, collisions: array}|\WP_Error
+	 */
+	private function staged( Download $download, callable $assemble ) {
+		$staging = Staging::open( $this->uploads, 'sh_pull_' . $download->segment() . '_' );
 
 		if ( null === $staging ) {
 			return new WP_Error( 'file', 'No file system is available to unpack the story.' );
 		}
 
 		try {
-			return $this->unpack( $staging, $download, $chunks );
+			return $this->unpack( $staging, $assemble( $staging ) );
 		} finally {
 			/*
 			 * The story is in uploads by now, so this fails nothing. The
@@ -167,33 +220,13 @@ class Bundle {
 	}
 
 	/**
-	 * Removes every file the manifest names, and forgets the manifest.
-	 *
-	 * The `{post_id}` parent is left alone: it cannot be listed, so it cannot
-	 * be known to be empty.
-	 *
-	 * The manifest goes whether or not every delete landed. This runs on
-	 * `before_delete_post`, and WordPress drops the post's meta straight after,
-	 * so keeping the record would buy nothing: a file the host refused is an
-	 * orphan either way.
-	 */
-	public function delete(): void {
-		$this->prune( $this->manifest() );
-
-		delete_post_meta( $this->post_id, self::MANIFEST_META );
-	}
-
-	/**
 	 * The publish, with the staging directory already open.
 	 *
-	 * @param \Shorthand\Services\Files\Staging  $staging  Scratch directory for this publish.
-	 * @param \Shorthand\Services\Files\Download $download Transfer the archive arrived in.
-	 * @param int                                $chunks   Number of chunks downloaded.
+	 * @param \Shorthand\Services\Files\Staging $staging      Scratch directory for this publish.
+	 * @param string|null                       $archive_path Local path of the assembled archive, or null when it could not be assembled.
 	 * @return array{head: string, article: string, head_path: string, article_path: string, manifest: array, collisions: array}|\WP_Error
 	 */
-	private function unpack( Staging $staging, Download $download, int $chunks ) {
-		$archive_path = $staging->gather( $download->chunk_paths( $chunks ), 'archive.zip' );
-
+	private function unpack( Staging $staging, ?string $archive_path ) {
 		if ( null === $archive_path ) {
 			return new WP_Error( 'file', 'Failed to assemble story download.', $staging->file( 'archive.zip' ) );
 		}

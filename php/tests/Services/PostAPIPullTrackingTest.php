@@ -36,6 +36,33 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	 */
 	private $chunk_responses = array();
 
+	/**
+	 * Options of each download request, in order.
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	private $requests = array();
+
+	/**
+	 * Bytes the transport leaves out of each file it streams into.
+	 *
+	 * @var int
+	 */
+	private $short = 0;
+
+	/**
+	 * Body of a download request with no Range header.
+	 *
+	 * @var string
+	 */
+	private $archive = '';
+
+	/** @var bool */
+	private $single = false;
+
+	/** @var string */
+	private $temp_root;
+
 	protected function setUp(): void {
 		parent::setUp();
 
@@ -43,7 +70,21 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		tests_wp_set_post( 7, (object) array( 'ID' => 7 ) );
 		tests_wp_set_post_meta( 7, 'story_id', 'aBc123' );
 
+		$this->temp_root = sys_get_temp_dir() . '/sh_pull_' . getmypid() . '_' . uniqid();
+		mkdir( $this->temp_root, 0777, true );
+		$this->temp_root = (string) realpath( $this->temp_root );
+		tests_wp_set_temp_dir( $this->temp_root );
+
 		$this->uploads = new FakeUploads();
+	}
+
+	protected function tearDown(): void {
+		foreach ( (array) glob( $this->temp_root . '/*' ) as $path ) {
+			unlink( (string) $path );
+		}
+		rmdir( $this->temp_root );
+
+		parent::tearDown();
 	}
 
 	public function test_beginning_a_pull_records_it_with_no_chunks_yet(): void {
@@ -169,8 +210,169 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	}
 
 	/**
-	 * Streaming opens the chunk file before the status is known, so a refused
-	 * chunk still leaves one. `story_pulls` counts only chunks that arrived.
+	 * The transport streams into a local temp file, and uploads takes the
+	 * chunk only once it is whole, through `Uploads::write()`.
+	 */
+	public function test_a_chunk_is_received_locally_and_stored_through_uploads(): void {
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 206 ) ) );
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = 3 * 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
+
+		$this->assertSame( 'retry', $this->make_post_api()->pull_story_cron( $task )->get_error_code() );
+
+		$chunk    = 'vip://wp-content/uploads/shorthand/7/aBc123_' . $task->request_nonce . '_0.part';
+		$received = $this->requests[0]['filename'];
+
+		$this->assertSame( array( $chunk ), array_keys( $this->uploads->objects() ) );
+		$this->assertSame( 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB, strlen( $this->uploads->objects()[ $chunk ] ) );
+		$this->assertSame( 1, $this->uploads->writes() );
+		$this->assertStringStartsWith( $this->temp_root . '/', $received );
+		$this->assertContains( $received, tests_wp_deleted_files() );
+	}
+
+	/**
+	 * Core's 5 s default would need 1 MB/s to move one chunk.
+	 */
+	public function test_a_chunk_request_allows_thirty_seconds(): void {
+		$this->pull_one_chunk();
+
+		$this->assertSame( PostAPI::CHUNK_TIMEOUT, $this->requests[0]['timeout'] );
+	}
+
+	public function test_the_chunk_timeout_can_be_filtered(): void {
+		add_filter(
+			'theshed_story_download_timeout',
+			static function (): int {
+				return 45;
+			}
+		);
+
+		$this->pull_one_chunk();
+
+		$this->assertSame( 45, $this->requests[0]['timeout'] );
+	}
+
+	/**
+	 * The HTTP transport does not check its writes to the file, so a full
+	 * disk leaves a short file behind a 206.
+	 */
+	public function test_a_chunk_received_short_is_not_stored(): void {
+		$this->short = 1;
+
+		$result = $this->pull_one_chunk();
+
+		$this->assertSame( 'file', $result->get_error_code() );
+		$this->assertSame( array(), $this->uploads->objects() );
+		$this->assertContains( $this->requests[0]['filename'], tests_wp_deleted_files() );
+	}
+
+	/**
+	 * The last chunk asks past the end; only the bytes left are expected.
+	 */
+	public function test_the_last_chunk_expects_only_the_bytes_left(): void {
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 206 ) ) );
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB + 10;
+		$task->files    = 1;
+		$task->start    = 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
+		$task->end      = 2 * $task->start;
+
+		/* The server sends the 10 bytes left, not the range asked for. */
+		$this->short = $task->end - $task->size;
+
+		$this->assertSame( 'retry', $this->make_post_api()->pull_story_cron( $task )->get_error_code() );
+		$this->assertSame( 1, $this->uploads->writes() );
+	}
+
+	/**
+	 * The archive never goes into uploads: it is received into a local file
+	 * and unpacked from there.
+	 */
+	public function test_a_single_download_asks_for_the_whole_archive_and_stores_no_chunk(): void {
+		$this->single  = true;
+		$this->archive = 'not a zip';
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = strlen( $this->archive );
+
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 200 ) ) );
+
+		$result = $this->make_post_api()->pull_story_cron( $task );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertArrayNotHasKey( 'Range', $this->requests[0]['headers'] ?? array() );
+		$this->assertSame( PostAPI::ARCHIVE_TIMEOUT, $this->requests[0]['timeout'] );
+		$this->assertSame( 0, $this->uploads->writes() );
+		$this->assertContains( $this->requests[0]['filename'], tests_wp_deleted_files() );
+	}
+
+	public function test_a_single_download_received_short_publishes_nothing(): void {
+		$this->single  = true;
+		$this->archive = 'archive';
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = 100;
+
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 200 ) ) );
+
+		$result = $this->make_post_api()->pull_story_cron( $task );
+
+		$this->assertSame( 'file', $result->get_error_code() );
+		$this->assertSame( 0, $this->uploads->writes() );
+	}
+
+	/**
+	 * A pull that stored a chunk before the option was turned on is not
+	 * started again.
+	 */
+	public function test_a_pull_begun_in_chunks_finishes_in_chunks(): void {
+		$this->single = true;
+
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 206 ) ) );
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = 3 * 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
+		$task->files    = 1;
+		$task->start    = 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
+		$task->end      = 2 * $task->start;
+
+		$this->assertSame( 'retry', $this->make_post_api()->pull_story_cron( $task )->get_error_code() );
+		$this->assertArrayHasKey( 'Range', $this->requests[0]['headers'] );
+	}
+
+	/**
+	 * Pulls the first chunk of a three-chunk download.
+	 *
+	 * @return \WP_Error The retry for the next chunk, or the failure.
+	 */
+	private function pull_one_chunk(): \WP_Error {
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 206 ) ) );
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = 3 * 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
+
+		return $this->make_post_api()->pull_story_cron( $task );
+	}
+
+	public function test_a_chunk_uploads_refuses_leaves_no_file_behind(): void {
+		$this->uploads->fail_writes( new \WP_Error( 'file', 'Refused.' ), 1 );
+
+		$this->fail_second_chunk( array( 'response' => array( 'code' => 206 ) ) );
+
+		$this->assertSame( array(), $this->uploads->objects() );
+	}
+
+	/**
+	 * `story_pulls` counts only chunks that were stored, so a chunk that
+	 * failed must leave nothing in uploads for cleanup to miss.
 	 */
 	public function test_a_refused_chunk_leaves_no_file_behind(): void {
 		$this->fail_second_chunk( array( 'response' => array( 'code' => 500 ) ) );
@@ -221,6 +423,7 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 
 		$options = $this->createMock( Options::class );
 		$options->method( 'get_api_url' )->willReturn( 'https://api.example.test' );
+		$options->method( 'is_single_download' )->willReturn( $this->single );
 
 		$shorthand = $this->createMock( Shorthand::class );
 		$shorthand->method( 'shorthand_api_authed_request' )->willReturnCallback(
@@ -233,7 +436,16 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 					);
 				}
 
-				$this->uploads->put( $options['filename'], 'chunk' );
+				$this->requests[] = $options;
+
+				$body = $this->archive;
+
+				if ( isset( $options['headers']['Range'] ) && preg_match( '/^bytes=(\d+)-(\d+)$/', $options['headers']['Range'], $range ) ) {
+					$body = str_repeat( 'c', (int) $range[2] - (int) $range[1] + 1 );
+				}
+
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Stands in for the HTTP transport streaming to a local file.
+				file_put_contents( $options['filename'], substr( $body, 0, max( 0, strlen( $body ) - $this->short ) ) );
 
 				return array_shift( $this->chunk_responses );
 			}

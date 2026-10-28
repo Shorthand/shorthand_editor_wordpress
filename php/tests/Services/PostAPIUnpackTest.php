@@ -13,6 +13,7 @@ use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryTextExtractor;
+use Shorthand\Services\StoryUpdateTask;
 use Shorthand\Tests\Support\FakeUploads;
 use Shorthand\Tests\WordPressTestCase;
 use ZipArchive;
@@ -721,9 +722,48 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->assertNull( $result );
 	}
 
-	private function make_post_api( ?StoryCover $story_cover = null ): PostAPI {
+	/**
+	 * With the experimental option on, the archive is received in one
+	 * request into a local file and unpacked from there. It never goes into
+	 * uploads, so only the bundle's own files are written.
+	 */
+	public function test_a_story_downloaded_in_one_request_is_published_without_chunks(): void {
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => '',
+				'article.html' => '<h1>Story</h1>',
+			)
+		);
+
+		$shorthand = $this->createMock( Shorthand::class );
+		$shorthand->expects( $this->once() )
+			->method( 'shorthand_api_authed_request' )
+			->willReturnCallback(
+				static function ( $url, $method, $options ) use ( $archive ): array {
+					copy( $archive, $options['filename'] );
+					return array( 'response' => array( 'code' => 200 ) );
+				}
+			);
+
+		tests_wp_set_post_meta( 7, 'story_update_nonce', 'pull1' );
+
+		$task           = new StoryUpdateTask( 7, 'aBc123', 'pull1', 'draft', 'https://api.example.test/download/1' );
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = (int) filesize( $archive );
+
+		$this->assertNull( $this->make_post_api( null, $shorthand, true )->pull_story_cron( $task ) );
+
+		$this->assertSame(
+			array( self::BUNDLE . '/article.html', self::BUNDLE . '/head.html' ),
+			array_keys( $this->uploads->objects() )
+		);
+		$this->assertSame( '<h1>Story</h1>', \get_post_meta( 7, 'story_body', true ) );
+	}
+
+	private function make_post_api( ?StoryCover $story_cover = null, ?Shorthand $shorthand = null, bool $single = false ): PostAPI {
 		$options = $this->createMock( Options::class );
 		$options->method( 'get_post_regex_list' )->willReturn( '' );
+		$options->method( 'is_single_download' )->willReturn( $single );
 
 		$transformer = $this->createMock( StoryContentTransformer::class );
 		$transformer->method( 'rewrite_story_bundle_paths' )->willReturnCallback(
@@ -741,7 +781,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		);
 
 		return new PostAPI(
-			$this->createMock( Shorthand::class ),
+			$shorthand ?? $this->createMock( Shorthand::class ),
 			$options,
 			$this->createMock( Permissions::class ),
 			'tse_story',
