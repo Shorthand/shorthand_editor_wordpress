@@ -506,10 +506,12 @@ class PostAPI {
 
 		$download = $bundle->download( $args->request_nonce );
 
-		require_once ABSPATH . 'wp-admin/includes/file.php';
-
 		/* The transport streams into this file; uploads only takes a whole chunk. */
-		$local_path = wp_tempnam( 'sh_chunk_' );
+		$local_path = self::make_local_file( 'sh_chunk_' );
+
+		if ( is_wp_error( $local_path ) ) {
+			return $local_path;
+		}
 
 		try {
 			$stored = $this->receive_chunk( $args, $download, $local_path );
@@ -595,9 +597,11 @@ class PostAPI {
 	 * @param \Shorthand\Services\StoryUpdateTask $args Pull to download.
 	 */
 	private function pull_story_archive( StoryUpdateTask $args ): ?WP_Error {
-		require_once ABSPATH . 'wp-admin/includes/file.php';
+		$local_path = self::make_local_file( 'sh_story_' );
 
-		$local_path = wp_tempnam( 'sh_story_' );
+		if ( is_wp_error( $local_path ) ) {
+			return $local_path;
+		}
 
 		try {
 			$error = $this->receive_archive( $args, $local_path );
@@ -646,6 +650,30 @@ class PostAPI {
 		}
 
 		return $args->size > 0 ? self::check_received( $local_path, $args->size ) : null;
+	}
+
+	/**
+	 * A new local file for the transport to stream a download into.
+	 *
+	 * `wp_tempnam()` answers with a path even where it could not make the
+	 * file. Requested anyway, the download fails as "Shorthand is not
+	 * available", which sends the author after the wrong fault.
+	 *
+	 * @param string $prefix Start of the file name.
+	 * @return string|\WP_Error Path of the file, or why there is none.
+	 */
+	private static function make_local_file( string $prefix ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+
+		$path = wp_tempnam( $prefix );
+
+		if ( ! is_file( $path ) ) {
+			$dir = get_temp_dir();
+
+			return new WP_Error( 'file', "Could not create a temporary file in {$dir}.", $dir );
+		}
+
+		return $path;
 	}
 
 	/**

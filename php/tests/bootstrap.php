@@ -201,6 +201,7 @@ function tests_wp_reset_state(): void {
 			'baseurl' => 'https://example.test/wp-content/uploads',
 		),
 		'temp_dir'             => sys_get_temp_dir() . '/',
+		'temp_writable'        => true,
 		'copy_error'           => null,
 		'copy_failure'         => false,
 		'delete_failure'       => false,
@@ -1550,12 +1551,23 @@ function get_temp_dir(): string {
 }
 
 function wp_tempnam( string $filename = '', string $dir = '' ): string {
-	$path = tempnam( '' === $dir ? get_temp_dir() : $dir, $filename );
+	$dir = '' === $dir ? get_temp_dir() : $dir;
+
+	/* As in WordPress: a directory that cannot be written still yields a path, with no file at it. */
+	if ( ! $GLOBALS['tests_wp_state']['temp_writable'] ) {
+		return trailingslashit( $dir ) . $filename . uniqid() . '.tmp';
+	}
+
+	$path = tempnam( $dir, $filename );
 	return false === $path ? '' : $path;
 }
 
 function tests_wp_set_temp_dir( string $path ): void {
 	$GLOBALS['tests_wp_state']['temp_dir'] = trailingslashit( $path );
+}
+
+function tests_wp_set_temp_writable( bool $writable ): void {
+	$GLOBALS['tests_wp_state']['temp_writable'] = $writable;
 }
 
 function wp_mkdir_p( string $target ): bool {

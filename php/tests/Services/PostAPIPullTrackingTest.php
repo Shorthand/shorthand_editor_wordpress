@@ -352,6 +352,40 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	}
 
 	/**
+	 * `wp_tempnam()` answers with a path even where it made no file. Requested
+	 * anyway, the download fails as "Shorthand is not available", which sends
+	 * the author after the wrong fault.
+	 */
+	public function test_a_chunk_with_no_local_file_to_receive_into_is_not_requested(): void {
+		$task = $this->begin_pull();
+
+		tests_wp_set_temp_writable( false );
+
+		$result = $this->pull_chunk( $task );
+
+		$this->assertSame( 'file', $result->get_error_code() );
+		$this->assertStringContainsString( $this->temp_root, $result->get_error_message() );
+		$this->assertSame( array(), $this->requests );
+		$this->assertSame( 0, $this->uploads->writes() );
+	}
+
+	public function test_a_single_download_with_no_local_file_to_receive_into_is_not_requested(): void {
+		$this->single = true;
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = 100;
+
+		tests_wp_set_temp_writable( false );
+
+		$result = $this->make_post_api()->pull_story_cron( $task );
+
+		$this->assertSame( 'file', $result->get_error_code() );
+		$this->assertStringContainsString( $this->temp_root, $result->get_error_message() );
+		$this->assertSame( array(), $this->requests );
+	}
+
+	/**
 	 * A pull that stored a chunk before the option was turned on is not
 	 * started again.
 	 */
