@@ -233,6 +233,30 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	}
 
 	/**
+	 * A chunk can run on a server where `pull_story_begin()` did not, so the
+	 * directory made then may be missing.
+	 */
+	public function test_a_chunk_makes_its_directory_before_it_is_stored(): void {
+		$task = $this->begin_pull();
+		$this->uploads->reset_counts();
+
+		$this->assertSame( 'retry', $this->pull_chunk( $task )->get_error_code() );
+		$this->assertSame( 1, $this->uploads->make_dir_calls() );
+		$this->assertSame( 1, $this->uploads->writes() );
+	}
+
+	/**
+	 * Only the write decides whether a chunk was stored.
+	 */
+	public function test_a_chunk_is_stored_when_its_directory_is_refused(): void {
+		$task = $this->begin_pull();
+		$this->uploads->fail_make_dir();
+
+		$this->assertSame( 'retry', $this->pull_chunk( $task )->get_error_code() );
+		$this->assertCount( 1, $this->uploads->objects() );
+	}
+
+	/**
 	 * Core's 5 s default would need 1 MB/s to move one chunk.
 	 */
 	public function test_a_chunk_request_allows_thirty_seconds(): void {
@@ -353,9 +377,18 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	 * @return \WP_Error The retry for the next chunk, or the failure.
 	 */
 	private function pull_one_chunk(): \WP_Error {
+		return $this->pull_chunk( $this->begin_pull() );
+	}
+
+	/**
+	 * Pulls the first chunk of a three-chunk download already begun.
+	 *
+	 * @param StoryUpdateTask $task The begun pull.
+	 * @return \WP_Error The retry for the next chunk, or the failure.
+	 */
+	private function pull_chunk( StoryUpdateTask $task ): \WP_Error {
 		$this->chunk_responses = array( array( 'response' => array( 'code' => 206 ) ) );
 
-		$task           = $this->begin_pull();
 		$task->file_url = 'https://api.example.test/file/1';
 		$task->size     = 3 * 1024 * 1024 * StoryUpdateTask::CHUNK_SIZE_MB;
 

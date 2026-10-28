@@ -90,6 +90,13 @@ class Download {
 	 * @return bool|\WP_Error True on success, false on failure, or an error the host named.
 	 */
 	public function store( int $index, string $local_path ) {
+		/*
+		 * A later cron event can run where the directory made by `start()` is
+		 * missing, such as a new container. `make_dir()` reports success where
+		 * there are no directories, so the write alone decides the outcome.
+		 */
+		$this->uploads->make_dir( dirname( $this->chunk_path( $index ) ) );
+
 		return $this->uploads->write( $local_path, $this->chunk_path( $index ) );
 	}
 

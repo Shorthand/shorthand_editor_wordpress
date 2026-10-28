@@ -214,7 +214,9 @@ things; nothing else crosses the boundary.
 included. `PostAPI::pull_story_chunk()` has the HTTP transport stream each
 chunk into a local file from `wp_tempnam()`, then `Download::store()` writes it
 to `Download::chunk_path()` through `Uploads::write()`, and deletes the local
-file. `Staging::gather()` reads the chunks back through `Uploads::read_into()`.
+file. `Download::store()` calls `Uploads::make_dir()` before each write and
+ignores the result: a chunk can run on a server that lacks the directory made
+when the pull began, and the write alone decides the outcome. `Staging::gather()` reads the chunks back through `Uploads::read_into()`.
 A decorator therefore sees every chunk written and read, and uploads only ever
 holds whole chunks. Chunks are in uploads, not the temp directory, because they
 span WP Cron requests, and a temp directory is not shared between requests on
