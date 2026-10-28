@@ -235,7 +235,7 @@ class Manifest {
 						esc_html__( 'The stored story manifest names %s, which is not a plain path inside the story bundle, so that file is left alone.', 'the-shorthand-editor' ),
 						esc_html( (string) $name )
 					),
-					'1.0.10'
+					'1.0.12'
 				);
 
 				continue;
@@ -249,7 +249,7 @@ class Manifest {
 						esc_html__( 'The stored story manifest has no size and CRC32 for %s, so that file can no longer be removed.', 'the-shorthand-editor' ),
 						esc_html( (string) $name )
 					),
-					'1.0.10'
+					'1.0.12'
 				);
 
 				continue;

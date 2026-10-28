@@ -662,7 +662,7 @@ class PostAPI {
 		/**
 		 * Filters the seconds one story download request may take.
 		 *
-		 * @since 1.0.10
+		 * @since 1.0.12
 		 *
 		 * @param int $timeout Seconds; 30 for a chunk, 300 for a whole archive.
 		 * @param int $bytes   Bytes the request asks for; 0 when not known.

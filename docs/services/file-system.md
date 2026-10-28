@@ -206,7 +206,7 @@ things; nothing else crosses the boundary.
 
 | Item | Owner | Shape |
 | --- | --- | --- |
-| `Shorthand\Services\Files\Uploads` | This plugin | Interface, four methods. Public from 1.0.10: a change to a signature is a breaking change to the sidecar and needs a major version note here |
+| `Shorthand\Services\Files\Uploads` | This plugin | Interface, four methods. Public from 1.0.12: a change to a signature is a breaking change to the sidecar and needs a major version note here |
 | `theshed_uploads` | This plugin | Filter, applied once in `Dependencies::get_post_api()`. Receives the default `WpUploads`; must return an `Uploads` |
 | `theshed_get_story_url` | This plugin | Filter, already applied in `Bundle::url()`. Receives the local bundle URL; returns the URL a browser should use |
 

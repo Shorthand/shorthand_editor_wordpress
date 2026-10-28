@@ -333,7 +333,7 @@ class Options {
 	 * one. Set `THESHED_SINGLE_DOWNLOAD` to `true` in `wp-config.php` to turn
 	 * it on. See "Single-request download" in `docs/flows/publishing.md`.
 	 *
-	 * @since 1.0.10
+	 * @since 1.0.12
 	 */
 	public function is_single_download(): bool {
 		return defined( 'THESHED_SINGLE_DOWNLOAD' ) && true === THESHED_SINGLE_DOWNLOAD;

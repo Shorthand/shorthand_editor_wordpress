@@ -213,7 +213,7 @@ class Bundle {
 						esc_html__( 'The story staging directory %s could not be removed, so it stays until the system clears its temp directory.', 'the-shorthand-editor' ),
 						esc_html( $staging->path() )
 					),
-					'1.0.10'
+					'1.0.12'
 				);
 			}
 		}

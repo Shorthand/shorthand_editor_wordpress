@@ -31,7 +31,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * See `docs/services/file-system.md`.
  *
- * @since 1.0.10
+ * @since 1.0.12
  */
 interface Uploads {
 
