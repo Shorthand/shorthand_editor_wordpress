@@ -239,7 +239,7 @@ refuses a path after 2000 modifications. The copy diff writes a path only when
 its size or CRC32 changed, so a path accrues a modification each time
 Shorthand re-exports it with different bytes.
 
-Plugin versions 1.0.8 and 1.0.9 moved `article.html` and `head.html` under
+Plugin versions 1.0.8 to 1.0.11 moved `article.html` and `head.html` under
 `docs/{nonce}/`, a new path each publish, so that those two never reached the
 limit. That was reverted, for two reasons:
 
@@ -248,7 +248,7 @@ limit. That was reverted, for two reasons:
 - Shorthand gives no contract on what the root of an export holds, so no list
   of files to move can be complete.
 
-A bundle written by 1.0.8 or 1.0.9 needs no migration. Its stored manifest
+A bundle written by 1.0.8 to 1.0.11 needs no migration. Its stored manifest
 names `docs/{nonce}/article.html` and `docs/{nonce}/head.html`; the next
 publish writes the root documents, and `Manifest::removed()` deletes the
 `docs/{nonce}` pair.

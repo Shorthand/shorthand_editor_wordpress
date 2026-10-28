@@ -198,7 +198,7 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	}
 
 	/**
-	 * Releases 1.0.8 and 1.0.9 moved the documents to `docs/{nonce}/`. The
+	 * Releases 1.0.8 to 1.0.11 moved the documents to `docs/{nonce}/`. The
 	 * stored manifest names that pair, so the next publish removes it.
 	 */
 	public function test_documents_moved_by_an_earlier_release_return_to_the_bundle_root(): void {
