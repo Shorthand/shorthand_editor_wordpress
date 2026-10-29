@@ -88,8 +88,10 @@ memory raise must come before extraction.
 never injected, and carries no host knowledge.
 
 `FileSystem::boot()` returns `null` when no `WP_Filesystem_Base` is available.
-The flag is set only once a valid instance is in hand, so a failed boot is
-retried on the next call rather than short-circuiting to an unset global.
+The flag is set on the first call, whether the boot works or not, so a failed
+boot is not tried again in the same request. Credentials arrive with a new
+request, never part way through one, so a second try would only print the
+`request_filesystem_credentials()` form again.
 `WpUploads::write()` turns `null` into a `WP_Error` naming the file it could
 not write; `read_into()`, `delete()` and `make_dir()` return `false`, so
 `PostAPI::pull_story_begin()` records no pull it could not serve.

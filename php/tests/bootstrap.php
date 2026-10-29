@@ -206,6 +206,7 @@ function tests_wp_reset_state(): void {
 		'copy_failure'         => false,
 		'delete_failure'       => false,
 		'filesystem_available' => true,
+		'credential_requests'  => 0,
 		'doing_it_wrong'       => array(),
 		'wp_rand_calls'        => 0,
 		'status_headers'       => array(),
@@ -1549,7 +1550,16 @@ function wp_raise_memory_limit( string $context = 'admin' ): bool {
  * @return array|false
  */
 function request_filesystem_credentials( string $form_post ) {
+	$GLOBALS['tests_wp_state']['credential_requests']++;
+
 	return array();
+}
+
+/**
+ * How many times the credentials form was asked for.
+ */
+function tests_wp_credential_requests(): int {
+	return $GLOBALS['tests_wp_state']['credential_requests'];
 }
 
 function site_url( string $path = '' ): string {

@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class FileSystem {
 
 	/**
-	 * Whether `WP_Filesystem` has been booted for this request.
+	 * Whether a boot has been tried for this request, whatever its result.
 	 *
 	 * @var bool
 	 */
@@ -26,32 +26,34 @@ class FileSystem {
 	 * The booted `WP_Filesystem`, or null where there is none.
 	 *
 	 * A boot can fail: credentials may be missing, and `WP_Filesystem()` then
-	 * leaves the global unset. Only a successful boot is remembered, so a
-	 * later call tries again rather than answering with the unset global.
+	 * leaves the global unset. A failed boot is remembered too. Credentials
+	 * arrive with a new request, never part way through this one, so a second
+	 * try would only print the credentials form again.
 	 *
 	 * @return \WP_Filesystem_Base|null
 	 */
 	public static function boot(): ?\WP_Filesystem_Base {
-		if ( self::$booted ) {
-			return $GLOBALS['wp_filesystem'];
+		if ( ! self::$booted ) {
+			self::$booted = true;
+
+			wp_raise_memory_limit( 'admin' );
+
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+
+			WP_Filesystem();
+
+			if ( ! self::is_booted() ) {
+				WP_Filesystem( request_filesystem_credentials( site_url() ) );
+			}
 		}
 
-		wp_raise_memory_limit( 'admin' );
+		return self::is_booted() ? $GLOBALS['wp_filesystem'] : null;
+	}
 
-		require_once ABSPATH . 'wp-admin/includes/file.php';
-
-		WP_Filesystem();
-
-		if ( ! isset( $GLOBALS['wp_filesystem'] ) || ! is_a( $GLOBALS['wp_filesystem'], 'WP_Filesystem_Base' ) ) {
-			WP_Filesystem( request_filesystem_credentials( site_url() ) );
-		}
-
-		if ( ! isset( $GLOBALS['wp_filesystem'] ) || ! is_a( $GLOBALS['wp_filesystem'], 'WP_Filesystem_Base' ) ) {
-			return null;
-		}
-
-		self::$booted = true;
-
-		return $GLOBALS['wp_filesystem'];
+	/**
+	 * Whether the `WP_Filesystem` global holds a usable instance.
+	 */
+	private static function is_booted(): bool {
+		return isset( $GLOBALS['wp_filesystem'] ) && is_a( $GLOBALS['wp_filesystem'], 'WP_Filesystem_Base' );
 	}
 }

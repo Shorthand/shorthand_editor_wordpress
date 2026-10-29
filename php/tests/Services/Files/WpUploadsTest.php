@@ -51,15 +51,14 @@ final class WpUploadsTest extends WordPressTestCase {
 	}
 
 	/**
-	 * Only a successful boot is remembered, so a host that asks for
-	 * credentials once is not written off for the rest of the request.
+	 * Credentials arrive with a new request, never part way through one, so a
+	 * second boot would only print the credentials form again.
 	 */
-	public function test_a_failed_boot_is_retried(): void {
+	public function test_a_failed_boot_is_not_retried(): void {
+		$this->assertNull( FileSystem::boot() );
 		$this->assertNull( FileSystem::boot() );
 
-		tests_wp_set_filesystem_available( true );
-
-		$this->assertInstanceOf( \WP_Filesystem_Base::class, FileSystem::boot() );
+		$this->assertSame( 1, tests_wp_credential_requests() );
 	}
 
 	public function test_a_read_fails(): void {

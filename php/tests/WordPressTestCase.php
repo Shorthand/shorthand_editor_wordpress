@@ -14,6 +14,7 @@ abstract class WordPressTestCase extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		\tests_wp_reset_state();
+		$this->forgetFileSystemBoot();
 	}
 
 	/**
@@ -70,8 +71,8 @@ abstract class WordPressTestCase extends TestCase {
 	/**
 	 * Returns the file system boot to the state of a fresh request.
 	 *
-	 * `FileSystem` remembers a successful boot in a static, which outlives a
-	 * test. Anything exercising a failed boot has to forget it first.
+	 * `FileSystem` remembers a boot, failed or not, in a static, which outlives
+	 * a test. One test is one request, so every test starts with none.
 	 */
 	protected function forgetFileSystemBoot(): void {
 		$forget = \Closure::bind(
