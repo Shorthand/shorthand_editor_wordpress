@@ -1314,6 +1314,16 @@ function get_post_meta( int $post_id, string $meta_key = '', bool $single = fals
 }
 
 /**
+ * Post meta here is read straight from the state, with no cache to drop.
+ *
+ * @param int|string $key   Cache key.
+ * @param string     $group Cache group.
+ */
+function wp_cache_delete( $key, string $group = '' ): bool {
+	return true;
+}
+
+/**
  * @param mixed $meta_value
  */
 function delete_post_meta( int $post_id, string $meta_key, $meta_value = '' ): bool {

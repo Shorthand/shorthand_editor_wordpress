@@ -173,6 +173,12 @@ against the size from the `HEAD` request, and published by
 `Bundle::publish_archive()` in the same event. The temp file is deleted
 whether or not the publish succeeds.
 
+The request nonce is checked again once the archive has arrived. A publish
+begun during the download owns the bundle and the post's progress, so the
+older pull returns without publishing. The check drops the cached post meta
+first: without a persistent object cache, the value read when the event began
+would otherwise be read again.
+
 The archive never goes into uploads. Reading it back would load it whole into
 memory, and the temp directory is not shared between cron events on every
 host, so the download and the publish must be one request.

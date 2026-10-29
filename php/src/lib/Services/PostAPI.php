@@ -370,7 +370,18 @@ class PostAPI {
 		}
 	}
 
+	/**
+	 * Whether this pull is still the post's latest.
+	 *
+	 * A pull can run for minutes, and a newer publish writes the nonce from
+	 * another request. Without a persistent object cache, the meta read at the
+	 * start of this request stays cached for the rest of it, so it is dropped.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args Pull to check.
+	 */
 	private function check_pull_story_status( StoryUpdateTask $args ): bool {
+		wp_cache_delete( $args->post_id, 'post_meta' );
+
 		$nonce = get_post_meta( $args->post_id, 'story_update_nonce', true );
 		return $nonce === $args->request_nonce;
 	}
@@ -605,6 +616,11 @@ class PostAPI {
 
 		try {
 			$error = $this->receive_archive( $args, $local_path );
+
+			if ( null === $error && ! $this->check_pull_story_status( $args ) ) {
+				/* A newer publish began during the download, and owns the bundle now. */
+				return null;
+			}
 
 			if ( null === $error ) {
 				$error = $this->publish_story(

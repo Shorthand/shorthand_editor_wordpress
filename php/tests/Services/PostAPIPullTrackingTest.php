@@ -16,6 +16,7 @@ use Shorthand\Services\StoryUpdateTask;
 use Shorthand\Services\Files\BundleStore;
 use Shorthand\Tests\Support\FakeUploads;
 use Shorthand\Tests\WordPressTestCase;
+use ZipArchive;
 
 /**
  * Tracking in-flight downloads so their chunks can be removed.
@@ -59,6 +60,13 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 
 	/** @var bool */
 	private $single = false;
+
+	/**
+	 * Whether a newer publish begins while a download is in flight.
+	 *
+	 * @var bool
+	 */
+	private $superseded = false;
 
 	/** @var string */
 	private $temp_root;
@@ -352,6 +360,29 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	}
 
 	/**
+	 * The download can take minutes. A publish begun in that time owns the
+	 * bundle and the post's progress, so the older pull must not publish.
+	 */
+	public function test_a_single_download_superseded_while_it_downloads_publishes_nothing(): void {
+		$this->single     = true;
+		$this->archive    = $this->make_archive();
+		$this->superseded = true;
+
+		$task           = $this->begin_pull();
+		$task->file_url = 'https://api.example.test/file/1';
+		$task->size     = strlen( $this->archive );
+
+		$this->chunk_responses = array( array( 'response' => array( 'code' => 200 ) ) );
+
+		$result = $this->make_post_api()->pull_story_cron( $task );
+
+		$this->assertSame( 0, $this->uploads->writes() );
+		$this->assertNull( $result );
+		$this->assertSame( '', get_post_meta( 7, 'story_version', true ) );
+		$this->assertContains( $this->requests[0]['filename'], tests_wp_deleted_files() );
+	}
+
+	/**
 	 * `wp_tempnam()` answers with a path even where it made no file. Requested
 	 * anyway, the download fails as "Shorthand is not available", which sends
 	 * the author after the wrong fault.
@@ -476,6 +507,22 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		$api->pull_story_failed( $task, $result );
 	}
 
+	/**
+	 * Bytes of a story archive that publishes.
+	 */
+	private function make_archive(): string {
+		$path = $this->temp_root . '/story.zip';
+
+		$zip = new ZipArchive();
+		$zip->open( $path, ZipArchive::CREATE | ZipArchive::OVERWRITE );
+		$zip->addFromString( 'article.html', '<h1>Story</h1>' );
+		$zip->addFromString( 'head.html', '<title>Story</title>' );
+		$zip->close();
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		return (string) file_get_contents( $path );
+	}
+
 	private function begin_pull(): StoryUpdateTask {
 		$task = $this->make_post_api()->pull_story_begin( 7 );
 
@@ -504,6 +551,10 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 				}
 
 				$this->requests[] = $options;
+
+				if ( $this->superseded ) {
+					tests_wp_set_post_meta( 7, 'story_update_nonce', 'newer' );
+				}
 
 				$body = $this->archive;
 
