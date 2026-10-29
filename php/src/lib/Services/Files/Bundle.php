@@ -276,7 +276,8 @@ class Bundle {
 	 * Copies an unpacked tree into the bundle, skipping unchanged files.
 	 *
 	 * Driven from `$manifest`, never by listing either directory. A file is
-	 * unchanged when its name, size and CRC32 all match the stored entry.
+	 * unchanged when its name, size and CRC32 all match the stored entry, and
+	 * `trusted()` has not dropped that entry.
 	 *
 	 * @param string $source_dir Unpacked tree in the staging directory.
 	 * @param array  $manifest   The tree to copy: bundle path to size and CRC32.
@@ -287,6 +288,7 @@ class Bundle {
 		$bundle_path = $this->path();
 		$made        = array();
 		$written     = array();
+		$stored      = self::trusted( $stored, $manifest );
 
 		foreach ( $manifest as $name => $entry ) {
 			if ( $this->is_unchanged( $stored, $name, $entry ) ) {
@@ -368,5 +370,29 @@ class Bundle {
 		return isset( $previous['size'], $previous['crc'] )
 			&& (int) $previous['size'] === $entry['size']
 			&& (int) $previous['crc'] === $entry['crc'];
+	}
+
+	/**
+	 * The stored entries a skip can rely on.
+	 *
+	 * Names that differ only in case are one file on a host that ignores case,
+	 * and that file holds whichever name was written last. Once the archive
+	 * drops a name from such a group, the content left under the others is not
+	 * known, so their entries are dropped and the names are written again.
+	 *
+	 * @param array $stored   Manifest of the last successful publish.
+	 * @param array $manifest The tree about to be copied.
+	 * @return array The stored manifest, less any group the archive broke up.
+	 */
+	private static function trusted( array $stored, array $manifest ): array {
+		foreach ( Manifest::collisions( array_keys( $stored ) ) as $group ) {
+			$names = array_flip( $group );
+
+			if ( count( array_intersect_key( $manifest, $names ) ) < count( $group ) ) {
+				$stored = array_diff_key( $stored, $names );
+			}
+		}
+
+		return $stored;
 	}
 }

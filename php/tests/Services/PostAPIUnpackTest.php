@@ -578,6 +578,41 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 	}
 
 	/**
+	 * On a host that folds case, two names that collide are one file, holding
+	 * whichever was written last. Once the export drops one of them, the
+	 * other is written again rather than trusted to be unchanged.
+	 */
+	public function test_a_name_left_alone_by_a_fixed_collision_is_written_again(): void {
+		$this->publish(
+			'pull1',
+			array(
+				'article.html' => 'article',
+				'a.css'        => 'lower',
+			)
+		);
+		$this->publish(
+			'pull2',
+			array(
+				'article.html' => 'article',
+				'A.css'        => 'upper',
+				'a.css'        => 'lower',
+			)
+		);
+		$this->uploads->reset_counts();
+
+		$this->publish(
+			'pull3',
+			array(
+				'article.html' => 'article',
+				'a.css'        => 'lower',
+			)
+		);
+
+		$this->assertSame( 1, $this->uploads->writes() );
+		$this->assertSame( 'lower', $this->bundle_objects()[ self::BUNDLE . '/a.css' ] );
+	}
+
+	/**
 	 * The later entry is the file `ZipArchive::extractTo()` leaves, so it is
 	 * the one copied, and the one the manifest describes.
 	 */

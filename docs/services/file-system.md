@@ -194,10 +194,15 @@ is fixed. The plugin publishes what the archive holds and tells the author:
 3. The editor toolbar shows a notice while the warning stands, and names the
    files in its tooltip. A publish error or a publish in progress hides it.
 
-Names that differ only in case are not rewritten. The manifest keeps both, with
-two CRC32 values. On an object store the host keeps one file, holding whichever
-was written last, so one name may show the other's content until the export is
-fixed.
+Names that differ only in case are not rewritten while they collide. The
+manifest keeps both, with two CRC32 values. On an object store the host keeps
+one file, holding whichever was written last, so one name may show the other's
+content while the collision stands.
+
+Once an export drops a name from such a group, `Bundle::trusted()` drops the
+whole group from the stored manifest before the copy. The names left in the
+archive are then written again, even when their size and CRC32 match, so the
+one file on an object store holds their content.
 
 ## Sidecar plugins
 
