@@ -367,6 +367,10 @@ For further support and feedback, contact help@shorthand.com.
 
 == Changelog ==
 
+= 1.0.12 =
+
+- The third argument of the `theshed_post_process_body` and `theshed_post_process_head` filters is the document's path at the root of the story's folder in uploads again (`article.html`, `head.html`), not under `docs/{nonce}/` as in 1.0.8 to 1.0.11.
+
 = 1.0.11 =
 
 - Use the Shorthand story cover as the post's featured image.
