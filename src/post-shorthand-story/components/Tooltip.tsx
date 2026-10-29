@@ -12,8 +12,10 @@ export function Tooltip({ message, content, children }: React.PropsWithChildren<
   const panelId = React.useId();
 
   return (
-    <div className={styles.tooltipContainer} tabIndex={0} aria-describedby={panelId}>
-      {children}
+    <div className={styles.tooltipContainer}>
+      <button type="button" className={styles.tooltipTrigger} aria-describedby={panelId}>
+        {children}
+      </button>
       <div id={panelId} role="tooltip" className={styles.tooltipPanel}>
         <p className={styles.tooltipMessage}>{message}</p>
         <p className={styles.tooltipDetail}>{content}</p>

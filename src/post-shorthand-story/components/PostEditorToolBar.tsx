@@ -159,7 +159,7 @@ function StoryError({
       content={error.tooltip}
       message={error.message || "An error has occurred."}
     >
-      <p className={styles.toolbarError}>{children}</p>
+      <span className={styles.toolbarError}>{children}</span>
     </Tooltip>
   );
 }
@@ -176,7 +176,7 @@ function StoryWarning({
 
   return (
     <Tooltip content={warning.tooltip} message="Files that share a name">
-      <p className={styles.toolbarWarning}>{children}</p>
+      <span className={styles.toolbarWarning}>{children}</span>
     </Tooltip>
   );
 }
