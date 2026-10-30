@@ -7,6 +7,7 @@ namespace Shorthand\Tests\Plugin;
 use Shorthand\Admin\AdminController;
 use Shorthand\Core\Version;
 use Shorthand\Plugin\Dependencies;
+use Shorthand\Plugin\FrontPage;
 use Shorthand\Plugin\PostType;
 use Shorthand\Plugin\Templates;
 use Shorthand\Services\AuthStateManager;
@@ -29,6 +30,7 @@ final class DependenciesTest extends WordPressTestCase {
 		$this->assertSame( 0, $dependencies->token_manager_created );
 		$this->assertSame( 0, $dependencies->post_type_created );
 		$this->assertSame( 0, $dependencies->templates_created );
+		$this->assertSame( 0, $dependencies->front_page_created );
 		$this->assertSame( 0, $dependencies->cron_created );
 	}
 
@@ -42,11 +44,13 @@ final class DependenciesTest extends WordPressTestCase {
 		$this->assertSame( 1, $dependencies->token_manager_created );
 		$this->assertSame( 1, $dependencies->post_type_created );
 		$this->assertSame( 1, $dependencies->templates_created );
+		$this->assertSame( 1, $dependencies->front_page_created );
 		$this->assertSame( 1, $dependencies->cron_created );
 		$this->assertTrue( $dependencies->test_options->init_called );
 		$this->assertTrue( $dependencies->test_token_manager->init_called );
 		$this->assertTrue( $dependencies->test_post_type->init_called );
 		$this->assertTrue( $dependencies->test_templates->init_called );
+		$this->assertTrue( $dependencies->test_front_page->init_called );
 		$this->assertTrue( $dependencies->test_cron->init_called );
 	}
 }
@@ -56,12 +60,14 @@ final class TestDependencies extends Dependencies {
 	public $token_manager_created = 0;
 	public $post_type_created     = 0;
 	public $templates_created     = 0;
+	public $front_page_created    = 0;
 	public $cron_created          = 0;
 
 	public $test_options;
 	public $test_token_manager;
 	public $test_post_type;
 	public $test_templates;
+	public $test_front_page;
 	public $test_cron;
 
 	public function __construct() {
@@ -94,6 +100,12 @@ final class TestDependencies extends Dependencies {
 		++$this->templates_created;
 		$this->test_templates = new TestTemplates();
 		return $this->test_templates;
+	}
+
+	protected function create_front_page( string $post_type, Templates $templates ): FrontPage {
+		++$this->front_page_created;
+		$this->test_front_page = new TestFrontPage();
+		return $this->test_front_page;
 	}
 
 	protected function create_cron( Dependencies $dependencies ): Cron {
@@ -143,6 +155,16 @@ final class TestPostType extends PostType {
 }
 
 final class TestTemplates extends Templates {
+	public $init_called = false;
+
+	public function __construct() {}
+
+	public function init() {
+		$this->init_called = true;
+	}
+}
+
+final class TestFrontPage extends FrontPage {
 	public $init_called = false;
 
 	public function __construct() {}

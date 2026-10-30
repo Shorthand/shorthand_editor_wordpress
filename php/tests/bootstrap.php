@@ -146,6 +146,8 @@ if ( ! class_exists( 'WP_Error' ) ) {
  * Reset the small slice of WordPress state used by the unit tests.
  */
 function tests_wp_reset_state(): void {
+	unset( $GLOBALS['post'] );
+
 	$GLOBALS['tests_wp_state'] = array(
 		'options'              => array(),
 		'filter_args'          => array(),
@@ -210,7 +212,10 @@ function tests_wp_reset_state(): void {
 		'safe_redirects'       => array(),
 		'hooks'                => array(),
 		'is_preview'           => false,
+		'is_front_page'        => false,
 		'singular_post_type'   => null,
+		'post_type_by_id'      => array(),
+		'located_templates'    => array(),
 		'queried_object_id'    => 0,
 		'have_posts'           => 0,
 		'actions_done'         => array(),
@@ -909,9 +914,15 @@ function tests_wp_set_post( int $post_id, $post ): void {
 }
 
 /**
+ * Without an ID, returns the global post, as core does.
+ *
  * @return mixed
  */
-function get_post( int $post_id ) {
+function get_post( ?int $post_id = null ) {
+	if ( null === $post_id ) {
+		return $GLOBALS['post'] ?? null;
+	}
+
 	return $GLOBALS['tests_wp_state']['stub_posts'][ $post_id ] ?? null;
 }
 
@@ -1108,6 +1119,14 @@ function tests_wp_set_singular( ?string $post_type ): void {
 	$GLOBALS['tests_wp_state']['singular_post_type'] = $post_type;
 }
 
+/**
+ * False on every route the suite models. A story serving as the static front
+ * page is singular, and not single.
+ */
+function is_single(): bool {
+	return false;
+}
+
 function is_singular( string $post_type = '' ): bool {
 	$singular = $GLOBALS['tests_wp_state']['singular_post_type'];
 
@@ -1116,6 +1135,100 @@ function is_singular( string $post_type = '' ): bool {
 	}
 
 	return '' === $post_type || $post_type === $singular;
+}
+
+if ( ! class_exists( 'WP_Query' ) ) {
+	/**
+	 * Stands in for the query object handed to `pre_get_posts`.
+	 */
+	class WP_Query {
+		/**
+		 * @var array<string, mixed>
+		 */
+		public $query_vars = array();
+
+		/**
+		 * @var bool
+		 */
+		public $main_query = true;
+
+		/**
+		 * @param array<string, mixed> $query_vars
+		 */
+		public function __construct( array $query_vars = array() ) {
+			$this->query_vars = $query_vars;
+		}
+
+		/**
+		 * @param mixed $default
+		 * @return mixed
+		 */
+		public function get( string $name, $default = '' ) {
+			return $this->query_vars[ $name ] ?? $default;
+		}
+
+		/**
+		 * @param mixed $value
+		 */
+		public function set( string $name, $value ): void {
+			$this->query_vars[ $name ] = $value;
+		}
+
+		public function is_main_query(): bool {
+			return $this->main_query;
+		}
+	}
+}
+
+function tests_wp_set_front_page( bool $is_front_page ): void {
+	$GLOBALS['tests_wp_state']['is_front_page'] = $is_front_page;
+}
+
+function is_front_page(): bool {
+	return $GLOBALS['tests_wp_state']['is_front_page'];
+}
+
+function tests_wp_set_post_type( int $post_id, string $post_type ): void {
+	$GLOBALS['tests_wp_state']['post_type_by_id'][ $post_id ] = $post_type;
+}
+
+/**
+ * Without an argument, resolves the global post, as core does.
+ *
+ * @param mixed $post
+ * @return string|false
+ */
+function get_post_type( $post = null ) {
+	if ( null === $post ) {
+		$post = get_post();
+	}
+
+	if ( is_object( $post ) && isset( $post->post_type ) ) {
+		return $post->post_type;
+	}
+
+	$post_id = is_object( $post ) ? (int) $post->ID : (int) $post;
+	return $GLOBALS['tests_wp_state']['post_type_by_id'][ $post_id ] ?? false;
+}
+
+/**
+ * Maps a template name a theme provides to the path locate_template() returns.
+ */
+function tests_wp_set_located_template( string $template_name, string $path ): void {
+	$GLOBALS['tests_wp_state']['located_templates'][ $template_name ] = $path;
+}
+
+/**
+ * @param string|string[] $template_names
+ */
+function locate_template( $template_names, bool $load = false, bool $load_once = true, array $args = array() ): string {
+	foreach ( (array) $template_names as $template_name ) {
+		if ( isset( $GLOBALS['tests_wp_state']['located_templates'][ $template_name ] ) ) {
+			return $GLOBALS['tests_wp_state']['located_templates'][ $template_name ];
+		}
+	}
+
+	return '';
 }
 
 function tests_wp_set_queried_object_id( int $post_id ): void {
