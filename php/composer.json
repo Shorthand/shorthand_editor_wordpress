@@ -22,6 +22,9 @@
   "config": {
     "allow-plugins": {
       "dealerdirect/phpcodesniffer-composer-installer": true
+    },
+    "platform": {
+      "php": "8.2.0"
     }
   },
   "scripts": {
@@ -40,8 +43,8 @@
       "rector process -c ./rector.php --no-diffs --no-progress-bar ./src",
       "phpcbf ./src"
     ],
-    "check-7.2": [
-      "phpcs -n --standard=PHPCompatibility --runtime-set testVersion 7.2 ./src"
+    "check-compat": [
+      "phpcs -n --standard=PHPCompatibility --runtime-set testVersion 7.4- ./src"
     ],
     "test": [
       "phpunit --configuration phpunit.xml.dist"

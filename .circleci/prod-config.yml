@@ -289,10 +289,16 @@ commands:
       - run: sudo ./aws/install --update
 
 jobs:
+  # Runs once per supported PHP 8 version (see the matrix in each workflow).
+  # Reflection, type juggling and deprecations change between minor versions,
+  # so a pass on one version says little about the next. composer.json pins
+  # platform PHP 8.2, the floor of PHPUnit 11, so one lock installs on all.
   wp-plugin-php-unit:
+    parameters:
+      php:
+        type: string
     docker:
-      # composer.lock resolves symfony/string 8.x, which needs PHP 8.4.
-      - image: cimg/php:8.4
+      - image: cimg/php:<< parameters.php >>
         auth:
           username: $DOCKERHUB_USER
           password: $DOCKERHUB_PASSWORD
@@ -307,6 +313,26 @@ jobs:
           name: Run PHP unit tests
           command: composer -d php test
 
+  # PHPCompatibility reads the plugin source against every PHP version from
+  # 7.4, the plugin's minimum, so syntax and functions newer than 7.4 fail
+  # here and not on a customer's site.
+  wp-plugin-php-compat:
+    docker:
+      - image: cimg/php:8.4
+        auth:
+          username: $DOCKERHUB_USER
+          password: $DOCKERHUB_PASSWORD
+    resource_class: small
+    steps:
+      - checkout:
+          method: blobless
+      - run:
+          name: Install PHP dev dependencies
+          command: composer -d php install --no-interaction --no-scripts --prefer-dist
+      - run:
+          name: Check PHP 7.4 compatibility
+          command: composer -d php check-compat
+
   # Integration suite inside wp-env on a machine executor. Each machine job is
   # a fresh VM, so the wp-env instance (~/.wp-env: WordPress core, the core test
   # library, wp-tests-config.php, the config checksum) and the Docker images
@@ -314,7 +340,18 @@ jobs:
   # sees an unchanged config checksum and skips pull, build, download and
   # install; only the MariaDB volume is new, and the core test library installs
   # its own tables on each run.
+  #
+  # The `wp` and `php` parameters pick the WordPress core and PHP image through
+  # wp-env's WP_ENV_CORE and WP_ENV_PHP_VERSION. The workflows run the oldest
+  # supported pair and the newest, plus the .wp-env.test.json default.
   wp-plugin-php-integration:
+    parameters:
+      wp:
+        type: string
+        default: latest
+      php:
+        type: string
+        default: "8.3"
     machine:
       image: ubuntu-2404:current
     resource_class: medium
@@ -338,12 +375,21 @@ jobs:
             npm install -g pnpm@10
             pnpm --version
       - run:
+          name: Pick WordPress and PHP versions
+          command: |
+            if [[ "<< parameters.wp >>" != "latest" ]]; then
+              echo "export WP_ENV_CORE=https://wordpress.org/wordpress-<< parameters.wp >>.zip" >> "$BASH_ENV"
+            fi
+            echo "export WP_ENV_PHP_VERSION=<< parameters.php >>" >> "$BASH_ENV"
+      - run:
           # Cache keys need files in the working directory. The latest
           # WordPress release drives `"core": null`, so a new release invalidates
           # the instance and image caches instead of running against stale core.
+          # Each matrix pair has its own instance and images.
           name: Write cache keys
           command: |
             mkdir -p .cache-keys
+            echo "<< parameters.wp >>:<< parameters.php >>" > .cache-keys/matrix
             curl -fsS https://api.wordpress.org/core/version-check/1.7/ \
               | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).offers[0].version))' \
               > .cache-keys/wp-latest
@@ -362,10 +408,10 @@ jobs:
             - ~/.pnpm-store
       - restore_cache:
           keys:
-            - wp-env-home-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+            - wp-env-home-v2-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/matrix" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
       - restore_cache:
           keys:
-            - wp-env-images-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+            - wp-env-images-v2-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/matrix" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
       - restore_cache:
           keys:
             - wp-plugin-integration-vendor-v1-{{ checksum "php/tests/integration/composer.lock" }}
@@ -404,11 +450,11 @@ jobs:
             docker save -o ~/docker-cache/wp-env-images.tar $IMAGES
             ls -lh ~/docker-cache/wp-env-images.tar
       - save_cache:
-          key: wp-env-home-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+          key: wp-env-home-v2-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/matrix" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
           paths:
             - ~/.wp-env
       - save_cache:
-          key: wp-env-images-v1-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
+          key: wp-env-images-v2-{{ checksum ".wp-env.test.json" }}-{{ checksum ".cache-keys/matrix" }}-{{ checksum ".cache-keys/wp-env-version" }}-{{ checksum ".cache-keys/wp-latest" }}
           paths:
             - ~/docker-cache
       - run:
@@ -531,8 +577,20 @@ workflows:
       not:
         equal: [scheduled_pipeline, << pipeline.trigger_source >>]
     jobs:
-      - wp-plugin-php-unit
-      - wp-plugin-php-integration
+      - wp-plugin-php-unit:
+          matrix:
+            parameters:
+              php: ["8.2", "8.3", "8.4", "8.5"]
+      - wp-plugin-php-integration:
+          matrix:
+            parameters:
+              wp: ["6.0.11", "latest"]
+              php: ["7.4", "8.3", "8.5"]
+            exclude:
+              - { wp: "6.0.11", php: "8.3" }
+              - { wp: "6.0.11", php: "8.5" }
+              - { wp: latest, php: "7.4" }
+      - wp-plugin-php-compat
       - wp-plugin-build:
           filters:
             branches:
@@ -545,6 +603,7 @@ workflows:
           requires:
             - wp-plugin-php-unit
             - wp-plugin-php-integration
+            - wp-plugin-php-compat
           filters:
             branches:
               only:
@@ -569,7 +628,20 @@ workflows:
     jobs:
       - wp-plugin-php-unit:
           <<: *tag_only
+          matrix:
+            parameters:
+              php: ["8.2", "8.3", "8.4", "8.5"]
       - wp-plugin-php-integration:
+          <<: *tag_only
+          matrix:
+            parameters:
+              wp: ["6.0.11", "latest"]
+              php: ["7.4", "8.3", "8.5"]
+            exclude:
+              - { wp: "6.0.11", php: "8.3" }
+              - { wp: "6.0.11", php: "8.5" }
+              - { wp: latest, php: "7.4" }
+      - wp-plugin-php-compat:
           <<: *tag_only
       - wp-plugin-bundle-and-upload:
           <<: *tag_only
@@ -579,6 +651,7 @@ workflows:
           requires:
             - wp-plugin-php-unit
             - wp-plugin-php-integration
+            - wp-plugin-php-compat
 
       - wp-plugin-release:
           <<: *tag_only

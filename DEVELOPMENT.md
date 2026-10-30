@@ -83,11 +83,16 @@ composer run-script downcompile
 ```
 
 Before committing your PHP changes, check the source against the
-compatibility rules for the lower language version.
+compatibility rules for every PHP version from 7.4. The `wp-plugin-php-compat`
+job runs the same check in CI.
 
 ```bash
-composer run-script check-7.2
+composer run-script check-compat
 ```
+
+`composer.json` pins platform PHP 8.2, the oldest version PHPUnit 11 runs on.
+Composer therefore resolves dev dependencies that install on every PHP version
+the unit suite runs on, whatever PHP the developer has.
 
 The PHP test suites are covered in [PHP tests](#php-tests).
 
@@ -215,15 +220,33 @@ setting them sends `wp-admin` back to plain HTTP.
 
 #### PHP tests
 
-There are two suites. Both run in CI on every branch: the unit suite in the
-`wp-plugin-php-unit` job, the integration suite in `wp-plugin-php-integration`.
+There are two suites. Both run in CI on every branch, on several PHP
+versions: the unit suite in the `wp-plugin-php-unit` job, the integration suite
+in `wp-plugin-php-integration`. A tag releases only when every one of these
+jobs passes.
 
-Unit tests live in `php/tests` and run on the host, with no Docker, against
-the WordPress stubs in `php/tests/bootstrap.php`:
+Unit tests live in `php/tests` and run against the WordPress stubs in
+`php/tests/bootstrap.php`. `pnpm test:php` runs them on the host PHP:
 
 ```bash
 pnpm test:php          # or: composer test, from php/
 ```
+
+The host PHP is one version, and PHP behaviour changes between minor
+versions. For example, reflection reports a `self` return type as `self` on
+PHP 8.4 and as the class name on PHP 8.5. `pnpm test:php:docker` runs the unit
+suite in the CircleCI image for each PHP version CI uses, so a pass here is a
+pass in CI:
+
+```bash
+pnpm test:php:docker          # PHP 8.2, 8.3, 8.4 and 8.5
+bin/php-unit.sh 8.4           # one version
+```
+
+Each version keeps its own `vendor` in a Docker volume, so `php/vendor` on the
+host is not touched. Do not trust Homebrew's versioned formulae for this: on
+some machines `/opt/homebrew/opt/php@8.4/bin/php` runs PHP 8.5. Check with
+`php -v`.
 
 Integration tests live in `php/tests/integration` and run inside a second
 wp-env instance, `.wp-env.test.json` on port 8889, on top of the WordPress core
@@ -244,12 +267,21 @@ each. `MATRIX="6.0.11:7.4" pnpm test:php:matrix` picks other pairs.
 ##### Integration suite in CI
 
 `wp-plugin-php-integration` in `.circleci/prod-config.yml` runs the same three
-commands on a `machine` executor. Every machine job is a new VM, so the job
-restores three caches before `pnpm env:test`:
+commands on a `machine` executor. Its `wp` and `php` parameters set
+`WP_ENV_CORE` and `WP_ENV_PHP_VERSION`. The workflows run three pairs:
+
+| WordPress | PHP | Why |
+| --- | --- | --- |
+| 6.0.11 | 7.4 | The oldest WordPress and PHP the plugin supports |
+| latest | 8.3 | The `.wp-env.test.json` default |
+| latest | 8.5 | The newest PHP |
+
+Every machine job is a new VM, so the job restores three caches before
+`pnpm env:test`:
 
 | Cache | Path | Key inputs |
 | --- | --- | --- |
-| wp-env instance | `~/.wp-env` | `.wp-env.test.json`, `@wordpress/env` version, latest WordPress release |
+| wp-env instance | `~/.wp-env` | `.wp-env.test.json`, the WordPress/PHP pair, `@wordpress/env` version, latest WordPress release |
 | Docker images | `~/docker-cache/wp-env-images.tar` | same as the instance |
 | Composer vendor | `php/tests/integration/vendor` | `php/tests/integration/composer.lock` |
 
@@ -263,8 +295,15 @@ tables. The latest-release key comes from `api.wordpress.org`, written to
 `.cache-keys/wp-latest` (ignored by git), so a WordPress release invalidates
 both caches instead of running against stale core.
 
-The job is not required by `wp-plugin-bundle-and-upload`. A failure shows on
-the pipeline but does not block the master upload.
+##### Required checks
+
+`wp-plugin-bundle-and-upload` requires the unit, integration and compat jobs,
+on `master` and on a release tag. A failure in any of them stops the upload.
+
+The "Protecting master" ruleset in GitHub requires the `wp-plugin-workflow`
+check, so a pull request cannot merge while any job in that workflow fails.
+The check name stays the same when jobs are added, renamed or put in a
+matrix, so the ruleset does not need to change with the config.
 
 #### Troubleshooting
 

@@ -124,6 +124,16 @@ reformat anything in that directory.
 
       ./vendor/bin/phpunit
 
+  That runs one PHP version, the host's. Before pushing, run the suite on
+  every PHP version CI uses, from the repository root:
+
+      pnpm test:php:docker
+
+- After changing source under `src/`, check it against PHP 7.4, the
+  plugin's minimum:
+
+      composer check-compat
+
 - When adding or renaming functions, classes, or hooks, update the
   relevant DocBlocks and any documentation that references them.
 - Keep changes narrowly scoped — do not reformat unrelated code to fit the
