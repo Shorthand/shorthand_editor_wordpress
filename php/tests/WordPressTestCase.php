@@ -7,12 +7,14 @@ namespace Shorthand\Tests;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
+use Shorthand\Services\Files\FileSystem;
 
 abstract class WordPressTestCase extends TestCase {
 
 	protected function setUp(): void {
 		parent::setUp();
 		\tests_wp_reset_state();
+		$this->forgetFileSystemBoot();
 	}
 
 	/**
@@ -38,6 +40,20 @@ abstract class WordPressTestCase extends TestCase {
 	}
 
 	/**
+	 * @return mixed
+	 */
+	protected function getPrivateProperty( object $object, string $property_name ) {
+		$reflection = new ReflectionClass( $object );
+		$property   = $reflection->getProperty( $property_name );
+
+		if ( method_exists( $property, 'setAccessible' ) ) {
+			$property->setAccessible( true );
+		}
+
+		return $property->getValue( $object );
+	}
+
+	/**
 	 * @param array<int, mixed> $arguments
 	 * @return mixed
 	 */
@@ -50,5 +66,25 @@ abstract class WordPressTestCase extends TestCase {
 		}
 
 		return $method->invokeArgs( $object, $arguments );
+	}
+
+	/**
+	 * Returns the file system boot to the state of a fresh request.
+	 *
+	 * `FileSystem` remembers a boot, failed or not, in a static, which outlives
+	 * a test. One test is one request, so every test starts with none.
+	 */
+	protected function forgetFileSystemBoot(): void {
+		$forget = \Closure::bind(
+			static function (): void {
+				FileSystem::$booted = false;
+			},
+			null,
+			FileSystem::class
+		);
+
+		$forget();
+
+		unset( $GLOBALS['wp_filesystem'] );
 	}
 }

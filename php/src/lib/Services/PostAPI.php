@@ -7,10 +7,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 
+use Shorthand\Services\Files\Bundle;
+use Shorthand\Services\Files\BundleStore;
+use Shorthand\Services\Files\Download;
 use Shorthand\Services\Options;
 use Shorthand\Services\Permissions;
-
-use ZipArchive;
 
 use WP_REST_Request;
 
@@ -21,6 +22,20 @@ use WP_Error;
 class PostAPI {
 
 	const HTTP_TOO_MANY_REQUESTS = 429;
+
+	/**
+	 * Seconds one chunk request may take, from connect to last byte.
+	 *
+	 * Core's 5 s default needs 1 MB/s to move a 5 MB chunk. 30 s needs about
+	 * 170 KB/s, and leaves room under a 60 s limit on the whole request for
+	 * the write to uploads.
+	 */
+	const CHUNK_TIMEOUT = 30;
+
+	/**
+	 * Seconds a single-request download may take. Matches core's `download_url()`.
+	 */
+	const ARCHIVE_TIMEOUT = 300;
 
 	/**
 	 * @var \Shorthand\Services\Shorthand
@@ -47,9 +62,9 @@ class PostAPI {
 	 */
 	private $auth_state_manager;
 	/**
-	 * @var \Shorthand\Services\FileSystemService
+	 * @var \Shorthand\Services\Files\BundleStore
 	 */
-	private $file_system;
+	private $bundles;
 	/**
 	 * Derives the plain text stored on the post.
 	 *
@@ -69,14 +84,14 @@ class PostAPI {
 	 */
 	private $storing_text = false;
 
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, FileSystemService $file_system, StoryTextExtractor $text_extractor, StoryCover $story_cover ) {
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, BundleStore $bundles, StoryTextExtractor $text_extractor, StoryCover $story_cover ) {
 		$this->shorthand           = $shorthand;
 		$this->options             = $options;
 		$this->permissions         = $permissions;
 		$this->post_type           = $post_type;
 		$this->content_transformer = $content_transformer;
 		$this->auth_state_manager  = $auth_state_manager;
-		$this->file_system         = $file_system;
+		$this->bundles             = $bundles;
 		$this->text_extractor      = $text_extractor;
 		$this->story_cover         = $story_cover;
 	}
@@ -190,6 +205,31 @@ class PostAPI {
 		}
 	}
 
+	/**
+	 * The warning left by the last successful publish, as stored.
+	 *
+	 * @param int $post_id Post the story belongs to.
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	public function get_story_update_warning( int $post_id ): ?array {
+		$warning = get_post_meta( $post_id, 'story_update_warning', true );
+		return is_array( $warning ) ? $warning : null;
+	}
+
+	/**
+	 * Records or clears the warning left by a successful publish.
+	 *
+	 * @param int            $post_id Post the story belongs to.
+	 * @param \WP_Error|null $warning What the author should know, or null to clear.
+	 */
+	public function set_story_update_warning( int $post_id, ?\WP_Error $warning = null ): void {
+		if ( null === $warning ) {
+			delete_post_meta( $post_id, 'story_update_warning' );
+		} else {
+			update_post_meta( $post_id, 'story_update_warning', $this->get_wp_error_as_array( $warning ) );
+		}
+	}
+
 	public function get_story_update_progress( int $post_id ): ?StorySyncProgress {
 		return StorySyncProgress::from_meta_value( get_post_meta( $post_id, 'story_update_state', true ) );
 	}
@@ -243,43 +283,43 @@ class PostAPI {
 			return new WP_Error( 'auth', __( 'Cannot publish: the Shorthand connection is not active.', 'the-shorthand-editor' ) );
 		}
 
-		/* abort any outstanding requests by updating the nonce */
-		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
-
-		$this->sweep_story_pulls( $post_id, $request_nonce );
-
-		$this->set_story_update_error( $post_id );
-		$this->set_story_update_progress( $post_id, new StorySyncProgress( 0, 'Requesting story from Shorthand' ) );
-
 		$story_id = get_post_meta( $post_id, 'story_id', true );
 		if ( ! $story_id ) {
 			return new WP_Error( 'pretty', 'Post does not have a Shorthand story associated with it' );
 		}
 
-		$destination_path = $this->get_story_bundle_path( $post_id, $story_id );
-		if ( null === $destination_path ) {
+		$bundle = $this->bundles->open( $post_id, (string) $story_id );
+		if ( null === $bundle ) {
 			return $this->get_invalid_story_id_error( (string) $story_id );
 		}
 
-		$download_url = $this->post_download_request( $story_id );
+		/* abort any outstanding requests by updating the nonce */
+		$request_nonce = $this->reset_story_pull_request_nonce( $post_id );
+
+		$this->sweep_story_pulls( $bundle );
+
+		$this->set_story_update_error( $post_id );
+		$this->set_story_update_progress( $post_id, new StorySyncProgress( 0, 'Requesting story from Shorthand' ) );
+
+		$download_url = $this->post_download_request( (string) $story_id );
 
 		if ( is_wp_error( $download_url ) ) {
 			return $download_url;
 		}
 
-		$storage_path = "{$destination_path}_{$request_nonce}";
+		/* Nothing is recorded until uploads will take the chunks. */
+		if ( ! $bundle->download( $request_nonce )->start() ) {
+			return new WP_Error( 'pretty', __( 'Cannot publish: the story files cannot be written to this site\'s uploads.', 'the-shorthand-editor' ) );
+		}
 
-		$this->file_system->make_dir( $storage_path );
-
-		$this->record_story_pull( $post_id, $request_nonce, $storage_path, 0 );
+		$this->record_story_pull( $post_id, $request_nonce, 0 );
 
 		return new StoryUpdateTask(
 			$post_id,
 			$story_id,
 			$request_nonce,
 			get_post_status( $post_id ),
-			$download_url,
-			$storage_path
+			$download_url
 		);
 	}
 
@@ -330,7 +370,18 @@ class PostAPI {
 		}
 	}
 
+	/**
+	 * Whether this pull is still the post's latest.
+	 *
+	 * A pull can run for minutes, and a newer publish writes the nonce from
+	 * another request. Without a persistent object cache, the meta read at the
+	 * start of this request stays cached for the rest of it, so it is dropped.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args Pull to check.
+	 */
 	private function check_pull_story_status( StoryUpdateTask $args ): bool {
+		wp_cache_delete( $args->post_id, 'post_meta' );
+
 		$nonce = get_post_meta( $args->post_id, 'story_update_nonce', true );
 		return $nonce === $args->request_nonce;
 	}
@@ -415,9 +466,18 @@ class PostAPI {
 			return null;
 		}
 
+		if ( $args->stale_chunks > 0 ) {
+			$this->discard_legacy_chunks( $args );
+		}
+
 		$res = $this->check_file_url( $args );
 		if ( is_wp_error( $res ) ) {
 			return $res;
+		}
+
+		if ( $this->options->is_single_download() && 0 === $args->files ) {
+			/* A pull that has stored a chunk finishes in chunks. */
+			return $this->pull_story_archive( $args );
 		}
 
 		$args->ensure_chunk_window();
@@ -431,39 +491,52 @@ class PostAPI {
 	}
 
 	/**
+	 * Clears the chunks of a download queued before the chunk rename.
+	 *
+	 * Those chunks sit at paths this release cannot resume from, so the task
+	 * restarts its download and they are removed once, here.
+	 */
+	private function discard_legacy_chunks( StoryUpdateTask $args ): void {
+		$bundle = $this->bundles->open( $args->post_id, $args->story_id );
+
+		if ( null !== $bundle ) {
+			$bundle->download( $args->request_nonce )->discard_legacy( $args->stale_chunks );
+		}
+
+		$args->stale_chunks = 0;
+	}
+
+	/**
 	 * @return int|\WP_Error
 	 */
 	private function pull_story_chunk( StoryUpdateTask $args ) {
-		$file_path = $this->get_download_chunk_file_path( $args->files, $args->storage_path );
-
-		$url      = $args->file_url;
-		$start    = $args->start;
-		$end      = $args->end - 1;
-		$response = $this->shorthand->shorthand_api_authed_request(
-			$url,
-			'GET',
-			array(
-				'stream'   => true,
-				'filename' => $file_path,
-				'headers'  => array(
-					'Range' => "bytes={$start}-{$end}",
-				),
-			)
-		);
-
-		$status_code = wp_remote_retrieve_response_code( $response );
-
-		if ( is_wp_error( $response ) ) {
-			return $response;
+		$bundle = $this->bundles->open( $args->post_id, $args->story_id );
+		if ( null === $bundle ) {
+			return $this->get_invalid_story_id_error( $args->story_id );
 		}
 
-		if ( $status_code !== 206 ) {
-			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
+		$download = $bundle->download( $args->request_nonce );
+
+		/* The transport streams into this file; uploads only takes a whole chunk. */
+		$local_path = self::make_local_file( 'sh_chunk_' );
+
+		if ( is_wp_error( $local_path ) ) {
+			return $local_path;
+		}
+
+		try {
+			$stored = $this->receive_chunk( $args, $download, $local_path );
+		} finally {
+			wp_delete_file( $local_path );
+		}
+
+		if ( is_wp_error( $stored ) ) {
+			return $stored;
 		}
 
 		$args->mark_chunk_downloaded();
 
-		$this->record_story_pull( $args->post_id, $args->request_nonce, $args->storage_path, $args->files );
+		$this->record_story_pull( $args->post_id, $args->request_nonce, $args->files );
 
 		$progress = $args->get_progress_percent( 90 );
 
@@ -472,8 +545,194 @@ class PostAPI {
 		return new WP_Error( 'retry', 'Request further file data', 0 );
 	}
 
-	private function get_download_chunk_file_path( int $chunk_number, string $storage_path ): string {
-		return "{$storage_path}/file-{$chunk_number}.part";
+	/**
+	 * Downloads the task's next range into a local file, then stores it in uploads.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args       Task naming the range.
+	 * @param \Shorthand\Services\Files\Download  $download   Transfer the chunk belongs to.
+	 * @param string                              $local_path Local file to receive into.
+	 * @return true|\WP_Error
+	 */
+	private function receive_chunk( StoryUpdateTask $args, Download $download, string $local_path ) {
+		$start    = $args->start;
+		$end      = $args->end - 1;
+		$response = $this->shorthand->shorthand_api_authed_request(
+			$args->file_url,
+			'GET',
+			array(
+				'stream'   => true,
+				'filename' => $local_path,
+				'timeout'  => self::download_timeout( self::CHUNK_TIMEOUT, $end - $start + 1 ),
+				'headers'  => array(
+					'Range' => "bytes={$start}-{$end}",
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+
+		if ( $status_code !== 206 ) {
+			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
+		}
+
+		if ( $args->size > 0 ) {
+			$short = self::check_received( $local_path, min( $args->end, $args->size ) - $start );
+
+			if ( null !== $short ) {
+				return $short;
+			}
+		}
+
+		$stored = $download->store( $args->files, $local_path );
+
+		if ( true === $stored ) {
+			return true;
+		}
+
+		/* `files` counts only chunks that were stored, so cleanup would miss a part-written one. */
+		$download->discard_chunk( $args->files );
+
+		return is_wp_error( $stored ) ? $stored : new WP_Error( 'file', 'Failed to store story chunk.', $download->chunk_path( $args->files ) );
+	}
+
+	/**
+	 * Downloads the whole archive in one request, then publishes it.
+	 *
+	 * The archive is received into a local temp file and unpacked from there,
+	 * so it never goes into uploads. Used when `Options::is_single_download()`.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args Pull to download.
+	 */
+	private function pull_story_archive( StoryUpdateTask $args ): ?WP_Error {
+		$local_path = self::make_local_file( 'sh_story_' );
+
+		if ( is_wp_error( $local_path ) ) {
+			return $local_path;
+		}
+
+		try {
+			$error = $this->receive_archive( $args, $local_path );
+
+			if ( null === $error && ! $this->check_pull_story_status( $args ) ) {
+				/* A newer publish began during the download, and owns the bundle now. */
+				return null;
+			}
+
+			if ( null === $error ) {
+				$error = $this->publish_story(
+					$args->post_id,
+					$args->story_id,
+					static function ( Bundle $bundle ) use ( $args, $local_path ) {
+						return $bundle->publish_archive( $args->request_nonce, $local_path );
+					}
+				);
+			}
+		} finally {
+			wp_delete_file( $local_path );
+		}
+
+		return $this->finish_pull( $args, $error );
+	}
+
+	/**
+	 * Downloads the whole archive, with no Range header, into a local file.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args       Pull to download.
+	 * @param string                              $local_path Local file to receive into.
+	 */
+	private function receive_archive( StoryUpdateTask $args, string $local_path ): ?WP_Error {
+		$response = $this->shorthand->shorthand_api_authed_request(
+			$args->file_url,
+			'GET',
+			array(
+				'stream'   => true,
+				'filename' => $local_path,
+				'timeout'  => self::download_timeout( self::ARCHIVE_TIMEOUT, $args->size ),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+
+		if ( 200 !== $status_code ) {
+			return new WP_Error( 'status', "Pulling story received HTTP status {$status_code}.", $status_code );
+		}
+
+		return $args->size > 0 ? self::check_received( $local_path, $args->size ) : null;
+	}
+
+	/**
+	 * A new local file for the transport to stream a download into.
+	 *
+	 * `wp_tempnam()` answers with a path even where it could not make the
+	 * file. Requested anyway, the download fails as "Shorthand is not
+	 * available", which sends the author after the wrong fault.
+	 *
+	 * @param string $prefix Start of the file name.
+	 * @return string|\WP_Error Path of the file, or why there is none.
+	 */
+	private static function make_local_file( string $prefix ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+
+		$path = wp_tempnam( $prefix );
+
+		if ( ! is_file( $path ) ) {
+			$dir = get_temp_dir();
+
+			return new WP_Error( 'file', "Could not create a temporary file in {$dir}.", $dir );
+		}
+
+		return $path;
+	}
+
+	/**
+	 * Seconds one download request may take.
+	 *
+	 * A longer timeout does not help where the host ends the whole PHP request
+	 * sooner. See "Decision: a chunk request may take 30 seconds" in
+	 * `docs/flows/publishing.md`.
+	 *
+	 * @param int $timeout Default for the request.
+	 * @param int $bytes   Bytes the request asks for; 0 when not known.
+	 */
+	private static function download_timeout( int $timeout, int $bytes ): int {
+		/**
+		 * Filters the seconds one story download request may take.
+		 *
+		 * @since 1.0.12
+		 *
+		 * @param int $timeout Seconds; 30 for a chunk, 300 for a whole archive.
+		 * @param int $bytes   Bytes the request asks for; 0 when not known.
+		 */
+		return (int) apply_filters( 'theshed_story_download_timeout', $timeout, $bytes );
+	}
+
+	/**
+	 * Checks a received file holds the bytes asked for.
+	 *
+	 * The HTTP transport does not check its writes to the file, so a full
+	 * disk can leave a short file behind a 2xx response.
+	 *
+	 * @param string $local_path Local file the transport streamed into.
+	 * @param int    $expected   Bytes asked for.
+	 */
+	private static function check_received( string $local_path, int $expected ): ?WP_Error {
+		clearstatcache( true, $local_path );
+
+		$received = (int) filesize( $local_path );
+
+		if ( $expected === $received ) {
+			return null;
+		}
+
+		return new WP_Error( 'file', "Received {$received} of {$expected} bytes of the story download." );
 	}
 
 	public function pull_story_failed( StoryUpdateTask $args, WP_Error $result ): void {
@@ -501,59 +760,87 @@ class PostAPI {
 	}
 
 	private function pull_story_cleanup( StoryUpdateTask $args ): void {
-		$this->delete_pull_chunks( $args->storage_path, $args->files );
+		$bundle = $this->bundles->open( $args->post_id, $args->story_id );
+		if ( null !== $bundle ) {
+			$bundle->download( $args->request_nonce )->discard( $args->files );
+		}
+
 		$this->forget_story_pull( $args->post_id, $args->request_nonce );
 	}
 
 	/**
-	 * Removes the chunk files of one pull, and the directory holding them.
+	 * The in-flight pulls of a post, keyed by request nonce.
 	 *
-	 * The chunks are named, not listed: a pull directory cannot be enumerated
-	 * on a remote uploads directory.
-	 *
-	 * @param string $storage_path Pull directory.
-	 * @param int    $files        Number of chunks downloaded into it.
-	 */
-	private function delete_pull_chunks( string $storage_path, int $files ): void {
-		for ( $idx = 0; $idx < $files; $idx++ ) {
-			$this->file_system->delete_file( $this->get_download_chunk_file_path( $idx, $storage_path ) );
-		}
-
-		$this->file_system->delete_dir( $storage_path );
-	}
-
-	/**
-	 * In-flight pulls for a post, keyed by request nonce.
+	 * A pull recorded in the older shape also wrote its chunks at the older
+	 * naming, so the shape is carried through rather than flattened away: it
+	 * is what tells the sweep which paths to remove.
 	 *
 	 * @param int $post_id Post being published.
-	 * @return array<string, array{path: string, files: int}>
+	 * @return array<string, array{files: int, legacy: bool}>
 	 */
 	private function get_story_pulls( int $post_id ): array {
 		$pulls = get_post_meta( $post_id, 'story_pulls', true );
 
-		return is_array( $pulls ) ? $pulls : array();
+		if ( ! is_array( $pulls ) ) {
+			return array();
+		}
+
+		$records = array();
+		foreach ( $pulls as $nonce => $files ) {
+			$legacy = is_array( $files );
+
+			if ( $legacy ) {
+				$files = isset( $files['files'] ) ? $files['files'] : 0;
+			}
+
+			$records[ (string) $nonce ] = array(
+				'files'  => (int) $files,
+				'legacy' => $legacy,
+			);
+		}
+
+		return $records;
 	}
 
 	/**
-	 * Notes the pull directory of one request, and how many chunks it holds.
+	 * Writes the pull records back, each in the shape it was read in.
+	 *
+	 * @param int   $post_id Post being published.
+	 * @param array $pulls   Records keyed by request nonce.
+	 */
+	private function store_story_pulls( int $post_id, array $pulls ): void {
+		if ( array() === $pulls ) {
+			delete_post_meta( $post_id, 'story_pulls' );
+			return;
+		}
+
+		$stored = array();
+		foreach ( $pulls as $nonce => $pull ) {
+			$stored[ $nonce ] = $pull['legacy'] ? array( 'files' => $pull['files'] ) : $pull['files'];
+		}
+
+		update_post_meta( $post_id, 'story_pulls', $stored );
+	}
+
+	/**
+	 * Notes how many chunks one request has downloaded.
 	 *
 	 * A superseded pull returns without cleaning up, so the record is what
 	 * lets a later publish find its chunks.
 	 *
-	 * @param int    $post_id      Post being published.
-	 * @param string $nonce        Request nonce identifying the pull.
-	 * @param string $storage_path Pull directory.
-	 * @param int    $files        Number of chunks downloaded so far.
+	 * @param int    $post_id Post being published.
+	 * @param string $nonce   Request nonce identifying the pull.
+	 * @param int    $files   Number of chunks downloaded so far.
 	 */
-	private function record_story_pull( int $post_id, string $nonce, string $storage_path, int $files ): void {
+	private function record_story_pull( int $post_id, string $nonce, int $files ): void {
 		$pulls = $this->get_story_pulls( $post_id );
 
 		$pulls[ $nonce ] = array(
-			'path'  => $storage_path,
-			'files' => $files,
+			'files'  => $files,
+			'legacy' => false,
 		);
 
-		update_post_meta( $post_id, 'story_pulls', $pulls );
+		$this->store_story_pulls( $post_id, $pulls );
 	}
 
 	/**
@@ -567,52 +854,52 @@ class PostAPI {
 
 		unset( $pulls[ $nonce ] );
 
-		if ( array() === $pulls ) {
-			delete_post_meta( $post_id, 'story_pulls' );
-			return;
-		}
-
-		update_post_meta( $post_id, 'story_pulls', $pulls );
+		$this->store_story_pulls( $post_id, $pulls );
 	}
 
 	/**
-	 * Cleans up every pull except the one starting now.
+	 * Cleans up every recorded pull.
 	 *
-	 * @param int    $post_id Post being published.
-	 * @param string $nonce   Request nonce of the pull starting now.
+	 * Runs before the pull starting now records or writes anything, so a
+	 * record that shares its nonce holds only stale chunks and goes too.
+	 *
+	 * @param \Shorthand\Services\Files\Bundle $bundle Bundle the pulls belong to.
 	 */
-	private function sweep_story_pulls( int $post_id, string $nonce ): void {
+	private function sweep_story_pulls( Bundle $bundle ): void {
+		$post_id = $bundle->post_id();
+
 		foreach ( $this->get_story_pulls( $post_id ) as $stale_nonce => $pull ) {
-			if ( (string) $stale_nonce === $nonce || ! isset( $pull['path'] ) ) {
+			/* The key came out of the database and becomes part of a path. */
+			if ( ! StoryId::is_valid( (string) $stale_nonce ) ) {
 				continue;
 			}
 
-			$this->delete_pull_chunks( (string) $pull['path'], isset( $pull['files'] ) ? (int) $pull['files'] : 0 );
+			$download = $bundle->download( (string) $stale_nonce );
+
+			if ( $pull['legacy'] ) {
+				$download->discard_legacy( $pull['files'] );
+				continue;
+			}
+
+			$download->discard( $pull['files'] );
 		}
 
 		delete_post_meta( $post_id, 'story_pulls' );
 	}
 
 	public function pull_story_completed( StoryUpdateTask $args ): ?\WP_Error {
-		$staging_path  = $this->file_system->make_temp_dir( "sh_pull_{$args->request_nonce}_" );
-		$zip_file_path = "{$staging_path}/archive.zip";
+		return $this->finish_pull( $args, $this->publish_story_bundle( $args->post_id, $args->story_id, $args->request_nonce, $args->files ) );
+	}
 
-		$chunk_paths = array();
-		for ( $idx = 0; $idx < $args->files; $idx++ ) {
-			$chunk_paths[] = $this->get_download_chunk_file_path( $idx, $args->storage_path );
-		}
-
-		if ( ! $this->file_system->join_pieces( $chunk_paths, $zip_file_path ) ) {
-			$this->file_system->delete_temp_dir( $staging_path );
-			return new WP_Error( 'file', 'Failed to assemble story download.', $zip_file_path );
-		}
-
-		$story = $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id, $staging_path, $args->request_nonce );
-
-		$this->file_system->delete_temp_dir( $staging_path );
-
-		if ( is_wp_error( $story ) ) {
-			return $story;
+	/**
+	 * Ends a pull: on a publish without error, records it and cleans up.
+	 *
+	 * @param \Shorthand\Services\StoryUpdateTask $args  Pull to end.
+	 * @param \WP_Error|null                      $error What the publish returned.
+	 */
+	private function finish_pull( StoryUpdateTask $args, ?WP_Error $error ): ?WP_Error {
+		if ( null !== $error ) {
+			return $error;
 		}
 
 		$this->set_story_update_progress( $args->post_id );
@@ -669,36 +956,96 @@ class PostAPI {
 	}
 
 	/**
-	 * Unpacks a story archive into the bundle directory, and stores its documents.
+	 * Publishes a story from the chunks it was downloaded in.
 	 *
-	 * @param string     $zip_file     Assembled archive, inside the staging directory.
-	 * @param int|string $post_id      Post the story belongs to.
-	 * @param string     $story_id     Shorthand story ID.
-	 * @param string     $staging_path Staging directory for this pull.
-	 * @param string     $nonce        Request nonce of this pull, versioning the documents.
+	 * @param int|string $post_id  Post the story belongs to.
+	 * @param string     $story_id Shorthand story ID.
+	 * @param string     $nonce    Request nonce of this pull.
+	 * @param int        $chunks   Number of chunks downloaded for this pull.
 	 */
-	public function extract_story_content( $zip_file, $post_id, $story_id, string $staging_path, string $nonce ): ?\WP_Error {
-		$bundle_url  = $this->get_story_bundle_url( $post_id, $story_id );
-		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
+	public function publish_story_bundle( $post_id, $story_id, string $nonce, int $chunks ): ?\WP_Error {
+		return $this->publish_story(
+			$post_id,
+			$story_id,
+			static function ( Bundle $bundle ) use ( $nonce, $chunks ) {
+				return $bundle->publish( $nonce, $chunks );
+			}
+		);
+	}
 
-		if ( null === $bundle_path || null === $bundle_url ) {
+	/**
+	 * Publishes a downloaded story: bundle first, then the post's documents.
+	 *
+	 * @param int|string $post_id  Post the story belongs to.
+	 * @param string     $story_id Shorthand story ID.
+	 * @param callable   $unpack   Given the bundle, answers what `Bundle::publish()` does.
+	 */
+	private function publish_story( $post_id, $story_id, callable $unpack ): ?\WP_Error {
+		$bundle = $this->bundles->open( $post_id, (string) $story_id );
+
+		if ( null === $bundle ) {
 			return $this->get_invalid_story_id_error( (string) $story_id );
 		}
 
-		$stored_manifest = $this->get_story_manifest( $post_id );
+		$story = $unpack( $bundle );
 
-		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path, $stored_manifest, $nonce );
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );
 			$error->merge_from( $story );
 			return $error;
 		}
 
+		$this->store_story_content( absint( $post_id ), $bundle, $story );
+
+		/* Never fails the publish; the featured image is a courtesy on top of the content. */
+		$this->story_cover->sync( absint( $post_id ), (string) $story_id );
+
+		/* Last, so that a failure above leaves the previous manifest in place. */
+		$bundle->commit( $story['manifest'] );
+
+		$this->set_story_update_warning( absint( $post_id ), self::get_collision_warning( $story['collisions'] ) );
+
+		return null;
+	}
+
+	/**
+	 * The warning for file names that can be one file on some host.
+	 *
+	 * The fault is in the export, so the story is published regardless; the
+	 * author is told which files may show in place of another.
+	 *
+	 * @param array<int, string[]> $collisions Groups from `Manifest::collisions()`.
+	 * @return \WP_Error|null Null when there are none.
+	 */
+	private static function get_collision_warning( array $collisions ): ?WP_Error {
+		if ( empty( $collisions ) ) {
+			return null;
+		}
+
+		$groups = array();
+
+		foreach ( $collisions as $names ) {
+			$groups[] = implode( ' and ', $names );
+		}
+
+		return new WP_Error( 'collision', implode( '; ', $groups ), $collisions );
+	}
+
+	/**
+	 * Stores a published bundle's documents against the post.
+	 *
+	 * @param int                              $post_id Post the story belongs to.
+	 * @param \Shorthand\Services\Files\Bundle $bundle  Bundle just published.
+	 * @param array                            $story   Documents returned by the publish.
+	 */
+	private function store_story_content( int $post_id, Bundle $bundle, array $story ): void {
+		$bundle_path = $bundle->path();
+
 		$head    = $story['head'];
 		$article = $story['article'];
 
-		$head    = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $head );
-		$article = $this->content_transformer->rewrite_story_bundle_paths( $bundle_url, $article );
+		$head    = $this->content_transformer->rewrite_story_bundle_paths( $bundle->url(), $head );
+		$article = $this->content_transformer->rewrite_story_bundle_paths( $bundle->url(), $article );
 
 		$head    = apply_filters( 'theshed_fix_content_paths', $head );
 		$article = apply_filters( 'theshed_fix_content_paths', $article );
@@ -718,14 +1065,6 @@ class PostAPI {
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
 
 		$this->store_story_text( $post_id, $article );
-
-		/* Never fails the publish; the featured image is a courtesy on top of the content. */
-		$this->story_cover->sync( (int) $post_id, (string) $story_id );
-
-		/* Last, so that a failure above leaves the previous manifest in place. */
-		update_post_meta( $post_id, 'story_manifest', $story['manifest'] );
-
-		return null;
 	}
 
 	/**
@@ -828,149 +1167,6 @@ class PostAPI {
 	}
 
 	/**
-	 * Manifest of the last successful publish, or an empty array.
-	 *
-	 * @param int|string $post_id Post the bundle belongs to.
-	 * @return array<string, array{size: int, crc: int}>
-	 */
-	public function get_story_manifest( $post_id ): array {
-		return BundleManifest::from_meta( get_post_meta( absint( $post_id ), 'story_manifest', true ) );
-	}
-
-	/**
-	 * Unpacks an archive into the bundle directory, and reads its two documents.
-	 *
-	 * With staging on, the archive is unpacked under the staging directory and
-	 * then copied into the bundle directory. `ZipArchive::extractTo()` uses
-	 * native syscalls, so it can only target a local path.
-	 *
-	 * @param string $zip_file        Assembled archive.
-	 * @param string $story_path      Bundle directory.
-	 * @param string $staging_path    Staging directory for this pull.
-	 * @param array  $stored_manifest Manifest of the last successful publish.
-	 * @param string $nonce           Request nonce of this pull, versioning the documents.
-	 * @return array{head: string, article: string, manifest: array, head_path: string, article_path: string}|\WP_Error
-	 */
-	private function unzip_story( $zip_file, $story_path, string $staging_path, array $stored_manifest, string $nonce ) {
-		$zip = new ZipArchive();
-		$ok  = $zip->open( $zip_file );
-		if ( $ok !== true ) {
-			$file_size = wp_filesize( $zip_file );
-			$err       = new WP_Error( 'file', "Could not open story archive at {$zip_file}.", $zip_file );
-			$err->add( 'file_size', "File size is {$file_size}.", $file_size );
-			$err->add( 'zip', self::get_zip_error_message( $ok ), $ok );
-			return $err;
-		}
-
-		$unpack_path = $this->options->is_staging_enabled() ? "{$staging_path}/unpacked" : $story_path;
-
-		$this->file_system->make_dir( $unpack_path );
-
-		$head     = $zip->getFromName( 'head.html' );
-		$article  = $zip->getFromName( 'article.html' );
-		$manifest = BundleManifest::from_archive( $zip );
-
-		if ( ! $zip->extractTo( $unpack_path ) || ! $zip->close() ) {
-			$file_size = wp_filesize( $zip_file );
-			$err       = new WP_Error( 'file', "Could not extract story archive at {$zip_file}.", $zip_file );
-			$err->add( 'file_size', "File size is {$file_size}.", $file_size );
-			$err->add( 'zip', $zip->getStatusString(), $zip->status );
-			return $err;
-		}
-
-		$docs_dir = $this->get_documents_dir( $nonce );
-
-		if ( $unpack_path !== $story_path ) {
-			if ( '' !== $docs_dir ) {
-				$manifest = BundleManifest::relocate_documents( $manifest, $docs_dir );
-			}
-
-			$copied = $this->file_system->copy_tree( $unpack_path, $story_path, $manifest, $stored_manifest );
-
-			if ( is_wp_error( $copied ) ) {
-				return $copied;
-			}
-
-			$manifest = $copied;
-		} else {
-			/* `extractTo()` wrote the bundle directly, so the archive layout stands. */
-			$docs_dir = '';
-		}
-
-		$stale = BundleManifest::removed( $stored_manifest, $manifest );
-
-		if ( array() !== $stale ) {
-			$this->file_system->delete_manifest( $story_path, $stale );
-		}
-
-		if ( ! $head ) {
-			$head = '';
-		}
-
-		if ( ! $article ) {
-			$article = '';
-		}
-
-		$docs_path = '' === $docs_dir ? $story_path : "{$story_path}/{$docs_dir}";
-
-		return array(
-			'head'         => $head,
-			'article'      => $article,
-			'manifest'     => $manifest,
-			'head_path'    => "{$docs_path}/head.html",
-			'article_path' => "{$docs_path}/article.html",
-		);
-	}
-
-	/**
-	 * Bundle-relative directory holding the documents of one publish.
-	 *
-	 * The nonce is interpolated into a path, so it is validated the same way a
-	 * story ID is. A nonce that fails leaves the documents at the root of the
-	 * bundle, which is where they were before they were versioned.
-	 *
-	 * @param string $nonce Request nonce of this pull.
-	 * @return string Directory relative to the bundle, or an empty string.
-	 */
-	private function get_documents_dir( string $nonce ): string {
-		return StoryId::is_valid( $nonce ) ? "docs/{$nonce}" : '';
-	}
-
-	/**
-	 * Public URL of the bundle directory, or null when the story ID is invalid.
-	 *
-	 * @param int|string $post_id  Post the bundle belongs to.
-	 * @param string     $story_id Shorthand story ID.
-	 */
-	public function get_story_bundle_url( $post_id, $story_id ): ?string {
-		if ( ! StoryId::is_valid( $story_id ) ) {
-			return null;
-		}
-
-		$destination_url = wp_upload_dir()['baseurl'] . '/shorthand/' . absint( $post_id ) . '/' . $story_id;
-
-		$destination_url = apply_filters( 'theshed_get_story_url', $destination_url );
-
-		return $destination_url;
-	}
-
-	/**
-	 * Path of the bundle directory, or null when the story ID is invalid.
-	 *
-	 * @param int|string $post_id  Post the bundle belongs to.
-	 * @param string     $story_id Shorthand story ID.
-	 */
-	public function get_story_bundle_path( $post_id, $story_id ): ?string {
-		if ( ! StoryId::is_valid( $story_id ) ) {
-			return null;
-		}
-
-		$destination_path = wp_upload_dir()['basedir'] . '/shorthand/' . absint( $post_id ) . '/' . $story_id;
-
-		return $destination_path;
-	}
-
-	/**
 	 * The error returned wherever a stored story ID cannot be used as a path.
 	 *
 	 * @param string $story_id The rejected story ID, carried as error data.
@@ -984,25 +1180,15 @@ class PostAPI {
 	/**
 	 * Removes a published bundle.
 	 *
-	 * A host that can enumerate deletes the tree outright. One that cannot
-	 * refuses, and the manifest names what to unlink instead. The `{post_id}`
-	 * parent is left alone: it cannot be listed, so it cannot be known to be
-	 * empty.
-	 *
 	 * @param int    $post_id  Post the bundle belongs to.
 	 * @param string $story_id Shorthand story ID.
 	 */
 	public function delete_story_bundle( int $post_id, string $story_id ): void {
-		$bundle_path = $this->get_story_bundle_path( $post_id, $story_id );
-		if ( null === $bundle_path ) {
-			return;
-		}
+		$bundle = $this->bundles->open( $post_id, $story_id );
 
-		if ( ! $this->file_system->delete_tree( $bundle_path ) ) {
-			$this->file_system->delete_manifest( $bundle_path, $this->get_story_manifest( $post_id ) );
+		if ( null !== $bundle ) {
+			$bundle->delete();
 		}
-
-		delete_post_meta( $post_id, 'story_manifest' );
 	}
 
 	public function get_preview_content( $post_id ): ?StoryPreview {
@@ -1055,33 +1241,5 @@ class PostAPI {
 			}
 		}
 		return $result;
-	}
-
-	private static function get_zip_error_message( $err ) {
-		if ( false === $err ) {
-			return 'Unknown error.';
-		}
-
-		switch ( $err ) {
-			case ZipArchive::ER_EXISTS:
-				return 'File already exists.';
-			case ZipArchive::ER_INCONS:
-				return 'Zip archive inconsistent.';
-			case ZipArchive::ER_INVAL:
-				return 'Invalid argument.';
-			case ZipArchive::ER_MEMORY:
-				return 'Malloc failure.';
-			case ZipArchive::ER_NOENT:
-				return 'No such file.';
-			case ZipArchive::ER_NOZIP:
-				return 'Not a zip archive.';
-			case ZipArchive::ER_OPEN:
-				return 'Can\'t open file.';
-			case ZipArchive::ER_READ:
-				return 'Read error.';
-			case ZipArchive::ER_SEEK:
-				return 'Seek error.';
-		}
-		return "Error code {$err}.";
 	}
 }

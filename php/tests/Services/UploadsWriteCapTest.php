@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Shorthand\Tests\Services;
 
-use Shorthand\Services\RemoteFileSystem;
+use Shorthand\Services\Files\WpUploads;
 use Shorthand\Tests\WordPressTestCase;
 
 /**
@@ -15,7 +15,7 @@ use Shorthand\Tests\WordPressTestCase;
  * `WP_Filesystem::copy()` leaves behind, so this covers both the match and
  * its failure.
  */
-final class RemoteWriteCapTest extends WordPressTestCase {
+final class UploadsWriteCapTest extends WordPressTestCase {
 
 	/**
 	 * The error a refused write leaves, as the uploads host words it.
@@ -25,7 +25,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	/** @var string */
 	private $temp_root;
 
-	/** @var \Shorthand\Services\RemoteFileSystem */
+	/** @var \Shorthand\Services\Files\WpUploads */
 	private $subject;
 
 	protected function setUp(): void {
@@ -37,15 +37,12 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 		mkdir( $this->temp_root, 0777, true );
 		file_put_contents( $this->temp_root . '/article.html', 'article' );
 
-		$this->subject = new RemoteFileSystem();
+		$this->subject = new WpUploads();
 	}
 
 	protected function tearDown(): void {
 		tests_wp_set_copy_error( null );
-
-		if ( is_dir( $this->bundle_dir() ) ) {
-			rmdir( $this->bundle_dir() );
-		}
+		tests_wp_set_copy_failure( false );
 
 		foreach ( array_diff( scandir( $this->temp_root ), array( '.', '..' ) ) as $entry ) {
 			unlink( $this->temp_root . '/' . $entry );
@@ -59,7 +56,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	public function test_a_refused_write_is_reported_as_an_error(): void {
 		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
 
-		$result = $this->copy_tree();
+		$result = $this->write();
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertContains( 'pretty', $result->get_error_codes() );
@@ -71,7 +68,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	public function test_the_author_facing_message_says_what_to_do(): void {
 		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
 
-		$result = $this->copy_tree();
+		$result = $this->write();
 
 		$this->assertSame(
 			'This story can no longer be updated. Please contact Shorthand support.',
@@ -79,12 +76,12 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 		);
 	}
 
-	public function test_the_bundle_path_stays_on_the_error_for_the_log(): void {
+	public function test_the_destination_path_stays_on_the_error_for_the_log(): void {
 		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
 
-		$result = $this->copy_tree();
+		$result = $this->write();
 
-		$this->assertStringContainsString( $this->bundle_dir() . '/article.html', $result->errors['file'][0] );
+		$this->assertStringContainsString( $this->dest_path(), $result->errors['file'][0] );
 	}
 
 	/**
@@ -98,10 +95,7 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 	public function test_another_failure_is_not_named_as_the_write_cap( string $code, string $message ): void {
 		tests_wp_set_copy_error( $code, $message );
 
-		$result = $this->copy_tree();
-
-		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertNotContains( 'pretty', $result->get_error_codes() );
+		$this->assertFalse( $this->write() );
 	}
 
 	/**
@@ -117,24 +111,30 @@ final class RemoteWriteCapTest extends WordPressTestCase {
 		);
 	}
 
-	private function bundle_dir(): string {
-		return $this->temp_root . '/bundle';
+	/**
+	 * `WP_Filesystem` is booted once per request and never clears `errors`, so
+	 * a refusal stays readable long after the write it belongs to. A later
+	 * write that fails for its own reason must not inherit it.
+	 */
+	public function test_a_later_plain_failure_is_not_the_earlier_refusal(): void {
+		tests_wp_set_copy_error( 'upload_file-failed', self::REFUSAL_MESSAGE );
+
+		$this->assertInstanceOf( \WP_Error::class, $this->write() );
+
+		tests_wp_set_copy_error( null );
+		tests_wp_set_copy_failure();
+
+		$this->assertFalse( $this->write() );
+	}
+
+	private function dest_path(): string {
+		return 'vip://wp-content/uploads/shorthand/1/abc/article.html';
 	}
 
 	/**
-	 * @return array|\WP_Error
+	 * @return bool|\WP_Error
 	 */
-	private function copy_tree() {
-		return $this->subject->copy_tree(
-			$this->temp_root,
-			$this->bundle_dir(),
-			array(
-				'article.html' => array(
-					'size' => 7,
-					'crc'  => crc32( 'article' ),
-				),
-			),
-			null
-		);
+	private function write() {
+		return $this->subject->write( $this->temp_root . '/article.html', $this->dest_path() );
 	}
 }

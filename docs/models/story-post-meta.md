@@ -1,7 +1,7 @@
 ---
 title: Story post meta
 purpose: The post meta keys a Shorthand story post carries, and the shape of the structured ones.
-updated: 2026-09-17
+updated: 2026-10-03
 ---
 
 # Story post meta
@@ -22,16 +22,18 @@ rendered page is built from `story_body`.
 | `story_manifest` | object | Name, size, and CRC32 per bundle file |
 | `story_update_nonce` | string | Nonce of the in-flight pull |
 | `story_update_state` | object | Progress of the in-flight pull |
-| `story_pulls` | object | Pull directories awaiting cleanup |
+| `story_pulls` | object | Download chunks awaiting cleanup |
 | `story_excerpt` | string | The excerpt last generated from the story body |
 | `story_cover` | object | The Shorthand cover image the last publish evaluated |
 | `story_cover_attachment` | number | Attachment the plugin set as the featured image |
 | `story_title_pending` | string | A title saved in WordPress that Shorthand has not yet received |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
+| `story_update_warning` | array | What the last successful publish warned of, as a flattened `WP_Error` |
 
 `Shorthand\Plugin\PostType::register_post_type()` registers every key except
-`story_update_error`, which is written directly by
-`Shorthand\Services\PostAPI::set_story_update_error()`.
+`story_update_error` and `story_update_warning`, which are written directly by
+`Shorthand\Services\PostAPI::set_story_update_error()` and
+`set_story_update_warning()`.
 
 Only `story_id` and `story_version` are exposed over REST.
 
@@ -57,35 +59,45 @@ array(
 )
 ```
 
-Built by `Shorthand\Services\BundleManifest`: `from_archive()` from
-`ZipArchive::statIndex()`, `from_meta()` from the stored value.
+Built by `Shorthand\Services\Files\Manifest`: `from_archive()` from
+`ZipArchive::statIndex()`, `from_meta()` from the stored value. `from_meta()`
+drops and reports a key that is not a safe bundle path, under the rules in
+`docs/services/file-system.md`, section "Archive entry names".
 
-Keys are bundle paths, not archive paths. The two differ for `article.html` and
-`head.html`, which the archive names at its root and the bundle holds under
-`docs/{nonce}/`. During a publish those entries carry an extra `from` key
-naming the archive path; `Shorthand\Services\BaseFileSystem::copy_tree()` reads it,
-then strips it before storage, so the stored manifest describes the bundle only.
+Keys are bundle paths: the archive's entry names, with any `.` or empty
+segment removed. Two entries that name one path share one key.
 
 An absent `story_manifest` means copy every file. That is the state after
 upgrading from a plugin version that did not write one, and it needs no
 migration.
 
-The key is written only after a successful copy. See `docs/flows/publishing.md`.
+The key is written only after a successful copy, and is the only record of
+what the bundle holds. It says what to skip on republish, what to delete when
+the story changes, and what to remove when the post is deleted. Nothing lists
+the bundle directory. See `docs/services/file-system.md`.
 
 ## story_pulls
 
-One entry per in-flight request nonce, recording what that pull left in the
-uploads directory:
+One entry per in-flight request nonce, holding the number of download chunks
+that have arrived so far:
 
 ```php
 array(
-    '9f2c…' => array( 'path' => 'shorthand/12/abc123_9f2c…/', 'files' => 3 ),
+    '9f2c…' => 3,
 )
 ```
 
-A pull directory cannot be listed on a remote uploads host, so this is the only
-record of which chunk files exist. `files` is the count of `file-N.part`
-entries written so far.
+Uploads cannot be listed, so this is the only record of which chunk files
+exist. The paths follow from the post ID, the story ID, the nonce and the
+count, and are rebuilt by
+`Shorthand\Services\Files\Download::chunk_path()`.
+
+Entries written by a plugin version that stored `array( 'path' => …, 'files' =>
+… )` are kept in that shape. Those chunks were written at the older naming, a
+directory beside the bundle, so the shape is what tells the sweep which paths
+to remove: `Shorthand\Services\Files\Download::discard_legacy()` rather than
+`Download::discard()`. `Shorthand\Services\PostAPI` reads both shapes and
+writes the count for a new pull.
 
 ## story_excerpt
 
@@ -175,6 +187,33 @@ does not offer them.
 Progress of the in-flight pull, as produced by
 `Shorthand\Services\StorySyncProgress::to_array()` and read back by
 `from_meta_value()`. Removed when the pull finishes.
+
+## story_update_warning
+
+What the last successful publish warned of, as produced by
+`Shorthand\Services\PostAPI::get_wp_error_as_array()`. Written by
+`Shorthand\Services\PostAPI::set_story_update_warning()` after the manifest is
+committed, and removed by a publish with nothing to warn of. A failed publish
+leaves it alone.
+
+Today the one code is `collision`. Its message names each group of entry names
+that can be one file, joined by ` and ` within a group and `; ` between groups.
+Its data is the groups, from `Shorthand\Services\Files\Manifest::collisions()`.
+
+```php
+array(
+    array(
+        'message' => 'assets/AbC/x.jpg and assets/abc/x.jpg',
+        'data'    => array( array( 'assets/AbC/x.jpg', 'assets/abc/x.jpg' ) ),
+        'code'    => 'collision',
+    ),
+)
+```
+
+`Shorthand\Admin\Editor::get_post_story_state()` passes it to the editor as
+`warnings.publishing`, and passes null while `story_update_error` or
+`story_update_state` is set. Protected by
+`Shorthand\Plugin\PostType::is_protected_meta()`.
 
 ## story_title_pending
 

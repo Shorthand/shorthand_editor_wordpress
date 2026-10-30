@@ -30,10 +30,6 @@ class StoryUpdateTask {
 	 * @var string
 	 */
 	public $download_url;
-	/**
-	 * @var string
-	 */
-	public $storage_path;
 
 	/**
 	 * @var int|null
@@ -60,21 +56,25 @@ class StoryUpdateTask {
 	 * @var int
 	 */
 	public $files = 0;
+	/**
+	 * Chunks left behind by a download queued before the chunk rename.
+	 *
+	 * @var int
+	 */
+	public $stale_chunks = 0;
 
 	public function __construct(
 		int $post_id,
 		string $story_id,
 		string $request_nonce,
 		string $prior_status,
-		string $download_url,
-		string $storage_path
+		string $download_url
 	) {
 		$this->post_id       = $post_id;
 		$this->story_id      = $story_id;
 		$this->request_nonce = $request_nonce;
 		$this->prior_status  = $prior_status;
 		$this->download_url  = $download_url;
-		$this->storage_path  = $storage_path;
 	}
 
 	public function ensure_chunk_window(): void {
@@ -112,16 +112,14 @@ class StoryUpdateTask {
 		if ( ! isset( $data['story_id'] ) || ! is_string( $data['story_id'] ) ) {
 			return null;
 		}
-		if ( ! isset( $data['request_nonce'] ) || ! is_string( $data['request_nonce'] ) ) {
+		/* The nonce becomes part of a chunk path, so a task carrying one this plugin could not have written is dropped, not repaired. */
+		if ( ! isset( $data['request_nonce'] ) || ! is_string( $data['request_nonce'] ) || ! StoryId::is_valid( $data['request_nonce'] ) ) {
 			return null;
 		}
 		if ( ! isset( $data['prior_status'] ) || ! is_string( $data['prior_status'] ) ) {
 			return null;
 		}
 		if ( ! isset( $data['download_url'] ) || ! is_string( $data['download_url'] ) ) {
-			return null;
-		}
-		if ( ! isset( $data['storage_path'] ) || ! is_string( $data['storage_path'] ) ) {
 			return null;
 		}
 
@@ -131,8 +129,7 @@ class StoryUpdateTask {
 			$data['story_id'],
 			$data['request_nonce'],
 			$data['prior_status'],
-			$data['download_url'],
-			$data['storage_path']
+			$data['download_url']
 		);
 
 		// Set optional fields if present
@@ -145,6 +142,19 @@ class StoryUpdateTask {
 		if ( isset( $data['size'] ) && is_int( $data['size'] ) ) {
 			$task->size = $data['size'];
 		}
+
+		/*
+		 * A task holding `storage_path` was queued before chunk paths became
+		 * derivable from the bundle, and its chunks are under that path. The
+		 * progress counters would point the download at paths nothing wrote,
+		 * so it restarts and the old chunks are counted for removal.
+		 */
+		if ( isset( $data['storage_path'] ) ) {
+			$task->stale_chunks = isset( $data['files'] ) && is_int( $data['files'] ) ? $data['files'] : 0;
+
+			return $task;
+		}
+
 		if ( isset( $data['start'] ) && is_int( $data['start'] ) ) {
 			$task->start = $data['start'];
 		}
