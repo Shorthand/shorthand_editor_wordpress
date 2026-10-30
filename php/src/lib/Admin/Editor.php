@@ -395,7 +395,7 @@ class Editor {
 			. ' .theshed-cover-panel__tab[aria-selected="true"] { color: #1d2327; border-bottom-color: #2271b1; font-weight: 600; }'
 		);
 
-		wp_enqueue_script( 'theshed-post-components-script', $this->version->get_plugin_url( 'public/scripts/post.min.js' ), array(), $this->version->get_plugin_version(), false );
+		wp_enqueue_script( 'theshed-post-components-script', $this->version->get_plugin_url( 'public/scripts/post.min.js' ), array( 'jquery', 'wp-hooks' ), $this->version->get_plugin_version(), false );
 
 		ob_start();
 		?>
