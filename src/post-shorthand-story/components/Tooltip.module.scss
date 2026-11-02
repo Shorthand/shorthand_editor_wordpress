@@ -1,11 +1,28 @@
 .tooltip--container {
   position: relative;
 
-  &:hover .tooltip--panel {
+  &:hover .tooltip--panel,
+  &:focus-within .tooltip--panel {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
     pointer-events: auto;
   }
+}
+
+// Beats `.toolbar--hstack button`, which styles every toolbar button as an action.
+.tooltip--container .tooltip--trigger {
+  display: block;
+  width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.5rem 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: normal;
+  cursor: auto;
 }
 
 .tooltip--panel {

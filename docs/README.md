@@ -1,7 +1,7 @@
 ---
 title: Documentation index
 purpose: How this documentation is organised, and what it currently covers.
-updated: 2026-08-25
+updated: 2026-09-01
 ---
 
 # Documentation index
@@ -29,8 +29,9 @@ would otherwise look arbitrary or be reversed by accident.
 
 Services:
 
-- `docs/services/file-system.md` — writing into the uploads directory on any
-  host, disk or object store.
+- `docs/services/file-system.md` — writing story files into the uploads
+  directory on any host, disk or object store, and the hooks a sidecar plugin
+  uses to mirror them.
 
 Flows:
 

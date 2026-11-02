@@ -120,6 +120,13 @@ final class PostTypeTest extends WordPressTestCase {
 		$this->assertFalse( $post_type->is_protected_meta( false, 'story_cover', 'user' ) );
 	}
 
+	/**
+	 * The warning is written by a publish, never by hand.
+	 */
+	public function test_the_publishing_warning_is_protected(): void {
+		$this->assertTrue( $this->make_post_type()->is_protected_meta( false, 'story_update_warning', 'post' ) );
+	}
+
 	private function make_post_type(): PostType {
 		return new PostType(
 			$this->createStub( Options::class ),
