@@ -113,13 +113,25 @@ commands:
       - checkout:
           method: blobless
       - run:
+          # pnpm-lock.yaml is written by pnpm 10. pnpm 9 rejects it under
+          # --frozen-lockfile and rewrites it otherwise. Keep in step with
+          # mise.toml.
           name: Add PNPM at desired version
-          command: sudo npm -g install pnpm@9
+          command: sudo npm -g install pnpm@10.33.2
+      - restore_cache:
+          keys:
+            - wp-plugin-pnpm-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+            - wp-plugin-pnpm-v1-{{ arch }}-
+      - run:
+          name: Install Node dependencies
+          command: pnpm install --frozen-lockfile --store-dir ~/.pnpm-store
+      - save_cache:
+          key: wp-plugin-pnpm-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.pnpm-store
       - run:
           name: run-build
-          command: |
-            pnpm install --no-frozen-lockfile
-            pnpm build
+          command: pnpm build
 
   run-plugin-bundle-and-upload:
     steps:
@@ -371,8 +383,9 @@ jobs:
             echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> "$BASH_ENV"
             echo "export PATH=\"$NODE_BIN_DIR:\$PATH\"" >> "$BASH_ENV"
             # pnpm-lock.yaml is written by pnpm 10; pnpm 9 rejects its
-            # patchedDependencies entry under --frozen-lockfile.
-            npm install -g pnpm@10
+            # patchedDependencies entry under --frozen-lockfile. Keep in step with
+            # mise.toml.
+            npm install -g pnpm@10.33.2
             pnpm --version
       - run:
           name: Pick WordPress and PHP versions
@@ -479,7 +492,8 @@ jobs:
         auth:
           username: $DOCKERHUB_USER
           password: $DOCKERHUB_PASSWORD
-    resource_class: small
+    # A cold pnpm install peaks near 2 GB; small (2 GB) gets OOM-killed.
+    resource_class: medium
     steps:
       - run-build
 
@@ -489,7 +503,7 @@ jobs:
         auth:
           username: $DOCKERHUB_USER
           password: $DOCKERHUB_PASSWORD
-    resource_class: small
+    resource_class: medium
     steps:
       - run-build
       - run-plugin-bundle-and-upload
