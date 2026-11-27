@@ -20,6 +20,8 @@ export interface IStoryState {
 export interface IStoryErrors {
   publishing?: IStoryError;
   preview?: IStoryError;
+  /** Why the last save from the editor fetched nothing, such as a failed version check */
+  notice?: IStoryError;
 }
 
 export interface IStoryError {
@@ -145,6 +147,7 @@ export interface PHPStoryState {
 interface PHPErrors {
   publishing?: PHPErrorItem[] | null;
   preview?: PHPErrorItem[] | null;
+  notice?: PHPErrorItem[] | null;
 }
 
 interface PHPErrorItem {

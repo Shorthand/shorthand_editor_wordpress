@@ -53,6 +53,16 @@ final class DependenciesTest extends WordPressTestCase {
 		$this->assertTrue( $dependencies->test_front_page->init_called );
 		$this->assertTrue( $dependencies->test_cron->init_called );
 	}
+
+	public function test_boot_shows_the_pull_speed_in_site_health(): void {
+		$dependencies = new TestDependencies();
+
+		$dependencies->boot();
+
+		$hooks = \tests_wp_hook_callbacks( 'debug_information' );
+		$this->assertCount( 1, $hooks );
+		$this->assertSame( array( $dependencies->get_pull_speed(), 'add_debug_information' ), $hooks[0]['callback'] );
+	}
 }
 
 final class TestDependencies extends Dependencies {

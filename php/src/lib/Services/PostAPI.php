@@ -23,6 +23,28 @@ class PostAPI {
 	const HTTP_TOO_MANY_REQUESTS = 429;
 
 	/**
+	 * Default time one pull step spends downloading, in seconds.
+	 *
+	 * A step starts no part it expects to end past it, so a step stays
+	 * under a host that ends requests at 20 s of wall time. Sites can
+	 * change it through the `theshed_pull_step_budget` filter.
+	 */
+	const STEP_BUDGET = 15;
+
+	/**
+	 * Limit on one range request, in seconds.
+	 */
+	const CHUNK_TIMEOUT = 30;
+
+	/**
+	 * Time closing one chunk file can take, in seconds.
+	 *
+	 * On VIP, closing the file uploads it to the Files API, and the request
+	 * timeout does not count that time.
+	 */
+	const CHUNK_CLOSE_TIME = 60;
+
+	/**
 	 * @var \Shorthand\Services\Shorthand
 	 */
 	private $shorthand;
@@ -68,8 +90,53 @@ class PostAPI {
 	 * @var bool
 	 */
 	private $storing_text = false;
+	/**
+	 * Stores the download speed between pulls.
+	 *
+	 * @var \Shorthand\Services\StoryPullSpeed
+	 */
+	private $pull_speed;
+	/**
+	 * Returns the current time in seconds, as a float.
+	 *
+	 * @var callable
+	 */
+	private $clock;
+	/**
+	 * Bytes of good parts this step, since the last timeout.
+	 *
+	 * @var int
+	 */
+	private $step_bytes = 0;
+	/**
+	 * Seconds spent in part requests this step, since the last timeout.
+	 *
+	 * @var float
+	 */
+	private $step_seconds = 0.0;
+	/**
+	 * Tells whether the running step still owns its pull; null outside a step.
+	 *
+	 * @var callable|null
+	 */
+	private $guard = null;
 
-	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, FileSystemService $file_system, StoryTextExtractor $text_extractor, StoryCover $story_cover ) {
+	/**
+	 * Wires the services a pull needs.
+	 *
+	 * @param Shorthand               $shorthand           Shorthand API client.
+	 * @param Options                 $options             Plugin settings.
+	 * @param Permissions             $permissions         Capability checks.
+	 * @param string                  $post_type           Story post type.
+	 * @param AuthStateManager        $auth_state_manager  Shorthand connection state.
+	 * @param StoryContentTransformer $content_transformer Rewrites story documents.
+	 * @param FileSystemService       $file_system         Uploads and staging directories.
+	 * @param StoryTextExtractor      $text_extractor      Derives the post's plain text.
+	 * @param StoryCover              $story_cover         Applies the featured image.
+	 * @param StoryPullSpeed          $pull_speed          Stores the download speed between pulls.
+	 * @param callable|null           $clock               Returns the current time in seconds. Defaults to `microtime( true )`.
+	 */
+	public function __construct( Shorthand $shorthand, Options $options, Permissions $permissions, string $post_type, AuthStateManager $auth_state_manager, StoryContentTransformer $content_transformer, FileSystemService $file_system, StoryTextExtractor $text_extractor, StoryCover $story_cover, StoryPullSpeed $pull_speed, ?callable $clock = null ) {
 		$this->shorthand           = $shorthand;
 		$this->options             = $options;
 		$this->permissions         = $permissions;
@@ -79,6 +146,10 @@ class PostAPI {
 		$this->file_system         = $file_system;
 		$this->text_extractor      = $text_extractor;
 		$this->story_cover         = $story_cover;
+		$this->pull_speed          = $pull_speed;
+		$this->clock               = $clock ?? static function (): float {
+			return microtime( true );
+		};
 	}
 
 	/**
@@ -190,6 +261,35 @@ class PostAPI {
 		}
 	}
 
+	/**
+	 * Reads the notice the last save from the editor left, as an error list.
+	 *
+	 * A notice explains why that save fetched nothing, such as a failed
+	 * version check. Unlike `story_update_error`, it does not mean a pull failed.
+	 *
+	 * @param int $post_id Story post.
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	public function get_story_update_notice( int $post_id ): ?array {
+		$notice = get_post_meta( $post_id, 'story_update_notice', true );
+		return is_array( $notice ) && array() !== $notice ? $notice : null;
+	}
+
+	/**
+	 * Stores the notice of a save from the editor, or clears it.
+	 *
+	 * @param int            $post_id Story post.
+	 * @param \WP_Error|null $notice  Notice to store; null clears it.
+	 */
+	public function set_story_update_notice( int $post_id, ?WP_Error $notice = null ): void {
+		if ( null === $notice ) {
+			delete_post_meta( $post_id, 'story_update_notice' );
+			return;
+		}
+
+		update_post_meta( $post_id, 'story_update_notice', $this->get_wp_error_as_array( $notice ) );
+	}
+
 	public function get_story_update_progress( int $post_id ): ?StorySyncProgress {
 		return StorySyncProgress::from_meta_value( get_post_meta( $post_id, 'story_update_state', true ) );
 	}
@@ -200,6 +300,81 @@ class PostAPI {
 		} else {
 			update_post_meta( $post_id, 'story_update_state', $progress->to_array() );
 		}
+	}
+
+	/**
+	 * Saves a fresh heartbeat for a pull in flight.
+	 *
+	 * Does nothing when no pull is in flight, as when an archive is
+	 * unpacked outside a pull.
+	 *
+	 * @param int    $post_id Post being published.
+	 * @param float  $percent Progress shown in the editor.
+	 * @param string $status  Step shown in the editor.
+	 */
+	private function record_heartbeat( int $post_id, float $percent, string $status ): void {
+		if ( null === $this->get_story_update_progress( $post_id ) ) {
+			return;
+		}
+
+		$this->set_story_update_progress( $post_id, new StorySyncProgress( $percent, $status ) );
+	}
+
+	/**
+	 * The pull step waiting to run, as stored before it was scheduled.
+	 *
+	 * `json` is the exact argument of the `shorthand_pull_story_cron` event,
+	 * so `wp_next_scheduled()` can tell whether the step is still queued.
+	 * `attempts` counts how often `StoryPullWatch` resumed it.
+	 *
+	 * @param int $post_id Post being published.
+	 * @return array{json: string, attempts: int}|null
+	 */
+	public function get_story_update_task( int $post_id ): ?array {
+		$task = get_post_meta( $post_id, 'story_update_task', true );
+		if ( ! is_array( $task ) || ! isset( $task['json'] ) || ! is_string( $task['json'] ) ) {
+			return null;
+		}
+
+		return array(
+			'json'     => $task['json'],
+			'attempts' => isset( $task['attempts'] ) ? (int) $task['attempts'] : 0,
+		);
+	}
+
+	/**
+	 * Stores the pull step about to be scheduled.
+	 *
+	 * @param int    $post_id  Post being published.
+	 * @param string $json     Exact argument of the `shorthand_pull_story_cron` event.
+	 * @param int    $attempts How often the watch has resumed this step.
+	 */
+	public function set_story_update_task( int $post_id, string $json, int $attempts = 0 ): void {
+		/* Meta writes unslash their value, and the JSON must survive byte for byte. */
+		update_post_meta(
+			$post_id,
+			'story_update_task',
+			array(
+				'json'     => wp_slash( $json ),
+				'attempts' => $attempts,
+			)
+		);
+	}
+
+	/**
+	 * Drops the stored step, unless it belongs to a newer pull.
+	 *
+	 * @param StoryUpdateTask $args Step of the pull that ended.
+	 */
+	private function forget_story_update_task( StoryUpdateTask $args ): void {
+		$task   = $this->get_story_update_task( $args->post_id );
+		$stored = null === $task ? null : StoryUpdateTask::from_json( $task['json'] );
+
+		if ( null !== $stored && $stored->request_nonce !== $args->request_nonce ) {
+			return;
+		}
+
+		delete_post_meta( $args->post_id, 'story_update_task' );
 	}
 
 	/**
@@ -353,6 +528,12 @@ class PostAPI {
 		$payload = json_decode( $body );
 
 		if ( 202 === $status_code ) {
+			/* A step that lost the pull must not write its 0% over the newer pull's progress. */
+			if ( ! $this->owns_pull() ) {
+				return $this->get_superseded_error();
+			}
+
+			$this->set_story_update_progress( $args->post_id, new StorySyncProgress( 0, __( 'Waiting for Shorthand to prepare the story', 'the-shorthand-editor' ) ) );
 			return new WP_Error( 'retry', 'File download not ready.', 5 ); /* 5 second retry */
 		}
 
@@ -407,17 +588,63 @@ class PostAPI {
 	}
 
 	/**
-	 * @return null|int|\WP_Error
+	 * Runs one step of a pull.
+	 *
+	 * A download step fetches parts until the archive is complete or the
+	 * step budget is spent. The step after the last part assembles and
+	 * unpacks the archive, with a fresh budget.
+	 *
+	 * Each part is sized from the download speed measured so far. The first
+	 * step of a download starts from the speed stored by the last download,
+	 * and the step stores what it measured for the next one.
+	 *
+	 * The guard is asked before each write. When it answers false, a newer
+	 * pull or another run of the step took over, and the step stops.
+	 *
+	 * @param StoryUpdateTask $args  Step to run; advanced as parts land.
+	 * @param callable|null   $guard Returns whether the step still owns the pull. Defaults to a check of the pull nonce.
+	 * @return null|\WP_Error Null when the pull ended or was superseded; a `retry` error when another step is needed.
 	 */
-	public function pull_story_cron( StoryUpdateTask $args ) {
+	public function pull_story_cron( StoryUpdateTask $args, ?callable $guard = null ) {
+		/* An earlier event in the same cron run may have broken the connection; the nonce read below must not fail with it. */
+		$this->reconnect_database();
+
+		$started = $this->now();
+
 		if ( ! $this->check_pull_story_status( $args ) ) {
 			/* terminate this request immediately if there is a new request in flight */
 			return null;
 		}
 
+		$this->guard = $guard ?? function () use ( $args ): bool {
+			wp_cache_delete( $args->post_id, 'post_meta' );
+			return $this->check_pull_story_status( $args );
+		};
+
+		try {
+			$result = $this->run_step( $args, $started );
+		} finally {
+			$this->guard = null;
+		}
+
+		return null !== $result && FileSystemService::SUPERSEDED === $result->get_error_code() ? null : $result;
+	}
+
+	/**
+	 * Runs the parts of one step, or the completion step.
+	 *
+	 * @param StoryUpdateTask $args    Step to run.
+	 * @param float           $started When the step began.
+	 * @return null|\WP_Error
+	 */
+	private function run_step( StoryUpdateTask $args, float $started ): ?WP_Error {
 		$res = $this->check_file_url( $args );
 		if ( is_wp_error( $res ) ) {
 			return $res;
+		}
+
+		if ( 0 === $args->end && 0 === $args->speed ) {
+			$args->speed = $this->pull_speed->get();
 		}
 
 		$args->ensure_chunk_window();
@@ -427,56 +654,399 @@ class PostAPI {
 			return $this->pull_story_completed( $args );
 		}
 
-		return $this->pull_story_chunk( $args );
+		$budget             = $this->get_step_budget();
+		$this->step_bytes   = 0;
+		$this->step_seconds = 0.0;
+
+		/* At least one part per step, so a budget of 0 still makes progress. */
+		do {
+			$result = $this->pull_story_chunk( $args );
+		} while ( null === $result && ! $args->is_download_complete() && $this->now() - $started + $this->get_part_seconds( $args ) < $budget );
+
+		/* A step that lost the pull writes nothing more, not even the speed. */
+		if ( null !== $result && FileSystemService::SUPERSEDED === $result->get_error_code() ) {
+			return $result;
+		}
+
+		$speed = $this->get_step_speed();
+		if ( $speed > 0 ) {
+			$this->pull_speed->record( $speed );
+		}
+
+		return $result ?? new WP_Error( 'retry', 'Request further file data', 0 );
 	}
 
 	/**
-	 * @return int|\WP_Error
+	 * Speed of the step's good parts so far, in bytes per second.
+	 *
+	 * @return int 0 when nothing was timed yet.
 	 */
-	private function pull_story_chunk( StoryUpdateTask $args ) {
+	private function get_step_speed(): int {
+		return $this->step_seconds > 0 ? (int) floor( $this->step_bytes / $this->step_seconds ) : 0;
+	}
+
+	/**
+	 * Time the next part should take at the measured speed, in seconds.
+	 *
+	 * @param StoryUpdateTask $args Pull in progress, with its next window set.
+	 * @return float 0 when the speed is unknown.
+	 */
+	private function get_part_seconds( StoryUpdateTask $args ): float {
+		return $args->speed > 0 ? $args->get_expected_chunk_length() / $args->speed : 0.0;
+	}
+
+	/**
+	 * Time one pull step may spend downloading, in seconds.
+	 *
+	 * The step starts no part it expects to end past the budget, from the
+	 * measured speed. A part that is slower than expected, or that times
+	 * out and is retried, can still take the step past it.
+	 *
+	 * @return float At most half of `max_execution_time` when PHP sets one.
+	 */
+	public function get_step_budget(): float {
+		/**
+		 * Filters the time one pull step spends downloading, in seconds.
+		 *
+		 * A step always downloads at least one range. 0 restores one range
+		 * per step.
+		 *
+		 * @param int|float $budget Seconds. Default 15.
+		 */
+		$budget = max( (float) apply_filters( 'theshed_pull_step_budget', self::STEP_BUDGET ), 0.0 );
+
+		$limit = (int) ini_get( 'max_execution_time' );
+		if ( $limit > 0 ) {
+			$budget = min( $budget, $limit / 2 );
+		}
+
+		return $budget;
+	}
+
+	/**
+	 * Longest time one download step can run, in seconds.
+	 *
+	 * The step lock expires after it. A step can overrun the budget by one
+	 * range fetched twice, and each try can wait for the request timeout and
+	 * the file close.
+	 *
+	 * @return int
+	 */
+	public function get_step_limit(): int {
+		return (int) ceil( $this->get_step_budget() + 2 * ( self::CHUNK_TIMEOUT + self::CHUNK_CLOSE_TIME ) );
+	}
+
+	/**
+	 * Whether a pull step should still run.
+	 *
+	 * A step is out of date when a newer pull started, when a later step of
+	 * the same pull is already stored, or when the pull has ended. An event
+	 * that ran twice, or ran late, is one of these.
+	 *
+	 * A pull started by 1.0.11 stored no step. It still runs while it has
+	 * progress and no error.
+	 *
+	 * @param StoryUpdateTask $args Step about to run.
+	 * @return bool
+	 */
+	public function is_current_step( StoryUpdateTask $args ): bool {
+		if ( ! $this->check_pull_story_status( $args ) ) {
+			return false;
+		}
+
+		$task   = $this->get_story_update_task( $args->post_id );
+		$stored = null === $task ? null : StoryUpdateTask::from_json( $task['json'] );
+		if ( null !== $stored && $stored->request_nonce === $args->request_nonce ) {
+			return $stored->start <= $args->start;
+		}
+
+		/* An ended pull drops its stored step. A finished one also drops its progress; a failed one has an error. */
+		return null !== $this->get_story_update_progress( $args->post_id ) && null === $this->get_story_update_error( $args->post_id );
+	}
+
+	/**
+	 * Current time in seconds.
+	 */
+	private function now(): float {
+		return (float) call_user_func( $this->clock );
+	}
+
+	/**
+	 * Downloads the current part, checks it, and records it.
+	 *
+	 * A part is fetched once more when it comes back with the wrong start
+	 * or length, or when its request times out. After a timeout the part is
+	 * made smaller first. The request opens its file with `wb`, so the
+	 * second attempt overwrites the first. Any other transport error is not
+	 * retried.
+	 *
+	 * A good part updates the measured speed, which sizes the next part,
+	 * and is stored as the pull's task, so a step that dies keeps it.
+	 *
+	 * @param StoryUpdateTask $args Pull in progress; advanced by one part on success.
+	 * @return \WP_Error|null Null when the part landed.
+	 */
+	private function pull_story_chunk( StoryUpdateTask $args ): ?WP_Error {
 		$file_path = $this->get_download_chunk_file_path( $args->files, $args->storage_path );
+		$fault     = null;
 
-		$url      = $args->file_url;
-		$start    = $args->start;
-		$end      = $args->end - 1;
-		$response = $this->shorthand->shorthand_api_authed_request(
-			$url,
-			'GET',
-			array(
-				'stream'   => true,
-				'filename' => $file_path,
-				'headers'  => array(
-					'Range' => "bytes={$start}-{$end}",
-				),
-			)
-		);
+		for ( $attempt = 1; $attempt <= 2; $attempt++ ) {
+			$began    = $this->now();
+			$response = $this->request_chunk( $args, $file_path );
 
-		$status_code = wp_remote_retrieve_response_code( $response );
+			$this->step_seconds += max( $this->now() - $began, 0.0 );
 
-		if ( is_wp_error( $response ) ) {
-			return $response;
+			$this->reconnect_database();
+
+			/* A paused step can wake after another took over; it must not retry, delete or record over that step's file. */
+			if ( ! $this->owns_pull() ) {
+				return $this->get_superseded_error();
+			}
+
+			if ( is_wp_error( $response ) ) {
+				$fault = $response;
+				if ( 1 === $attempt && $this->is_timeout( $response ) ) {
+					$this->shrink_after_timeout( $args, $file_path );
+					continue;
+				}
+				break;
+			}
+
+			$status_code = wp_remote_retrieve_response_code( $response );
+			if ( 206 !== $status_code ) {
+				$fault = new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
+				break;
+			}
+
+			$fault = $this->check_chunk( $args, $response, $file_path );
+			if ( null === $fault ) {
+				break;
+			}
 		}
 
-		if ( $status_code !== 206 ) {
-			return new WP_Error( 'status', "Pulling story chunk received HTTP status {$status_code}.", $status_code );
+		if ( null !== $fault ) {
+			/* Not yet counted, so the pull's cleanup would not name it. */
+			$this->file_system->delete_file( $file_path );
+			return $fault;
 		}
+
+		/* With no archive size, the window can be wider than what arrived. */
+		$this->step_bytes += $args->size > 0 ? $args->get_expected_chunk_length() : (int) $this->file_system->get_file_size( $file_path );
 
 		$args->mark_chunk_downloaded();
 
+		$speed = $this->get_step_speed();
+		if ( $speed > 0 ) {
+			$args->speed = $speed;
+		}
+
+		$args->size_next_window( $args->speed );
+
 		$this->record_story_pull( $args->post_id, $args->request_nonce, $args->storage_path, $args->files );
+
+		/* A step the host kills keeps its parts; the watch resumes from here. */
+		$this->set_story_update_task( $args->post_id, wp_json_encode( $args ) );
 
 		$progress = $args->get_progress_percent( 90 );
 
 		$this->set_story_update_progress( $args->post_id, new StorySyncProgress( $progress, 'Saving story to WordPress' ) );
 
-		return new WP_Error( 'retry', 'Request further file data', 0 );
+		return null;
+	}
+
+	/**
+	 * Whether a part request failed because it ran out of time.
+	 *
+	 * @param WP_Error $error Transport error from the request.
+	 * @return bool
+	 */
+	private function is_timeout( WP_Error $error ): bool {
+		if ( false !== strpos( $error->get_error_message(), 'cURL error 28' ) ) {
+			return true;
+		}
+
+		return false !== stripos( $error->get_error_message( 'http_request_failed' ), 'timed out' );
+	}
+
+	/**
+	 * Makes the current part smaller after its request timed out.
+	 *
+	 * The speed the request reached is read from what it wrote. When the
+	 * partial file is missing, empty or cannot be measured, the speed is
+	 * halved instead. The new part is at most half the one that timed out.
+	 *
+	 * The step's speed totals restart, so parts before the timeout do not
+	 * grow the next part straight back.
+	 *
+	 * @param StoryUpdateTask $args      Pull in progress; its window is resized.
+	 * @param string          $file_path Partial chunk file the request wrote.
+	 */
+	private function shrink_after_timeout( StoryUpdateTask $args, string $file_path ): void {
+		$partial = (int) $this->file_system->get_file_size( $file_path );
+		$reached = (int) floor( $partial / self::CHUNK_TIMEOUT );
+
+		$args->speed = $reached > 0 ? $reached : intdiv( $args->speed, 2 );
+		$args->shrink_window( $args->speed );
+
+		$this->step_bytes   = 0;
+		$this->step_seconds = 0.0;
+	}
+
+	/**
+	 * Streams the current part of the archive into a chunk file.
+	 *
+	 * @param StoryUpdateTask $args      Pull in progress.
+	 * @param string          $file_path Chunk file to write.
+	 * @return array|\WP_Error The response, or the transport error.
+	 */
+	private function request_chunk( StoryUpdateTask $args, string $file_path ) {
+		$start = $args->start;
+		$end   = $args->end - 1;
+
+		return $this->shorthand->shorthand_api_authed_request(
+			$args->file_url,
+			'GET',
+			array(
+				'stream'   => true,
+				'filename' => $file_path,
+				/* The 5 s default limits the whole transfer, which a part of up to 25 MiB can outlast. */
+				'timeout'  => self::CHUNK_TIMEOUT,
+				'headers'  => array(
+					'Range' => "bytes={$start}-{$end}",
+				),
+			)
+		);
+	}
+
+	/**
+	 * Checks that a downloaded range starts where asked and is complete.
+	 *
+	 * The size is read through the file system service, so a chunk written
+	 * to a remote uploads directory is measured where it landed.
+	 *
+	 * @param StoryUpdateTask $args      Pull in progress.
+	 * @param array           $response  Response to the range request.
+	 * @param string          $file_path Chunk file it was written to.
+	 * @return \WP_Error|null Null when the range is good.
+	 */
+	private function check_chunk( StoryUpdateTask $args, array $response, string $file_path ): ?WP_Error {
+		$range = wp_remote_retrieve_header( $response, 'Content-Range' );
+		$range = is_array( $range ) ? (string) end( $range ) : (string) $range;
+
+		if ( ! preg_match( '/^bytes (\d+)-\d+\/(?:\d+|\*)$/', trim( $range ), $match ) || (int) $match[1] !== $args->start ) {
+			return $this->get_bad_chunk_error( $args, "Story chunk has Content-Range \"{$range}\"; it should start at byte {$args->start}." );
+		}
+
+		if ( $args->size <= 0 ) {
+			return null;
+		}
+
+		/*
+		 * A stream wrapper that cannot report a size gives null. The
+		 * Content-Range check above still holds, and the assembly step fails
+		 * on a missing chunk, so an unknown size does not fail the pull.
+		 */
+		$expected = $args->get_expected_chunk_length();
+		$written  = $this->file_system->get_file_size( $file_path );
+		if ( null !== $written && $written !== $expected ) {
+			return $this->get_bad_chunk_error( $args, "Story chunk is {$written} bytes; it should be {$expected} bytes." );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Builds the error for a range that came back wrong twice.
+	 *
+	 * The failed pull puts the post back to its prior status, so the hint
+	 * names the button the editor shows then.
+	 *
+	 * @param StoryUpdateTask $args   Pull in progress.
+	 * @param string          $detail What was wrong with it.
+	 * @return WP_Error
+	 */
+	private function get_bad_chunk_error( StoryUpdateTask $args, string $detail ): WP_Error {
+		$message = sprintf(
+			/* translators: %s: "Click Update to try again." or "Click Publish to try again." */
+			__( 'The story download was incomplete. %s', 'the-shorthand-editor' ),
+			self::get_retry_hint( self::get_restore_status( $args->prior_status ) )
+		);
+
+		$error = new WP_Error( 'chunk', $detail );
+		$error->add( 'pretty', $message );
+		return $error;
+	}
+
+	/**
+	 * Whether a status shows the post as published, so the editor's button reads Update.
+	 *
+	 * @param string|false $status Post status.
+	 * @return bool
+	 */
+	public static function is_publishing_status( $status ): bool {
+		return in_array( $status, array( 'publish', 'future' ), true );
+	}
+
+	/**
+	 * The last sentence of a failed pull's message, naming the button to click again.
+	 *
+	 * @param string|false $status Status the post returns to once the pull fails.
+	 * @return string "Click Update to try again." for a published status, "Click Publish to try again." otherwise.
+	 */
+	public static function get_retry_hint( $status ): string {
+		return self::is_publishing_status( $status )
+			? __( 'Click Update to try again.', 'the-shorthand-editor' )
+			: __( 'Click Publish to try again.', 'the-shorthand-editor' );
+	}
+
+	/**
+	 * Whether the running step still owns its pull.
+	 *
+	 * Outside a step, as when an archive is unpacked on its own, there is
+	 * nothing to lose.
+	 *
+	 * @return bool
+	 */
+	private function owns_pull(): bool {
+		return null === $this->guard || (bool) call_user_func( $this->guard );
+	}
+
+	/**
+	 * The error a step returns when a newer pull or another run of the step took over.
+	 *
+	 * @return WP_Error
+	 */
+	private function get_superseded_error(): WP_Error {
+		return new WP_Error( FileSystemService::SUPERSEDED, 'A newer pull or another run of this step took over.' );
+	}
+
+	/**
+	 * Reopens the database connection when it no longer answers.
+	 *
+	 * A long download can outlive the connection, and other code in the same
+	 * cron run can leave it out of sync (MySQL error 2014). Either way, every
+	 * later write in the request would fail. The probe is one `DO 1` query.
+	 */
+	private function reconnect_database(): void {
+		global $wpdb;
+
+		if ( is_object( $wpdb ) && method_exists( $wpdb, 'check_connection' ) ) {
+			$wpdb->check_connection( false );
+		}
 	}
 
 	private function get_download_chunk_file_path( int $chunk_number, string $storage_path ): string {
 		return "{$storage_path}/file-{$chunk_number}.part";
 	}
 
-	public function pull_story_failed( StoryUpdateTask $args, WP_Error $result ): void {
+	/**
+	 * Records a failed pull, restores the post's prior status and cleans up.
+	 *
+	 * @param StoryUpdateTask $args           The pull that failed.
+	 * @param WP_Error        $result         Why it failed.
+	 * @param bool            $restore_status False when a save of the post is in progress and sets the status itself.
+	 */
+	public function pull_story_failed( StoryUpdateTask $args, WP_Error $result, bool $restore_status = true ): void {
 		if ( ! $this->check_pull_story_status( $args ) ) {
 			return;
 		}
@@ -485,10 +1055,12 @@ class PostAPI {
 
 		$this->set_story_update_error( $args->post_id, $result );
 
-		// Restore the original post status; a first-time publish returns to draft.
+		// Restore the original post status; a first-time publish returns to draft. A trashed post stays in the trash.
 		$prior_status = self::get_restore_status( $args->prior_status );
 		$status       = get_post_status( $args->post_id );
-		if ( $status !== $prior_status ) {
+		if ( $restore_status && 'trash' !== $status && $status !== $prior_status ) {
+			/* Back to `future`, core's `_future_post_hook()` saves the whole event list; the step may be a minute old. */
+			Cron::clear_cron_cache();
 			wp_update_post(
 				array(
 					'ID'          => $args->post_id,
@@ -501,8 +1073,68 @@ class PostAPI {
 	}
 
 	private function pull_story_cleanup( StoryUpdateTask $args ): void {
-		$this->delete_pull_chunks( $args->storage_path, $args->files );
+		$this->delete_pull_chunks( $args->storage_path, $this->get_recorded_files( $args ) );
 		$this->forget_story_pull( $args->post_id, $args->request_nonce );
+		$this->forget_story_update_task( $args );
+	}
+
+	/**
+	 * Fails a pull that stopped advancing, from a later request.
+	 *
+	 * The stored error unlocks the editor and makes the next Update start a
+	 * new pull. The new nonce makes a step that was only late exit at once.
+	 * With a stored step, the post returns to its prior status. A pull
+	 * started by 1.0.11 stored none, so its status is left alone.
+	 *
+	 * A save of the post in progress passes `$restore_status` false: it
+	 * sets the status itself, and a nested `wp_update_post()` would race it.
+	 *
+	 * @param int      $post_id        Post being published.
+	 * @param WP_Error $error          Why the pull was given up.
+	 * @param bool     $restore_status False when called from inside a save of the post.
+	 */
+	public function abandon_pull( int $post_id, WP_Error $error, bool $restore_status = true ): void {
+		$task = $this->get_story_update_task( $post_id );
+		$args = null === $task ? null : StoryUpdateTask::from_json( $task['json'] );
+
+		/* `pull_story_failed()` does nothing once the nonce has moved on, so it runs first. */
+		if ( null !== $args && $args->post_id === $post_id && $this->check_pull_story_status( $args ) ) {
+			$this->delete_partial_chunk( $args->storage_path, $this->get_recorded_files( $args ) );
+			$this->pull_story_failed( $args, $error, $restore_status );
+			$this->reset_story_pull_request_nonce( $post_id );
+			return;
+		}
+
+		$nonce = $this->reset_story_pull_request_nonce( $post_id );
+
+		$this->set_story_update_error( $post_id, $error );
+		$this->set_story_update_progress( $post_id );
+
+		foreach ( $this->get_story_pulls( $post_id ) as $pull ) {
+			if ( isset( $pull['path'] ) ) {
+				$this->delete_partial_chunk( (string) $pull['path'], isset( $pull['files'] ) ? (int) $pull['files'] : 0 );
+			}
+		}
+
+		$this->sweep_story_pulls( $post_id, $nonce );
+		delete_post_meta( $post_id, 'story_update_task' );
+	}
+
+	/**
+	 * Number of chunks a pull has left in its directory.
+	 *
+	 * A step downloads several chunks, and the stored task predates them.
+	 * A resumed step starts again from that task. `story_pulls` keeps the
+	 * highest count reached, so it can be ahead of `$args->files`.
+	 *
+	 * @param StoryUpdateTask $args Pull to count.
+	 * @return int
+	 */
+	private function get_recorded_files( StoryUpdateTask $args ): int {
+		$pulls = $this->get_story_pulls( $args->post_id );
+		$files = isset( $pulls[ $args->request_nonce ]['files'] ) ? (int) $pulls[ $args->request_nonce ]['files'] : 0;
+
+		return max( $args->files, $files );
 	}
 
 	/**
@@ -523,6 +1155,19 @@ class PostAPI {
 	}
 
 	/**
+	 * Removes the chunk a killed step was writing when it died.
+	 *
+	 * It is the one past the downloaded count, so `delete_pull_chunks()`
+	 * does not name it.
+	 *
+	 * @param string $storage_path Pull directory.
+	 * @param int    $files        Number of chunks fully downloaded into it.
+	 */
+	private function delete_partial_chunk( string $storage_path, int $files ): void {
+		$this->file_system->delete_file( $this->get_download_chunk_file_path( $files, $storage_path ) );
+	}
+
+	/**
 	 * In-flight pulls for a post, keyed by request nonce.
 	 *
 	 * @param int $post_id Post being published.
@@ -538,7 +1183,8 @@ class PostAPI {
 	 * Notes the pull directory of one request, and how many chunks it holds.
 	 *
 	 * A superseded pull returns without cleaning up, so the record is what
-	 * lets a later publish find its chunks.
+	 * lets a later publish find its chunks. The count never goes down: a
+	 * resumed step downloads again over chunks that are already there.
 	 *
 	 * @param int    $post_id      Post being published.
 	 * @param string $nonce        Request nonce identifying the pull.
@@ -547,6 +1193,10 @@ class PostAPI {
 	 */
 	private function record_story_pull( int $post_id, string $nonce, string $storage_path, int $files ): void {
 		$pulls = $this->get_story_pulls( $post_id );
+
+		if ( isset( $pulls[ $nonce ]['files'] ) ) {
+			$files = max( $files, (int) $pulls[ $nonce ]['files'] );
+		}
 
 		$pulls[ $nonce ] = array(
 			'path'  => $storage_path,
@@ -602,17 +1252,33 @@ class PostAPI {
 			$chunk_paths[] = $this->get_download_chunk_file_path( $idx, $args->storage_path );
 		}
 
+		$this->record_heartbeat( $args->post_id, 90, __( 'Assembling the story download', 'the-shorthand-editor' ) );
+
+		if ( ! $this->owns_pull() ) {
+			$this->file_system->delete_temp_dir( $staging_path );
+			return $this->get_superseded_error();
+		}
+
 		if ( ! $this->file_system->join_pieces( $chunk_paths, $zip_file_path ) ) {
 			$this->file_system->delete_temp_dir( $staging_path );
 			return new WP_Error( 'file', 'Failed to assemble story download.', $zip_file_path );
 		}
 
-		$story = $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id, $staging_path, $args->request_nonce );
+		$this->record_heartbeat( $args->post_id, 92, __( 'Unpacking the story', 'the-shorthand-editor' ) );
+
+		$story = $this->owns_pull()
+			? $this->extract_story_content( $zip_file_path, $args->post_id, $args->story_id, $staging_path, $args->request_nonce )
+			: $this->get_superseded_error();
 
 		$this->file_system->delete_temp_dir( $staging_path );
 
 		if ( is_wp_error( $story ) ) {
-			return $story;
+			/* A step that lost the pull during the unpack reports that, not the unpack error it caused. */
+			return in_array( FileSystemService::SUPERSEDED, $story->get_error_codes(), true ) ? $this->get_superseded_error() : $story;
+		}
+
+		if ( ! $this->owns_pull() ) {
+			return $this->get_superseded_error();
 		}
 
 		$this->set_story_update_progress( $args->post_id );
@@ -687,7 +1353,7 @@ class PostAPI {
 
 		$stored_manifest = $this->get_story_manifest( $post_id );
 
-		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path, $stored_manifest, $nonce );
+		$story = $this->unzip_story( $zip_file, $bundle_path, $staging_path, $stored_manifest, $nonce, absint( $post_id ) );
 		if ( is_wp_error( $story ) ) {
 			$error = new WP_Error( 'story', 'Story being published', $story_id );
 			$error->merge_from( $story );
@@ -713,6 +1379,11 @@ class PostAPI {
 
 		$article = apply_filters( 'theshed_post_process_body', $article, $bundle_path, $story['article_path'] );
 		$head    = apply_filters( 'theshed_post_process_head', $head, $bundle_path, $story['head_path'] );
+
+		/* A step that lost its pull leaves the newer pull's content in place. */
+		if ( ! $this->owns_pull() ) {
+			return $this->get_superseded_error();
+		}
 
 		update_post_meta( $post_id, 'story_head', wp_slash( $head ) );
 		update_post_meta( $post_id, 'story_body', wp_slash( $article ) );
@@ -762,6 +1433,9 @@ class PostAPI {
 		if ( 1 === count( $update ) ) {
 			return;
 		}
+
+		/* For a scheduled post, the update runs core's `_future_post_hook()`, which saves the whole event list. */
+		Cron::clear_cron_cache();
 
 		$this->storing_text = true;
 		try {
@@ -849,9 +1523,10 @@ class PostAPI {
 	 * @param string $staging_path    Staging directory for this pull.
 	 * @param array  $stored_manifest Manifest of the last successful publish.
 	 * @param string $nonce           Request nonce of this pull, versioning the documents.
+	 * @param int    $post_id         Post the story belongs to, for the heartbeat.
 	 * @return array{head: string, article: string, manifest: array, head_path: string, article_path: string}|\WP_Error
 	 */
-	private function unzip_story( $zip_file, $story_path, string $staging_path, array $stored_manifest, string $nonce ) {
+	private function unzip_story( $zip_file, $story_path, string $staging_path, array $stored_manifest, string $nonce, int $post_id ) {
 		$zip = new ZipArchive();
 		$ok  = $zip->open( $zip_file );
 		if ( $ok !== true ) {
@@ -885,7 +1560,18 @@ class PostAPI {
 				$manifest = BundleManifest::relocate_documents( $manifest, $docs_dir );
 			}
 
-			$copied = $this->file_system->copy_tree( $unpack_path, $story_path, $manifest, $stored_manifest );
+			$this->record_heartbeat( $post_id, 95, __( 'Copying the story files', 'the-shorthand-editor' ) );
+
+			/* Asked before each file, so a long copy keeps the step lock, and a step that lost it stops. */
+			$copied = $this->file_system->copy_tree(
+				$unpack_path,
+				$story_path,
+				$manifest,
+				$stored_manifest,
+				function (): bool {
+					return $this->owns_pull();
+				}
+			);
 
 			if ( is_wp_error( $copied ) ) {
 				return $copied;
@@ -898,6 +1584,10 @@ class PostAPI {
 		}
 
 		$stale = BundleManifest::removed( $stored_manifest, $manifest );
+
+		if ( array() !== $stale && ! $this->owns_pull() ) {
+			return $this->get_superseded_error();
+		}
 
 		if ( array() !== $stale ) {
 			$this->file_system->delete_manifest( $story_path, $stale );

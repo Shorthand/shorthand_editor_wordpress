@@ -20,7 +20,13 @@ final class StorySyncStateTest extends WordPressTestCase {
 					'data'    => 500,
 				),
 			),
-			new StorySyncProgress( 60, 'Saving story to WordPress' )
+			StorySyncProgress::from_meta_value(
+				array(
+					'percent'    => 60,
+					'status'     => 'Saving story to WordPress',
+					'updated_at' => 1700000000,
+				)
+			)
 		);
 
 		$this->assertSame(
@@ -33,11 +39,13 @@ final class StorySyncStateTest extends WordPressTestCase {
 							'data'    => 500,
 						),
 					),
+					'notice'     => null,
 				),
 				'liveVersion' => 9,
 				'progress'    => array(
-					'percent' => 60.0,
-					'status'  => 'Saving story to WordPress',
+					'percent'    => 60.0,
+					'status'     => 'Saving story to WordPress',
+					'updated_at' => 1700000000,
 				),
 			),
 			$state->to_array()
@@ -51,6 +59,7 @@ final class StorySyncStateTest extends WordPressTestCase {
 			array(
 				'errors'      => array(
 					'publishing' => null,
+					'notice'     => null,
 				),
 				'liveVersion' => 4,
 			),
@@ -62,5 +71,19 @@ final class StorySyncStateTest extends WordPressTestCase {
 		$state = new StorySyncState( 4, null, null, 'Held title' );
 
 		$this->assertSame( 'Held title', $state->to_array()['pendingTitle'] );
+	}
+
+	public function test_to_array_carries_the_notice_of_the_last_save(): void {
+		$notice = array(
+			array(
+				'code'    => 'pretty',
+				'message' => 'Could not check Shorthand for updates.',
+				'data'    => null,
+			),
+		);
+
+		$state = new StorySyncState( 4, null, null, null, $notice );
+
+		$this->assertSame( $notice, $state->to_array()['errors']['notice'] );
 	}
 }

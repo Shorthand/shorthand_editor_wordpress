@@ -12,7 +12,9 @@ use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullSpeed;
 use Shorthand\Services\StoryTextExtractor;
+use Shorthand\Services\StoryUpdateTask;
 use Shorthand\Tests\Support\FakeRemoteFileSystem;
 use Shorthand\Tests\WordPressTestCase;
 use ZipArchive;
@@ -53,6 +55,118 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		$this->remove_tree( $this->temp_root );
 
 		parent::tearDown();
+	}
+
+	/**
+	 * Copying a large bundle into uploads is a long phase. A heartbeat
+	 * before it keeps the pull watch from failing a healthy pull.
+	 */
+	public function test_a_pull_in_flight_saves_a_heartbeat_before_the_copy(): void {
+		tests_wp_set_post_meta(
+			7,
+			'story_update_state',
+			array(
+				'percent'    => 90.0,
+				'status'     => 'Saving story to WordPress',
+				'updated_at' => time() - 600,
+			)
+		);
+
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => '',
+				'article.html' => '<h1>Story</h1>',
+			)
+		);
+
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
+
+		$progress = get_post_meta( 7, 'story_update_state', true );
+		$this->assertSame( 'Copying the story files', $progress['status'] );
+		$this->assertGreaterThanOrEqual( time() - 1, $progress['updated_at'] );
+	}
+
+	/**
+	 * A completion step that a newer pull superseded, or whose lock another
+	 * run took over, during the unpack copies no file over the bundle.
+	 */
+	public function test_a_completion_step_that_loses_the_pull_before_the_copy_writes_nothing(): void {
+		$task  = $this->completion_task();
+		$calls = 0;
+
+		$result = $this->make_post_api()->pull_story_cron(
+			$task,
+			static function () use ( &$calls ): bool {
+				return ++$calls < 3;
+			}
+		);
+
+		$this->assertNull( $result );
+		$this->assertSame( 3, $calls, 'Asked before the join, before the unpack, and before the first file' );
+		$this->assertSame( array(), $this->file_system->objects() );
+		$this->assertSame( '', get_post_meta( 7, 'story_body', true ) );
+		$this->assertSame( '', get_post_meta( 7, 'story_version', true ) );
+		$this->assertSame( array(), glob( $this->temp_root . '/sh_pull_pull1_*' ), 'The staging directory is removed' );
+	}
+
+	/**
+	 * A late completion step must not write its content and version over a
+	 * newer pull's, nor delete that pull's progress.
+	 */
+	public function test_a_completion_step_that_loses_the_pull_after_the_copy_commits_nothing(): void {
+		tests_wp_set_post_meta(
+			7,
+			'story_update_state',
+			array(
+				'percent'    => 90.0,
+				'status'     => 'Saving story to WordPress',
+				'updated_at' => time(),
+			)
+		);
+		$task  = $this->completion_task();
+		$calls = 0;
+
+		$result = $this->make_post_api()->pull_story_cron(
+			$task,
+			static function () use ( &$calls ): bool {
+				return ++$calls <= 4;
+			}
+		);
+
+		$this->assertNull( $result );
+		$this->assertSame( 5, $calls, 'Join, unpack, two files, then the commit' );
+		$this->assertSame( '', get_post_meta( 7, 'story_body', true ) );
+		$this->assertSame( '', get_post_meta( 7, 'story_manifest', true ) );
+		$this->assertSame( '', get_post_meta( 7, 'story_version', true ) );
+		$this->assertNotSame( '', get_post_meta( 7, 'story_update_state', true ), 'The newer pull keeps its progress' );
+	}
+
+	public function test_a_completion_step_that_keeps_the_pull_commits_the_story(): void {
+		$task = $this->completion_task();
+
+		$result = $this->make_post_api()->pull_story_cron(
+			$task,
+			static function (): bool {
+				return true;
+			}
+		);
+
+		$this->assertNull( $result );
+		$this->assertSame( '<h1>Story</h1>', get_post_meta( 7, 'story_body', true ) );
+		$this->assertSame( 8, get_post_meta( 7, 'story_version', true ) );
+	}
+
+	public function test_unpacking_outside_a_pull_saves_no_heartbeat(): void {
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => '',
+				'article.html' => '<h1>Story</h1>',
+			)
+		);
+
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
+
+		$this->assertSame( '', get_post_meta( 7, 'story_update_state', true ) );
 	}
 
 	public function test_the_archive_is_unpacked_under_staging_and_copied_into_the_bundle(): void {
@@ -416,8 +530,42 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 			$transformer,
 			$file_system ?? $this->file_system,
 			new StoryTextExtractor(),
-			$story_cover ?? $this->createMock( StoryCover::class )
+			$story_cover ?? $this->createMock( StoryCover::class ),
+			new StoryPullSpeed()
 		);
+	}
+
+	/**
+	 * A pull whose one part is downloaded, so its next step assembles it.
+	 *
+	 * The part lives in a local directory, as `join_pieces()` reads it.
+	 */
+	private function completion_task(): StoryUpdateTask {
+		tests_wp_set_post_meta( 7, 'story_id', 'aBc123' );
+		tests_wp_set_post_meta( 7, 'story_update_nonce', 'pull1' );
+
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => '<title>Story</title>',
+				'article.html' => '<h1>Story</h1>',
+			)
+		);
+
+		$chunks = $this->temp_root . '/chunks';
+		mkdir( $chunks );
+		copy( $archive, $chunks . '/file-0.part' );
+
+		$size = (int) filesize( $archive );
+		$task = new StoryUpdateTask( 7, 'aBc123', 'pull1', 'draft', 'https://api.example.test/download/1', $chunks );
+
+		$task->file_url        = 'https://cdn.example.test/bundle.zip';
+		$task->content_version = 8;
+		$task->size            = $size;
+		$task->start           = $size;
+		$task->end             = $size;
+		$task->files           = 1;
+
+		return $task;
 	}
 
 	/**

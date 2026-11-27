@@ -142,6 +142,296 @@ if ( ! class_exists( 'WP_Error' ) ) {
 	}
 }
 
+/*
+ * WP-Cron stubs. Events live in a flat list; a test can make the next
+ * schedule calls fail.
+ */
+
+/**
+ * A `$wpdb` stand-in that records `check_connection()` calls.
+ *
+ * It also runs the few options-table statements of the step lock against
+ * the option stubs' store, and records each one.
+ */
+function tests_wp_make_wpdb(): object {
+	return new class() {
+
+		/**
+		 * Options table name.
+		 *
+		 * @var string
+		 */
+		public $options = 'wp_options';
+
+		/**
+		 * Counts the probe and reports a live connection.
+		 *
+		 * @param bool $allow_bail Whether core may end the request on failure. Unused here.
+		 * @return bool Always true.
+		 */
+		public function check_connection( bool $allow_bail = true ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Matches core's signature.
+			++$GLOBALS['tests_wp_state']['db_connection_checks'];
+			$GLOBALS['tests_wp_state']['db_queries'][] = 'check_connection';
+			return true;
+		}
+
+		/**
+		 * Fills `%s` and `%d` placeholders, quoting strings.
+		 *
+		 * @param string $query   Query with placeholders.
+		 * @param mixed  ...$args Values, in order.
+		 * @return string
+		 */
+		public function prepare( string $query, ...$args ): string {
+			return (string) preg_replace_callback(
+				'/%([sd])/',
+				static function ( array $placeholder ) use ( &$args ): string {
+					$value = array_shift( $args );
+					return 'd' === $placeholder[1] ? (string) (int) $value : "'" . addslashes( (string) $value ) . "'";
+				},
+				$query
+			);
+		}
+
+		/**
+		 * Runs an `INSERT IGNORE`, `UPDATE` or `DELETE` on one option.
+		 *
+		 * @param string $query Prepared statement.
+		 * @return int|false Rows affected, or false for a statement it does not know.
+		 */
+		public function query( string $query ) {
+			$GLOBALS['tests_wp_state']['db_queries'][] = $query;
+
+			$options = &$GLOBALS['tests_wp_state']['options'];
+
+			if ( preg_match( "/^INSERT IGNORE INTO `wp_options` \\( `option_name`, `option_value`, `autoload` \\) VALUES \\( '([^']*)', '([^']*)', 'no' \\)$/", $query, $m ) ) {
+				if ( isset( $options[ $m[1] ] ) ) {
+					return 0;
+				}
+				$options[ $m[1] ] = $m[2];
+				return 1;
+			}
+
+			if ( preg_match( "/^UPDATE `wp_options` SET `option_value` = '([^']*)' WHERE `option_name` = '([^']*)' AND `option_value` = '([^']*)'$/", $query, $m ) ) {
+				if ( ! isset( $options[ $m[2] ] ) || (string) $options[ $m[2] ] !== $m[3] ) {
+					return 0;
+				}
+				$options[ $m[2] ] = $m[1];
+				return 1;
+			}
+
+			if ( preg_match( "/^DELETE FROM `wp_options` WHERE `option_name` = '([^']*)' AND `option_value` = '([^']*)'$/", $query, $m ) ) {
+				if ( ! isset( $options[ $m[1] ] ) || (string) $options[ $m[1] ] !== $m[2] ) {
+					return 0;
+				}
+				unset( $options[ $m[1] ] );
+				return 1;
+			}
+
+			return false;
+		}
+
+		/**
+		 * Reads one option's value.
+		 *
+		 * @param string $query Prepared `SELECT`.
+		 * @return string|null
+		 */
+		public function get_var( string $query ): ?string {
+			$GLOBALS['tests_wp_state']['db_queries'][] = $query;
+
+			if ( preg_match( "/^SELECT `option_value` FROM `wp_options` WHERE `option_name` = '([^']*)'$/", $query, $m ) && isset( $GLOBALS['tests_wp_state']['options'][ $m[1] ] ) ) {
+				return (string) $GLOBALS['tests_wp_state']['options'][ $m[1] ];
+			}
+
+			return null;
+		}
+	};
+}
+
+/**
+ * Every statement `$wpdb` ran, and each `check_connection()` call, in order.
+ *
+ * @return string[]
+ */
+function tests_wp_db_queries(): array {
+	return $GLOBALS['tests_wp_state']['db_queries'];
+}
+
+/**
+ * How often `$wpdb->check_connection()` ran.
+ */
+function tests_wp_db_connection_checks(): int {
+	return $GLOBALS['tests_wp_state']['db_connection_checks'];
+}
+
+/**
+ * Makes the next wp_schedule_single_event() call fail.
+ *
+ * @param bool $stored Whether the event is saved all the same, as when
+ *                     another run saved an identical cron array.
+ */
+function tests_wp_fail_next_schedule( bool $stored = false ): void {
+	$GLOBALS['tests_wp_state']['schedule_failures'][] = $stored;
+}
+
+/**
+ * Every scheduled event, in the order it was added.
+ *
+ * @return array<int, array{timestamp: int, hook: string, args: array, recurrence: string|false}>
+ */
+function tests_wp_scheduled_events(): array {
+	return $GLOBALS['tests_wp_state']['cron_events'];
+}
+
+/**
+ * Every `wp_cache_delete()` call.
+ *
+ * @return array<int, array{key: string, group: string}>
+ */
+function tests_wp_cache_deletes(): array {
+	return $GLOBALS['tests_wp_state']['cache_deletes'];
+}
+
+/**
+ * Whether the request's cached copy of the `cron` option was dropped, as `Cron::clear_cron_cache()` does.
+ */
+function tests_wp_cron_cache_cleared(): bool {
+	$deletes = tests_wp_cache_deletes();
+
+	return in_array(
+		array(
+			'key'   => 'alloptions',
+			'group' => 'options',
+		),
+		$deletes,
+		true
+	) && in_array(
+		array(
+			'key'   => 'cron',
+			'group' => 'options',
+		),
+		$deletes,
+		true
+	);
+}
+
+/**
+ * Removes every scheduled event, as when they all ran.
+ */
+function tests_wp_reset_cron_events(): void {
+	$GLOBALS['tests_wp_state']['cron_events'] = array();
+}
+
+/**
+ * Adds one event to the list.
+ *
+ * @param int          $timestamp  When it runs.
+ * @param string       $hook       Action it fires.
+ * @param array        $args       Arguments passed to the action.
+ * @param string|false $recurrence Interval name, or false for a single event.
+ */
+function tests_wp_add_cron_event( int $timestamp, string $hook, array $args, $recurrence ): void {
+	$GLOBALS['tests_wp_state']['cron_events'][] = array(
+		'timestamp'  => $timestamp,
+		'hook'       => $hook,
+		'args'       => $args,
+		'recurrence' => $recurrence,
+	);
+}
+
+/**
+ * Schedules a single event, unless a test queued a failure.
+ *
+ * @param int    $timestamp When it runs.
+ * @param string $hook      Action it fires.
+ * @param array  $args      Arguments passed to the action.
+ * @param bool   $wp_error  Whether a failure returns a WP_Error rather than false.
+ * @return bool|WP_Error
+ */
+function wp_schedule_single_event( int $timestamp, string $hook, array $args = array(), bool $wp_error = false ) {
+	if ( array() !== $GLOBALS['tests_wp_state']['schedule_failures'] ) {
+		$stored = array_shift( $GLOBALS['tests_wp_state']['schedule_failures'] );
+		if ( $stored ) {
+			tests_wp_add_cron_event( $timestamp, $hook, $args, false );
+		}
+
+		return $wp_error ? new WP_Error( 'could_not_set', 'The cron event list could not be saved.' ) : false;
+	}
+
+	tests_wp_add_cron_event( $timestamp, $hook, $args, false );
+	return true;
+}
+
+/**
+ * Schedules a recurring event.
+ *
+ * @param int    $timestamp  When it first runs.
+ * @param string $recurrence Interval name.
+ * @param string $hook       Action it fires.
+ * @param array  $args       Arguments passed to the action.
+ * @param bool   $wp_error   Unused; this stub never fails.
+ * @return bool|WP_Error
+ */
+function wp_schedule_event( int $timestamp, string $recurrence, string $hook, array $args = array(), bool $wp_error = false ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Matches core's signature.
+	tests_wp_add_cron_event( $timestamp, $hook, $args, $recurrence );
+	return true;
+}
+
+/**
+ * The next run of an event with exactly these arguments.
+ *
+ * @param string $hook Action the event fires.
+ * @param array  $args Arguments passed to the action.
+ * @return int|false
+ */
+function wp_next_scheduled( string $hook, array $args = array() ) {
+	$next = false;
+	foreach ( $GLOBALS['tests_wp_state']['cron_events'] as $event ) {
+		if ( $event['hook'] === $hook && $event['args'] === $args && ( false === $next || $event['timestamp'] < $next ) ) {
+			$next = $event['timestamp'];
+		}
+	}
+
+	return $next;
+}
+
+/**
+ * Removes every event of a hook with exactly these arguments.
+ *
+ * @param string $hook Action the events fire.
+ * @param array  $args Arguments passed to the action.
+ * @return int Number of events removed.
+ */
+function wp_clear_scheduled_hook( string $hook, array $args = array() ): int {
+	$kept = array();
+	foreach ( $GLOBALS['tests_wp_state']['cron_events'] as $event ) {
+		if ( $event['hook'] !== $hook || $event['args'] !== $args ) {
+			$kept[] = $event;
+		}
+	}
+
+	$removed = count( $GLOBALS['tests_wp_state']['cron_events'] ) - count( $kept );
+
+	$GLOBALS['tests_wp_state']['cron_events'] = $kept;
+
+	return $removed;
+}
+
+/**
+ * Records the call.
+ *
+ * @param string $key   Cache key.
+ * @param string $group Cache group.
+ */
+function wp_cache_delete( string $key, string $group = '' ): bool {
+	$GLOBALS['tests_wp_state']['cache_deletes'][] = array(
+		'key'   => $key,
+		'group' => $group,
+	);
+	return true;
+}
+
 /**
  * Reset the small slice of WordPress state used by the unit tests.
  */
@@ -151,6 +441,7 @@ function tests_wp_reset_state(): void {
 	$GLOBALS['tests_wp_state'] = array(
 		'options'              => array(),
 		'filter_args'          => array(),
+		'filter_values'        => array(),
 		'transients'           => array(),
 		'transient_ttls'       => array(),
 		'site_transients'      => array(),
@@ -209,6 +500,7 @@ function tests_wp_reset_state(): void {
 		'nocache_calls'        => 0,
 		'current_user_can'     => true,
 		'verify_nonce'         => true,
+		'nonce_actions'        => array(),
 		'safe_redirects'       => array(),
 		'hooks'                => array(),
 		'is_preview'           => false,
@@ -219,8 +511,20 @@ function tests_wp_reset_state(): void {
 		'queried_object_id'    => 0,
 		'have_posts'           => 0,
 		'actions_done'         => array(),
+		'cron_events'          => array(),
+		'schedule_failures'    => array(),
+		'cache_deletes'        => array(),
+		'sites'                => array(),
+		'translations'         => array(),
+		'site_id'              => 1,
+		'site_stack'           => array(),
+		'site_events'          => array(),
+		'db_connection_checks' => 0,
+		'db_queries'           => array(),
 	);
 	$GLOBALS['wp_version']   = '6.0';
+
+	$GLOBALS['wpdb'] = tests_wp_make_wpdb(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A recorder stands in for the database.
 }
 
 tests_wp_reset_state();
@@ -504,7 +808,41 @@ function tests_wp_set_current_user_can( bool $can ): void {
  * @param mixed $nonce
  */
 function wp_verify_nonce( $nonce, string $action = '' ): bool {
+	$actions = $GLOBALS['tests_wp_state']['nonce_actions'];
+	if ( array() !== $actions ) {
+		return isset( $actions[ $nonce ] ) && $actions[ $nonce ] === $action;
+	}
+
 	return (bool) $GLOBALS['tests_wp_state']['verify_nonce'];
+}
+
+/**
+ * Makes wp_verify_nonce() accept this nonce for this action only.
+ *
+ * Once one is set, every other nonce and action pair fails.
+ *
+ * @param string $nonce  Nonce value.
+ * @param string $action Action it is valid for.
+ */
+function tests_wp_set_nonce( string $nonce, string $action ): void {
+	$GLOBALS['tests_wp_state']['nonce_actions'][ $nonce ] = $action;
+}
+
+/**
+ * Prints and returns a hidden nonce input, as core does.
+ *
+ * @param int|string $action  Nonce action.
+ * @param string     $name    Field name and id.
+ * @param bool       $referer Unused; no referer field is printed.
+ * @param bool       $display Whether to print the field.
+ * @return string
+ */
+function wp_nonce_field( $action = -1, string $name = '_wpnonce', bool $referer = true, bool $display = true ): string {
+	$field = '<input type="hidden" id="' . $name . '" name="' . $name . '" value="' . wp_create_nonce( (string) $action ) . '" />';
+	if ( $display ) {
+		echo $field; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Test stub.
+	}
+	return $field;
 }
 
 function tests_wp_set_verify_nonce( bool $valid ): void {
@@ -558,7 +896,20 @@ function wp_get_current_user(): object {
 }
 
 function __( string $text, string $domain = '' ): string {
+	$GLOBALS['tests_wp_state']['translations'][] = array(
+		'text'   => $text,
+		'domain' => $domain,
+	);
 	return $text;
+}
+
+/**
+ * Every string passed to `__()`, with its text domain.
+ *
+ * @return array<int, array{text: string, domain: string}>
+ */
+function tests_wp_translations(): array {
+	return $GLOBALS['tests_wp_state']['translations'];
 }
 
 /**
@@ -620,11 +971,39 @@ function get_option( string $option, $default = false ) {
 }
 
 /**
- * @param mixed $value
+ * Stores an option in the test state.
+ *
+ * @param string    $option   Option name.
+ * @param mixed     $value    Option value.
+ * @param bool|null $autoload Ignored; the test state has no autoload.
+ * @return bool
  */
-function update_option( string $option, $value ): bool {
+function update_option( string $option, $value, $autoload = null ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Matches core's signature.
 	$GLOBALS['tests_wp_state']['options'][ $option ] = $value;
 	return true;
+}
+
+/**
+ * Formats a byte count without unit conversion, so tests can assert it.
+ *
+ * @param int|string $bytes    Number of bytes.
+ * @param int        $decimals Ignored.
+ * @return string|false
+ */
+function size_format( $bytes, int $decimals = 0 ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Matches core's signature.
+	return (int) $bytes . ' B';
+}
+
+/**
+ * Formats a time in UTC.
+ *
+ * @param string   $format    PHP date format.
+ * @param int|null $timestamp Unix time; now when null.
+ * @param mixed    $timezone  Ignored; always UTC.
+ * @return string|false
+ */
+function wp_date( string $format, ?int $timestamp = null, $timezone = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Matches core's signature.
+	return gmdate( $format, $timestamp ?? time() );
 }
 
 /**
@@ -680,6 +1059,16 @@ function wp_register_script( string $handle, $src = '', array $deps = array(), $
 		'ver'    => $ver,
 		'args'   => $args,
 	);
+}
+
+/**
+ * Prints nothing; the unit tests render no scripts.
+ *
+ * @param string|string[]|false $handles Scripts to print.
+ * @return string[]
+ */
+function wp_print_scripts( $handles = false ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Matches core's signature.
+	return array();
 }
 
 function wp_add_inline_script( string $handle, string $data ): bool {
@@ -942,10 +1331,23 @@ function update_post_meta( int $post_id, string $meta_key, $meta_value ): bool {
 		'meta_key'   => $meta_key,
 		'meta_value' => $meta_value,
 	);
-	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = is_string( $meta_value )
-		? stripslashes( $meta_value )
-		: $meta_value;
+	$GLOBALS['tests_wp_state']['post_meta'][ $post_id ][ $meta_key ] = tests_wp_unslash_deep( $meta_value );
 	return true;
+}
+
+/**
+ * Removes slashes from strings, nested ones included, as core's
+ * `wp_unslash()` does to every meta value it stores.
+ *
+ * @param mixed $value Meta value about to be stored.
+ * @return mixed
+ */
+function tests_wp_unslash_deep( $value ) {
+	if ( is_array( $value ) ) {
+		return array_map( 'tests_wp_unslash_deep', $value );
+	}
+
+	return is_string( $value ) ? stripslashes( $value ) : $value;
 }
 
 function tests_wp_set_post_field( int $post_id, string $field, string $value ): void {
@@ -1004,6 +1406,10 @@ function wp_update_post( array $postarr = array(), bool $wp_error = false ) {
  * @return mixed
  */
 function wp_slash( $value ) {
+	if ( is_array( $value ) ) {
+		return array_map( 'wp_slash', $value );
+	}
+
 	return is_string( $value ) ? addslashes( $value ) : $value;
 }
 
@@ -1248,6 +1654,91 @@ function the_post(): void {
 }
 
 /**
+ * How often an action ran, through `do_action()`.
+ *
+ * @param string $hook_name Hook name.
+ */
+function did_action( string $hook_name ): int {
+	return count( $GLOBALS['tests_wp_state']['actions_done'][ $hook_name ] ?? array() );
+}
+
+/**
+ * Makes the site a network of sites with these IDs.
+ *
+ * @param int[] $site_ids Site IDs, the main site first.
+ */
+function tests_wp_set_sites( array $site_ids ): void {
+	$GLOBALS['tests_wp_state']['sites'] = $site_ids;
+}
+
+function is_multisite(): bool {
+	return array() !== $GLOBALS['tests_wp_state']['sites'];
+}
+
+/**
+ * The network's sites; only the `ids` field is supported.
+ *
+ * @param array<string, mixed> $args Query arguments.
+ * @return int[]
+ */
+function get_sites( array $args = array() ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Matches core's signature.
+	return $GLOBALS['tests_wp_state']['sites'];
+}
+
+/**
+ * Switches the current site. Each site keeps its own cron events.
+ *
+ * @param int $site_id Site to switch to.
+ */
+function switch_to_blog( int $site_id ): bool {
+	$state = &$GLOBALS['tests_wp_state'];
+
+	$state['site_events'][ $state['site_id'] ] = $state['cron_events'];
+	$state['site_stack'][]                     = $state['site_id'];
+	$state['site_id']                          = $site_id;
+	$state['cron_events']                      = $state['site_events'][ $site_id ] ?? array();
+
+	return true;
+}
+
+function restore_current_blog(): bool {
+	$state = &$GLOBALS['tests_wp_state'];
+
+	$state['site_events'][ $state['site_id'] ] = $state['cron_events'];
+	$state['site_id']                          = (int) array_pop( $state['site_stack'] );
+	$state['cron_events']                      = $state['site_events'][ $state['site_id'] ] ?? array();
+
+	return true;
+}
+
+/**
+ * Cron events of one site of the network.
+ *
+ * @param int $site_id Site ID.
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_site_events( int $site_id ): array {
+	$state = $GLOBALS['tests_wp_state'];
+
+	return $site_id === $state['site_id'] ? $state['cron_events'] : ( $state['site_events'][ $site_id ] ?? array() );
+}
+
+/**
+ * Sets the cron events of one site of the network.
+ *
+ * @param int   $site_id Site ID.
+ * @param array $events  Events, as `tests_wp_scheduled_events()` lists them.
+ */
+function tests_wp_set_site_events( int $site_id, array $events ): void {
+	if ( $site_id === $GLOBALS['tests_wp_state']['site_id'] ) {
+		$GLOBALS['tests_wp_state']['cron_events'] = $events;
+		return;
+	}
+
+	$GLOBALS['tests_wp_state']['site_events'][ $site_id ] = $events;
+}
+
+/**
  * @param mixed ...$args
  */
 function do_action( string $hook_name, ...$args ): void {
@@ -1337,7 +1828,21 @@ function esc_attr( string $text ): string {
 function apply_filters( string $hook_name, $value, ...$args ) {
 	$GLOBALS['tests_wp_state']['filter_args'][ $hook_name ][] = $args;
 
+	if ( array_key_exists( $hook_name, $GLOBALS['tests_wp_state']['filter_values'] ) ) {
+		return $GLOBALS['tests_wp_state']['filter_values'][ $hook_name ];
+	}
+
 	return $value;
+}
+
+/**
+ * Makes a filter return a fixed value, as a callback added by a site would.
+ *
+ * @param string $hook_name Filter name.
+ * @param mixed  $value     Value the filter returns.
+ */
+function tests_wp_set_filter_value( string $hook_name, $value ): void {
+	$GLOBALS['tests_wp_state']['filter_values'][ $hook_name ] = $value;
 }
 
 /**

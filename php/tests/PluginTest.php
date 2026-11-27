@@ -8,6 +8,7 @@ use Shorthand\Core\Version;
 use Shorthand\Plugin;
 use Shorthand\Plugin\Dependencies;
 use Shorthand\Plugin\PostType;
+use Shorthand\Services\Cron;
 use Shorthand\Services\Options;
 use Shorthand\Services\StoryKses;
 
@@ -40,6 +41,61 @@ final class PluginTest extends WordPressTestCase {
 		$plugin->activate();
 
 		$this->assertSame( 1, \tests_wp_rewrite_flushes() );
+	}
+
+	public function test_deactivation_clears_the_pull_watch(): void {
+		\wp_schedule_event( time(), Cron::WATCH_INTERVAL, Cron::WATCH_HOOK );
+
+		$plugin = new Plugin( $this->createMock( Dependencies::class ), $this->createMock( StoryKses::class ) );
+		$plugin->deactivate();
+
+		$this->assertFalse( \wp_next_scheduled( Cron::WATCH_HOOK ) );
+	}
+
+	/**
+	 * Each site keeps its own events. A subsite left with the watch would
+	 * run it with no callback and log `invalid_schedule`.
+	 */
+	public function test_network_deactivation_clears_the_pull_watch_on_every_site(): void {
+		$watch = array(
+			array(
+				'timestamp'  => time(),
+				'hook'       => Cron::WATCH_HOOK,
+				'args'       => array(),
+				'recurrence' => Cron::WATCH_INTERVAL,
+			),
+		);
+		\tests_wp_set_sites( array( 1, 2, 3 ) );
+		\tests_wp_set_site_events( 1, $watch );
+		\tests_wp_set_site_events( 2, $watch );
+		\tests_wp_set_site_events( 3, $watch );
+
+		$plugin = new Plugin( $this->createMock( Dependencies::class ), $this->createMock( StoryKses::class ) );
+		$plugin->deactivate( true );
+
+		$this->assertSame( array(), \tests_wp_site_events( 1 ) );
+		$this->assertSame( array(), \tests_wp_site_events( 2 ) );
+		$this->assertSame( array(), \tests_wp_site_events( 3 ) );
+	}
+
+	public function test_deactivation_on_one_site_of_a_network_clears_only_that_site(): void {
+		$watch = array(
+			array(
+				'timestamp'  => time(),
+				'hook'       => Cron::WATCH_HOOK,
+				'args'       => array(),
+				'recurrence' => Cron::WATCH_INTERVAL,
+			),
+		);
+		\tests_wp_set_sites( array( 1, 2 ) );
+		\tests_wp_set_site_events( 1, $watch );
+		\tests_wp_set_site_events( 2, $watch );
+
+		$plugin = new Plugin( $this->createMock( Dependencies::class ), $this->createMock( StoryKses::class ) );
+		$plugin->deactivate( false );
+
+		$this->assertSame( array(), \tests_wp_site_events( 1 ) );
+		$this->assertSame( $watch, \tests_wp_site_events( 2 ) );
 	}
 
 	public function test_check_for_updates_returns_original_value_when_transient_is_not_an_object(): void {

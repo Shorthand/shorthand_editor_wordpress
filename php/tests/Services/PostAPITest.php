@@ -12,6 +12,7 @@ use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullSpeed;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Tests\WordPressTestCase;
 
@@ -43,7 +44,8 @@ final class PostAPITest extends WordPressTestCase {
 			$this->createMock( StoryContentTransformer::class ),
 			$file_system ?? $this->createMock( FileSystemService::class ),
 			new StoryTextExtractor(),
-			$this->createMock( StoryCover::class )
+			$this->createMock( StoryCover::class ),
+			new StoryPullSpeed()
 		);
 	}
 
@@ -276,6 +278,25 @@ final class PostAPITest extends WordPressTestCase {
 
 		$this->assertTrue( $flag_during_write );
 		$this->assertFalse( $post_api->is_storing_text() );
+	}
+
+	/**
+	 * For a scheduled post, the update fires core's `_future_post_hook()`,
+	 * which saves the whole `cron` option from the request's cached copy.
+	 */
+	public function test_store_story_text_reads_the_cron_option_fresh_before_its_write(): void {
+		$post_api = $this->make_post_api( $this->createMock( Shorthand::class ) );
+
+		$cleared = null;
+		tests_wp_set_update_post_observer(
+			static function () use ( &$cleared ): void {
+				$cleared = tests_wp_cron_cache_cleared();
+			}
+		);
+
+		$this->store_text( $post_api, 42, self::STORY );
+
+		$this->assertTrue( $cleared );
 	}
 
 	public function test_pull_story_begin_maps_a_429_from_the_generate_route_to_a_rate_limited_error(): void {

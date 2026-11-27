@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-09-25
+updated: 2026-11-27
 ---
 
 # Publishing a story
@@ -16,23 +16,92 @@ Entry point: `Shorthand\Services\PostAPI::pull_story_begin()`, scheduled from
 ## When a pull is scheduled
 
 `Shorthand\Admin\Editor::wp_insert_post_data()` runs on every save of a story
-post. It schedules a pull only in these cases, and only while the auth state
-is `connected`:
+post. Only a save with editor intent can schedule a pull; see § Save intent.
+A save with intent schedules a pull only in these cases, and only while the
+auth state is `connected`:
 
 | Save | Pull |
 | --- | --- |
 | Status moves into `publish` or `future` from any other status | Always |
 | Already published, `story_update_error` post meta is set | Always, as a retry |
 | Already published, `story_version` post meta is absent | Always |
-| Already published, `story_update_state` post meta is set | Never; the pull in flight is left to finish |
+| Already published, `story_update_state` post meta is set | Never while `Shorthand\Services\StoryPullWatch::check()` reports it running or resumed; always once the watch fails it |
 | Already published, Shorthand reports a different `contentVersion` | Always |
 | Already published, Shorthand reports the same `contentVersion` | Never |
-| Already published, the version check itself fails | Always; the pull reports the real failure |
+| Already published, the version check itself fails | Never; the save stores a `story_update_notice`, "Could not check Shorthand for updates" |
 | Status leaves `publish` and `future` | Never |
 
 The content version is read from `GET /v2/stories/{id}/settings` by
 `Shorthand\Services\Shorthand::get_story_version()`. That request generates no
 archive, so it does not count against the workspace's concurrent build cap.
+
+## Save intent
+
+Only the edit screen, Quick Edit and bulk edit may start a pull, check
+Shorthand for a new version, or push the title. Any other save of a story
+post, by another plugin or by core outside those screens, never calls
+Shorthand.
+
+### How intent is marked
+
+Each screen prints a nonce in the request field `shorthand_story_intent`:
+
+| Screen | Request | Post match | Nonce action |
+| --- | --- | --- | --- |
+| Edit screen | `$_POST['action']` is `editpost` | `$_POST['post_ID']` | `shorthand_story_save_{id}` |
+| Quick Edit | `$_POST['action']` is `inline-save` | `$_POST['post_ID']` | `shorthand_story_list_save` |
+| Bulk edit | `$_REQUEST['bulk_edit']` is set, by GET | id in `$_REQUEST['post']` | `shorthand_story_list_save` |
+
+- `Shorthand\Admin\Editor::edit_form_after_title()` prints the edit screen field.
+- `Shorthand\Admin\StoryListColumn` adds a "Story" column to the stories list. It shows "Updating N%", "Update failed" or "Fetched". "Fetched" means a bundle was fetched, not that Shorthand has nothing newer. Core fires `quick_edit_custom_box` and `bulk_edit_custom_box` only for columns it does not own, so the column is where those hooks print the field. The field has no `id`, because core clones the template for each row.
+- `Shorthand\Admin\StorySaveIntent::claim()` checks the request. Each post's intent is claimed once per request, so a nested `wp_update_post()` of the same post by another plugin finds it used.
+
+### A save without intent
+
+- No title push, and no held title. `Shorthand\Admin\AdminGateway::sync_post_title()` saves Shorthand's own title this way.
+- No version check, and no pull.
+- A status move into `publish` or `future` goes ahead when the post has `story_body`. Without it, the save keeps the prior status and stores the error "Open the story and click Publish to fetch it from Shorthand." While a pull is in flight, the save keeps the prior status and stores no error, so the pull's own outcome stays visible.
+- `story_update_state`, `story_update_nonce` and `story_update_task` are never touched.
+
+### Expired nonce
+
+A nonce lives 12 to 24 hours. `Shorthand\Admin\Editor::refresh_nonces()` adds the field to core's `wp_refresh_nonces` `replace` list, at priority 11, so an open edit screen keeps a fresh nonce. An `editpost` save of a story into `publish` or `future` whose field is missing or fails stores a `story_update_notice`: "The page had expired, so the story was not fetched. Reload and click Update." It then counts as a save without intent.
+
+### Notice
+
+`story_update_notice` explains why the last save from the editor fetched nothing. Every save with intent clears it first. The editor receives it as `errors.notice` and shows it in the story status line.
+
+### Autosave of a draft title
+
+The heartbeat autosave of the author's own draft saves the title through `edit_post()`. `StorySaveIntent::is_autosave()` recognises it by the `update-post_{id}` nonce in `data[wp_autosave]`, and it counts as intent for the title only: the title is pushed, and no pull starts.
+
+## Decision: only an editor action calls Shorthand
+
+A story post is saved by many callers: other plugins, core outside the edit
+screen, and `admin-ajax.php` or `admin-post.php` handlers. Before save intent,
+any admin save of a published story checked Shorthand for a new version, and
+any status move into `publish` started a pull. A third-party save could then
+wait on Shorthand, publish edits made in Shorthand that were not meant for the
+site yet, or start a 394 MB download. A third-party title change edited the
+story in Shorthand.
+
+So only a save that carries a valid `shorthand_story_intent` nonce from the
+edit screen, Quick Edit or bulk edit may start a pull, check the version or
+push the title (user decision of 2026-11-25 for Quick Edit and bulk edit). A
+save without intent never calls Shorthand, and never touches
+`story_update_state`, `story_update_nonce` or `story_update_task`, so a pull in
+flight stays safe and its own outcome stays visible. See § Save intent.
+
+## Decision: a failed version check stores a notice, not a pull
+
+When `Shorthand\Services\Shorthand::get_story_version()` fails during a save
+with intent of a published post, the save starts no pull. It stores the
+`story_update_notice` "Could not check Shorthand for updates", which the editor
+shows in the story status line. The next save with intent clears it.
+
+Before save intent, a failed check fell back to a full pull. A short Shorthand
+outage then turned every save of a published story into a full download of the
+archive. The author can still click Update again once Shorthand answers.
 
 ## Decision: a save without a connection blocks one thing only
 
@@ -56,7 +125,7 @@ Unpublishing never needs a connection.
 ## Decision: the title always saves, and Shorthand catches up
 
 The WordPress title is the one property Shorthand also holds. A title change
-is handed to `Shorthand\Services\StoryTitleSync::push()`:
+in a save with intent is handed to `Shorthand\Services\StoryTitleSync::push()`:
 
 - Connected and accepted: sent to `POST /v2/stories/{id}/settings`.
 - Disconnected, or refused: held in `story_title_pending` post meta and shown
@@ -95,8 +164,10 @@ different meaning.
 1. `pull_story_begin()` requests a download URL and creates the pull directory.
    A `429` from Shorthand means the workspace is at its concurrent build cap;
    the publish fails at once, and the author chooses when to retry.
-2. Successive WP-Cron events download 5 MB ranges into the pull directory.
-3. On the final chunk, the chunks are concatenated into the staging directory.
+2. Successive WP-Cron events download parts of up to 25 MiB into the pull
+   directory, several per event. See § Download steps.
+3. The event after the last part concatenates the chunks into the staging
+   directory, streaming each chunk so memory use does not grow with part size.
 4. The archive is unpacked into the staging directory.
 5. The unpacked tree is copied into the bundle directory, skipping files whose
    name, size, and CRC32 match the stored manifest. `article.html` and
@@ -115,6 +186,97 @@ different meaning.
 Steps 5 and 6 run through `Shorthand\Services\FileSystemService`, never through
 a direct `ZipArchive::extractTo()` into uploads. See
 `docs/services/file-system.md`.
+
+## Download steps
+
+One WP-Cron event, `shorthand_pull_story_cron`, is one step. A step downloads
+parts until the archive is complete or its time budget is spent, then
+schedules the next step. The step after the last part assembles and unpacks
+the archive, with a fresh budget. A 394 MB archive takes 16 parts, about 3 to
+4 download steps and one assembly step on a fast link.
+
+| Setting | Default | Filter |
+| --- | --- | --- |
+| Largest part | 25 MiB, `StoryUpdateTask::CHUNK_SIZE_MB` | `theshed_pull_chunk_size`, in bytes; a value below 1 uses the default |
+| First part, speed unknown | 5 MiB, `StoryUpdateTask::PROBE_SIZE` | None |
+| Smallest part | 1 MiB, `StoryUpdateTask::MIN_SIZE` | None |
+| Target time per part | 10 s, `StoryUpdateTask::TARGET_SECONDS` | None |
+| Step budget | 15 s, `PostAPI::STEP_BUDGET` | `theshed_pull_step_budget`, in seconds; capped at half of `max_execution_time` when PHP sets one |
+| Part timeout | 30 s, `PostAPI::CHUNK_TIMEOUT` | None |
+
+- A step always downloads at least one part. A budget of 0 gives one part
+  per step, as in 1.0.11.
+- The budget is a ceiling. After each part's file is closed, the step starts
+  the next part only if it expects that part to end inside the budget, at the
+  measured speed. With the speed unknown, it starts the next part while it is
+  under the budget. On a remote uploads directory, closing the file uploads
+  it, so the upload counts too.
+- A part that is slower than expected, or that times out and is fetched again,
+  can still take a step past its budget.
+- With the 15 s budget, a step stays under a host that ends `wp-cron.php` at
+  20 s of wall time.
+- After each good part, the step stores the advanced task in
+  `story_update_task`, with `attempts` 0. A step the host kills loses at most
+  one part, and the watch resumes from the last part.
+
+### Part size
+
+Each part is sized to take `TARGET_SECONDS` at the measured download speed.
+`StoryUpdateTask::size_next_window()` applies the rules, in order:
+
+1. Speed unknown: `PROBE_SIZE`.
+2. Otherwise speed × `TARGET_SECONDS`, at least `MIN_SIZE`.
+3. At most the `theshed_pull_chunk_size` cap. The cap wins over the probe
+   and the floor.
+4. Never past the end of the archive.
+
+The speed is bytes of good parts divided by seconds spent in their requests,
+over the step so far. It reads low, which is the safe direction: it includes
+connection setup, and on a remote uploads directory it includes the upload
+when the part's file closes.
+
+The speed lives in two places:
+
+- `speed` in the stored step, `story_update_task`, for the rest of the
+  download. See `docs/models/story-post-meta.md`.
+- The `shorthand_pull_speed` option, written once per step that measured a
+  part. The first step of the next download starts from it when it is under
+  7 days old. Otherwise the download probes. See `docs/models/options.md`.
+
+| Site speed | Parts for 394 MB | First part | Settled part |
+| --- | --- | --- | --- |
+| 58 Mbit/s | 16 | 5 MiB | 25 MiB, the cap |
+| 7 Mbit/s | about 48 | 5 MiB | about 8 MiB |
+| 2 Mbit/s | about 160 | 5 MiB | about 2.4 MiB |
+
+### Part checks and retries
+
+Each part is checked before it counts:
+
+- The `Content-Range` start must equal the requested start.
+- The chunk file's size, read through
+  `Shorthand\Services\FileSystemService::get_file_size()`, must equal the
+  requested length, or what is left of the archive for the last range.
+
+A part that fails either check is fetched once more in the same step.
+
+A part whose request times out is also fetched once more, smaller. A timeout
+is a `cURL error 28`, or an `http_request_failed` error whose message holds
+"timed out".
+
+1. The speed it reached is the partial file's size divided by
+   `CHUNK_TIMEOUT`. A missing, empty or unreadable partial file halves the
+   old speed instead.
+2. The part is resized from that speed, and to at most half the part that
+   timed out. `MIN_SIZE` and the cap still apply.
+3. The step's speed totals restart, so earlier fast parts do not grow the
+   next part straight back.
+
+Other transport errors, such as a refused connection, are not retried.
+
+A part makes at most two requests: a bad check and a timeout share the one
+second try. A second failure of any kind deletes the chunk file and fails the
+pull. The error is `chunk` for a bad check, or the transport error.
 
 ## Decision: unpack into a local staging directory, then copy
 
@@ -281,12 +443,170 @@ what each pull left behind: `{path, files}` per request nonce.
 
 - `pull_story_begin()` sweeps every entry that is not its own nonce, unlinking
   `file-0.part` … `file-{files-1}.part` by name, then records its own.
-- `pull_story_chunk()` raises the recorded count after each chunk lands.
+- `pull_story_chunk()` raises the recorded count after each chunk lands. The
+  count never goes down: a step resumed from the stored task downloads again
+  over chunks that are already there.
+- A step downloads several chunks, so the recorded count can be ahead of the
+  `files` in the stored step. `pull_story_cleanup()` and `abandon_pull()` use
+  the larger of the two.
 - `pull_story_cleanup()` unlinks the chunks and drops the entry, on both a
   successful and a failed pull.
 
 A superseded pull returns early without cleaning up. Its entry survives until
 the next `pull_story_begin()` sweeps it.
+
+## Pull watch
+
+A pull step can die without a trace. After MySQL "Commands out of sync", every
+write in that request fails: progress, the next step's schedule, and any error
+the step tries to store. Only a later request can notice.
+`Shorthand\Services\StoryPullWatch::check( int $post_id )` is that check. It
+returns `idle`, `running`, `resumed` or `dead`.
+
+Two records make the check possible:
+
+- Every progress write carries `updated_at`, the heartbeat. Steps write one at
+  0% on each `202` while Shorthand builds the archive, after each chunk, before
+  the join, before the unpack, and before the copy into uploads.
+- `Shorthand\Services\Cron` stores each step in `story_update_task` before
+  scheduling it, and each step stores it again after each part.
+
+The rules, in order:
+
+1. No progress, or an error is set: `idle`. A failed pull's progress is deleted.
+2. Progress without `updated_at`, written by 1.0.11: stamp it, `running`.
+3. Heartbeat younger than `STALE_AFTER` (300 s): `running`.
+4. The stored step is still queued and the heartbeat is younger than
+   `GIVE_UP_AFTER` (1800 s): `running`.
+5. A stored step with `attempts` 0: schedule it again, `resumed`. A step that
+   is still queued, past `GIVE_UP_AFTER`, counts as resumed too: its event
+   exists. It then has one more `GIVE_UP_AFTER` to run.
+6. Otherwise `Shorthand\Services\PostAPI::abandon_pull()` stores a `stalled`
+   error, restores the prior status when a step was stored, deletes the chunks
+   and rotates the nonce: `dead`. The `pretty` message says "Click Publish to
+   try again." when the post goes back to a status other than `publish` or
+   `future`, and "Click Update to try again." otherwise.
+
+Rules 5 and 6 act only under the post's step lock; see § Pull watch lock and
+readers.
+
+## Pull watch lock and readers
+
+`StoryPullWatch::check()` resumes or fails a pull (rules 5 and 6 of § Pull
+watch) only under the post's step lock, held for `StoryPullWatch::LOCK_LIMIT`,
+60 s. A running step holds the lock, and so does another check that is acting
+on the pull, so a check that cannot take the lock returns `running`. Under the
+lock the check clears the post's meta cache and the `cron` option cache, reads
+the pull again, and acts only if rules 1 to 4 still do not apply. Progress that
+cannot be read is deleted, so the sweep stops finding the post.
+
+Three readers run the check:
+
+- The editor's state poll, `wp_ajax_shorthand_get_story_state`, and the
+  editor page load, for users who pass `can_pull_story`. The page load check
+  runs on `load-post.php`, before `post.php` reads the post, so the publish
+  box shows the status a failed pull put back.
+- `Shorthand\Admin\Editor::needs_pull()`, on every save with intent of a published post.
+- The recurring `shorthand_pull_watch` event, every 5 minutes, which checks up
+  to 20 posts with `story_update_state` and unschedules itself when none is
+  left. `Cron::schedule_pull_story()` schedules it when it is missing.
+
+## Event list read fresh
+
+Core saves the whole event list, the `cron` option, on every schedule, from
+the request's cached copy. A pull step can run for a minute. Saving that old
+copy would drop events other requests saved since, and put back events another
+`wp-cron.php` run already ran. So `Cron::clear_cron_cache()` deletes the
+`alloptions` and `cron` cache entries before each write of the event list in a
+pull:
+
+- `Cron::queue_step()`, which schedules every step and every resume. A failed
+  schedule is read back once and retried once. An event that is already
+  queued counts as scheduled.
+- The first step of a pull and the watch event, before they are scheduled.
+- `PostAPI::store_story_text()` and the status restore of a failed pull, before
+  `wp_update_post()`. On a `future` post, core's `_future_post_hook()` then
+  schedules `publish_future_post`, which saves the event list.
+
+## Step lock
+
+Only one step of a post's pull runs at a time. Two cron runners can pick the
+same event, and the watch can resume a step that was only slow.
+`Shorthand\Services\Cron::pull_story_cron()` runs each step in this order:
+
+1. Take the lock, `Shorthand\Services\StoryPullLock::acquire()`. The lock is
+   the option row `shorthand_pull_lock_{post_id}`. Its value is its expiry
+   time: `PostAPI::get_step_limit()` seconds from now, 195 s by default. That
+   is the step budget plus one range fetched twice, each try waiting up to the
+   30 s request timeout and 60 s to close the chunk file.
+2. Clear the post's meta cache, then ask `PostAPI::is_current_step()`. A step
+   that is not current exits. See § Current step.
+3. Run the step, then store and schedule the next one, or fail the pull.
+4. Release the lock in a `finally` block. The release deletes the row only if
+   it still holds this step's expiry.
+
+A step that cannot take the lock does not run. If it is still current, it
+schedules its own event again 30 s later. It does not store the task: that
+would overwrite a newer step the holder stored and reset the watch's
+`attempts`.
+
+An expired lock is taken over with an `UPDATE` that matches the expired value,
+so only one of two waiting steps gets it. A lock left by a killed step
+therefore holds for at most 195 s. Why the lock is direct SQL is in
+§ Decision: take the step lock with direct SQL and `INSERT IGNORE`.
+
+## Step guard
+
+`Cron::pull_story_cron()` hands `PostAPI::pull_story_cron()` a guard. The
+guard clears the post's meta cache, asks `PostAPI::is_current_step()`, then
+renews the step lock with `StoryPullLock::renew()`, a compare-and-set on the
+expiry. The guard runs:
+
+- on each `202` from Shorthand while it builds the archive, before the 0%
+  heartbeat;
+- after each part request returns, before a retry, a file delete or any write;
+- in the assembly step after each heartbeat, before each file the copy into
+  uploads writes, before stale files are deleted and before the content and
+  version are stored;
+- in `Cron` before the next step is scheduled or the pull is failed.
+
+A step whose guard fails stops at once and writes nothing more: a newer pull
+started, or another run of the step took the lock over after this one was
+paused past its expiry. A slow assembly step keeps its lock, because every
+file it copies renews it.
+
+## Current step
+
+`PostAPI::is_current_step()` tells a step whether it should still run. Both
+`Cron::pull_story_cron()` and the step guard ask it. It is false when:
+
+- the nonce moved on to a newer pull;
+- the stored task has the same nonce and a later `start`, so this event ran
+  twice or late;
+- no task is stored and the pull has no progress, or has an error. The pull
+  has ended. A late copy of its last step would find the chunks gone and fail
+  a finished pull.
+
+A pull started by 1.0.11 stored no task. Its steps still run while it has
+progress and no error.
+
+## Decision: take the step lock with direct SQL and `INSERT IGNORE`
+
+`Shorthand\Services\StoryPullLock` reads and writes the
+`shorthand_pull_lock_{post_id}` option row with direct SQL, not the options
+API. Each statement carries a `phpcs:ignore` for `DirectQuery` and
+`NoCaching`, with its reason.
+
+- Taking the lock is one `INSERT IGNORE`. The insert is atomic, so exactly one
+  of two steps that race gets the row. `add_option()` checks the options cache
+  first, then writes with `ON DUPLICATE KEY UPDATE`, so two racing steps can
+  both succeed. `WP_Upgrader::create_lock()` in core uses the same pattern.
+- Taking over an expired lock, renewing it and releasing it each match the
+  stored expiry in the `WHERE` clause, a compare-and-set. A step that lost the
+  lock changes nothing.
+- Reads of the row skip the cache. The options cache holds the value the
+  request saw first, and would not see another request take or release the
+  lock.
 
 ## Removing a bundle
 

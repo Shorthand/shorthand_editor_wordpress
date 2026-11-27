@@ -106,19 +106,47 @@ abstract class BaseFileSystem implements FileSystemService {
 	 * where a plain append is available. `WP_Filesystem::put_contents()` has no
 	 * append mode.
 	 *
+	 * The copy is streamed, so memory use does not grow with the chunk size.
+	 * A source whose size cannot be read, as through some stream wrappers, is
+	 * checked only for a failed copy.
+	 *
 	 * @param string $source_path File to read.
 	 * @param string $dest_path   File to append it to.
 	 * @return bool True when the whole source was appended.
 	 */
 	private function append_file( string $source_path, string $dest_path ): bool {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- the staging directory is local, and WP_Filesystem::put_contents() does not append.
-		$source_contents = file_get_contents( $source_path );
-		if ( false === $source_contents ) {
+		if ( ! file_exists( $source_path ) ) {
 			return false;
 		}
 
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP_Filesystem::put_contents() does not append.
-		return file_put_contents( $dest_path, $source_contents, FILE_APPEND ) === strlen( $source_contents );
+		$expected = $this->get_file_size( $source_path );
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- the staging directory is local, and WP_Filesystem has no streamed read.
+		$source = fopen( $source_path, 'rb' );
+		if ( false === $source ) {
+			return false;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem::put_contents() does not append.
+		$dest = fopen( $dest_path, 'ab' );
+		if ( false === $dest ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closes the handle opened above.
+			fclose( $source );
+			return false;
+		}
+
+		$copied = stream_copy_to_stream( $source, $dest );
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closes the handle opened above.
+		fclose( $source );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closes the handle opened above.
+		$closed = fclose( $dest );
+
+		if ( false === $copied || ! $closed ) {
+			return false;
+		}
+
+		return null === $expected || $copied === $expected;
 	}
 
 	/**
@@ -126,18 +154,23 @@ abstract class BaseFileSystem implements FileSystemService {
 	 *
 	 * Driven from `$source_manifest`, never by enumerating either directory.
 	 *
-	 * @param string     $source_dir      Staging directory to copy from.
-	 * @param string     $dest_dir        Bundle directory to copy into.
-	 * @param array      $source_manifest The tree to copy: bundle path to size, CRC32, and the staged name to read when it differs.
-	 * @param array|null $dest_manifest   Manifest of the last successful copy, or null to copy everything.
+	 * @param string        $source_dir      Staging directory to copy from.
+	 * @param string        $dest_dir        Bundle directory to copy into.
+	 * @param array         $source_manifest The tree to copy: bundle path to size, CRC32, and the staged name to read when it differs.
+	 * @param array|null    $dest_manifest   Manifest of the last successful copy, or null to copy everything.
+	 * @param callable|null $guard           Asked before each file is written; false stops the copy.
 	 * @return array|\WP_Error The manifest of the bundle as it now stands, or an error.
 	 */
-	public function copy_tree( string $source_dir, string $dest_dir, array $source_manifest, ?array $dest_manifest ) {
+	public function copy_tree( string $source_dir, string $dest_dir, array $source_manifest, ?array $dest_manifest, ?callable $guard = null ) {
 		$made = array();
 
 		foreach ( $source_manifest as $relative_path => $entry ) {
 			if ( $this->is_unchanged( $dest_manifest, $relative_path, $entry ) ) {
 				continue;
+			}
+
+			if ( null !== $guard && ! call_user_func( $guard ) ) {
+				return new WP_Error( self::SUPERSEDED, 'The copy stopped: a newer pull or another run of this step took over.' );
 			}
 
 			$dest_path   = $dest_dir . '/' . $relative_path;
@@ -184,6 +217,29 @@ abstract class BaseFileSystem implements FileSystemService {
 		}
 
 		return $manifest;
+	}
+
+	/**
+	 * Size of one file, read fresh.
+	 *
+	 * Works through any stream wrapper that answers `stat`, so a remote
+	 * uploads directory needs no override. The stat cache is cleared first:
+	 * a chunk downloaded again in the same request must not report the size
+	 * of the first attempt.
+	 *
+	 * @param string $path File to measure.
+	 * @return int|null Null when the file does not exist.
+	 */
+	public function get_file_size( string $path ): ?int {
+		clearstatcache( true, $path );
+
+		if ( ! file_exists( $path ) ) {
+			return null;
+		}
+
+		$size = filesize( $path );
+
+		return false === $size ? null : $size;
 	}
 
 	/**

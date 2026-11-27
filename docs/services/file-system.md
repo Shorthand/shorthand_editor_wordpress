@@ -1,7 +1,7 @@
 ---
 title: File system service
 purpose: How the plugin writes into the WordPress uploads directory on any host, disk or object store.
-updated: 2026-08-25
+updated: 2026-11-27
 ---
 
 # File system service
@@ -17,7 +17,7 @@ argument and calls no file system function directly.
 
 | Class | Role |
 | --- | --- |
-| `Shorthand\Services\FileSystemService` | The interface: staging directories, directory creation, chunk joining, tree copy, file and manifest deletion |
+| `Shorthand\Services\FileSystemService` | The interface: staging directories, directory creation, chunk joining, tree copy, file size, file and manifest deletion |
 | `Shorthand\Services\BaseFileSystem` | Everything independent of the uploads host, including the copy diff |
 | `Shorthand\Services\LocalFileSystem` | Uploads are a plain path; trees can be enumerated and removed |
 | `Shorthand\Services\RemoteFileSystem` | Uploads are an object store; `delete_dir()` succeeds without acting, `delete_tree()` is refused |
@@ -87,6 +87,12 @@ memory raise must come before extraction.
 Neither implementation lists a directory. `copy_tree()` takes the manifest of
 the incoming archive and the manifest of the last publish, copies from the
 first, and skips every entry the second already matches.
+
+`copy_tree()` takes an optional guard, asked before each file it writes. When
+the guard answers false, the copy stops with error code
+`FileSystemService::SUPERSEDED` (`superseded`). A pull step passes its
+ownership check, so a long copy renews the step lock, and a step that lost its
+pull stops copying. See `docs/flows/publishing.md` § Step guard.
 
 `Shorthand\Services\BundleManifest` builds both: `from_archive()` reads the
 archive index, `from_meta()` reads the `story_manifest` post meta key.

@@ -14,6 +14,7 @@ use Shorthand\Services\Shorthand;
 use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullWatch;
 use Shorthand\Services\StorySyncState;
 use Shorthand\Services\StoryTitleSync;
 use Shorthand\Admin\Actions\PostPreview;
@@ -78,6 +79,20 @@ class Editor {
 	 */
 	private $title_sync;
 
+	/**
+	 * Fails a stalled pull before the poll or a save reads its state.
+	 *
+	 * @var \Shorthand\Services\StoryPullWatch
+	 */
+	private $pull_watch;
+
+	/**
+	 * Tells a save the editor made from a save by anything else.
+	 *
+	 * @var \Shorthand\Admin\StorySaveIntent
+	 */
+	private $save_intent;
+
 	public function __construct(
 		Options $options,
 		Shorthand $shorthand,
@@ -90,7 +105,9 @@ class Editor {
 		AuthStateManager $auth_state_manager,
 		Permissions $permissions,
 		StoryCover $story_cover,
-		StoryTitleSync $title_sync
+		StoryTitleSync $title_sync,
+		StoryPullWatch $pull_watch,
+		StorySaveIntent $save_intent
 	) {
 		$this->post_type           = $post_type;
 		$this->options             = $options;
@@ -104,6 +121,8 @@ class Editor {
 		$this->permissions         = $permissions;
 		$this->story_cover         = $story_cover;
 		$this->title_sync          = $title_sync;
+		$this->pull_watch          = $pull_watch;
+		$this->save_intent         = $save_intent;
 	}
 
 	public function init( Loader $loader ) {
@@ -117,6 +136,8 @@ class Editor {
 
 		$loader->add_filter( 'admin_enqueue_scripts', $this, 'admin_enqueue_scripts', 10, 1 );
 
+		$loader->add_action( 'load-post.php', $this, 'load_edit_screen', 10, 0 );
+
 		$loader->add_action( 'wp_ajax_shorthand_get_story_state', $this, 'ajax_get_story_state', 10, 1 );
 
 		$loader->add_filter( 'admin_post_thumbnail_html', $this, 'admin_post_thumbnail_html', 10, 3 );
@@ -126,6 +147,8 @@ class Editor {
 		$loader->add_action( 'wp_ajax_shorthand_import_story_cover', $this, 'ajax_import_story_cover', 10, 1 );
 
 		$loader->add_action( 'before_delete_post', $this, 'before_delete_post', 10, 2 );
+
+		$loader->add_filter( 'wp_refresh_nonces', $this, 'refresh_nonces', 11, 2 );
 	}
 
 	public function get_story_id( WP_Post $post ): string {
@@ -149,6 +172,10 @@ class Editor {
 	 * Saves WordPress properties in every auth state. A lost connection
 	 * blocks one thing only: fetching a new story bundle from Shorthand.
 	 *
+	 * Only a save the editor made, from the edit screen, Quick Edit or bulk
+	 * edit, may fetch the story, check Shorthand for a new version or push
+	 * the title. Any other save follows `save_without_intent()`.
+	 *
 	 * @param array<string, mixed> $data
 	 * @param array<string, mixed> $postarr
 	 * @param array<string, mixed> $unsanitized_postarr
@@ -170,6 +197,16 @@ class Editor {
 
 		$post_id      = (int) $postarr['ID'];
 		$prior_status = get_post_status( $post_id );
+
+		if ( ! $this->save_intent->claim( $post_id ) ) {
+			if ( $this->save_intent->is_autosave( $post_id ) ) {
+				$this->sync_title( $post_id, stripslashes( $data['post_title'] ) );
+			}
+			return $this->save_without_intent( $post_id, $data, $prior_status );
+		}
+
+		/* A notice explains the last save from the editor; this save replaces it. */
+		$this->post_api->set_story_update_notice( $post_id );
 
 		$this->sync_title( $post_id, stripslashes( $data['post_title'] ) );
 
@@ -208,6 +245,49 @@ class Editor {
 	}
 
 	/**
+	 * Applies the rules for a save the editor did not make.
+	 *
+	 * Another plugin, core outside the edit screen, or an edit screen whose
+	 * nonce expired saved the post. Nothing here calls Shorthand or pushes
+	 * the title, and a pull in flight is left alone. A publish of a post with
+	 * story content goes ahead without a pull. A publish of a post with none
+	 * keeps the prior status, as only the editor may fetch the story.
+	 *
+	 * @param int                  $post_id      Post being saved.
+	 * @param array<string, mixed> $data         Post fields about to be saved.
+	 * @param string|false         $prior_status Status before this save.
+	 * @return array<string, mixed>
+	 */
+	private function save_without_intent( int $post_id, array $data, $prior_status ): array {
+		if ( ! $this->is_publishing_status( $data['post_status'] ) ) {
+			return $data;
+		}
+
+		if ( $this->save_intent->expired( $post_id ) ) {
+			$this->post_api->set_story_update_notice(
+				$post_id,
+				new WP_Error( 'pretty', __( 'The page had expired, so the story was not fetched. Reload and click Update.', 'the-shorthand-editor' ) )
+			);
+		}
+
+		if ( $this->is_publishing_status( $prior_status ) || $this->has_story_content( $post_id ) ) {
+			return $data;
+		}
+
+		$data['post_status'] = PostAPI::get_restore_status( $prior_status );
+
+		/* A pull in flight owns the error; it reports its own outcome. */
+		if ( null === $this->post_api->get_story_update_progress( $post_id ) ) {
+			$this->post_api->set_story_update_error(
+				$post_id,
+				new WP_Error( 'pretty', __( 'Open the story and click Publish to fetch it from Shorthand.', 'the-shorthand-editor' ) )
+			);
+		}
+
+		return $data;
+	}
+
+	/**
 	 * The WordPress title always saves; Shorthand receives it when it can.
 	 */
 	private function sync_title( int $post_id, string $title ): void {
@@ -235,15 +315,23 @@ class Editor {
 	/**
 	 * A published post pulls again only when it has no bundle, the last
 	 * pull failed, or Shorthand holds a different content version. A pull
-	 * already in flight is left to finish.
+	 * still in flight is left to finish; a stalled one fails here first.
+	 *
+	 * A failed version check starts no pull. It stores a notice instead, so
+	 * a short Shorthand outage does not turn a save into a full download.
 	 */
 	private function needs_pull( int $post_id ): bool {
 		if ( null !== $this->post_api->get_story_update_error( $post_id ) ) {
 			return true;
 		}
 
-		if ( null !== $this->post_api->get_story_update_progress( $post_id ) ) {
+		$watch = $this->pull_watch->check( $post_id, true );
+		if ( StoryPullWatch::RUNNING === $watch || StoryPullWatch::RESUMED === $watch ) {
 			return false;
+		}
+
+		if ( StoryPullWatch::DEAD === $watch ) {
+			return true;
 		}
 
 		$live_version = $this->post_api->get_post_story_version( $post_id );
@@ -258,7 +346,10 @@ class Editor {
 
 		$remote_version = $this->shorthand->get_story_version( (string) $story_id );
 		if ( is_wp_error( $remote_version ) ) {
-			return true;
+			$notice = new WP_Error( 'pretty', __( 'Could not check Shorthand for updates.', 'the-shorthand-editor' ) );
+			$notice->merge_from( $remote_version );
+			$this->post_api->set_story_update_notice( $post_id, $notice );
+			return false;
 		}
 
 		return $remote_version !== $live_version;
@@ -316,7 +407,7 @@ class Editor {
 		} else {
 			return false;
 		}
-		return in_array( $status, array( 'publish', 'future' ), true );
+		return PostAPI::is_publishing_status( $status );
 	}
 
 	public function edit_form_after_title( $post ) {
@@ -324,7 +415,35 @@ class Editor {
 			return;
 		}
 
+		wp_nonce_field( StorySaveIntent::edit_action( $post->ID ), StorySaveIntent::FIELD, false );
+
 		$this->render_story_preview( $post );
+	}
+
+	/**
+	 * Renews the intent field with core's post nonces.
+	 *
+	 * An edit screen left open past the nonce lifetime would otherwise save
+	 * with no intent. `post.js` writes each `replace` value into the element
+	 * with that id. Core adds the list only for a user who can edit the post.
+	 *
+	 * @param array<string, mixed> $response Heartbeat response.
+	 * @param array<string, mixed> $data     Heartbeat data.
+	 * @return array<string, mixed>
+	 */
+	public function refresh_nonces( $response, $data ) {
+		if ( ! isset( $response['wp-refresh-post-nonces']['replace'] ) || ! is_array( $response['wp-refresh-post-nonces']['replace'] ) ) {
+			return $response;
+		}
+
+		$post_id = isset( $data['wp-refresh-post-nonces']['post_id'] ) ? absint( $data['wp-refresh-post-nonces']['post_id'] ) : 0;
+		if ( ! $post_id || get_post_type( $post_id ) !== $this->post_type ) {
+			return $response;
+		}
+
+		$response['wp-refresh-post-nonces']['replace'][ StorySaveIntent::FIELD ] = wp_create_nonce( StorySaveIntent::edit_action( $post_id ) );
+
+		return $response;
 	}
 
 	public function render_story_preview( $post ) {
@@ -435,6 +554,28 @@ class Editor {
 		wp_add_inline_script( 'theshed-create-post-toolbar-script', $create_toolbar_src, 'after' );
 	}
 
+	/**
+	 * Checks the story's pull when its edit screen opens.
+	 *
+	 * Runs on `load-post.php`, before `post.php` reads the post. A pull the
+	 * watch fails puts the post back to its prior status, and the publish
+	 * box must show that status, not the one read before the check.
+	 */
+	public function load_edit_screen(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Reads which post the edit screen opens; core checks access.
+		$action  = isset( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
+		$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		if ( 'edit' !== $action || ! $post_id || get_post_type( $post_id ) !== $this->post_type ) {
+			return;
+		}
+
+		if ( $this->permissions->can_pull_story( $post_id ) ) {
+			$this->pull_watch->check( $post_id );
+		}
+	}
+
 	public function ajax_get_story_state() {
 		if ( empty( $_GET['post'] ) ) {
 			wp_send_json_error( new WP_Error( 'pretty', 'Post ID is required.' ), 401 );
@@ -444,7 +585,15 @@ class Editor {
 		check_ajax_referer( 'shorthand_get_story_state', '_ajax_nonce' );
 
 		$post_id = absint( $_GET['post'] );
-		$data    = $this->get_post_story_state( $post_id );
+		if ( ! $this->permissions->can_pull_story( $post_id ) ) {
+			wp_send_json_error( new WP_Error( 'pretty', __( 'You are not allowed to view this story.', 'the-shorthand-editor' ) ), 403 );
+			return;
+		}
+
+		/* A pull the watch fails comes back with its error and no progress, which ends the client's polling. */
+		$this->pull_watch->check( $post_id );
+
+		$data = $this->get_post_story_state( $post_id );
 
 		wp_send_json_success( $data );
 	}
@@ -577,7 +726,8 @@ class Editor {
 		$error         = $this->post_api->get_story_update_error( $post_id );
 		$state         = $error ? null : $this->post_api->get_story_update_progress( $post_id );
 		$pending_title = $this->title_sync->get_pending( $post_id );
+		$notice        = $this->post_api->get_story_update_notice( $post_id );
 
-		return ( new StorySyncState( $live_version, $error, $state, $pending_title ) )->to_array();
+		return ( new StorySyncState( $live_version, $error, $state, $pending_title, $notice ) )->to_array();
 	}
 }
