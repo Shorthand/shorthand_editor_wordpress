@@ -12,6 +12,7 @@ use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullSpeed;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Tests\WordPressTestCase;
 
@@ -43,7 +44,8 @@ final class PostAPITest extends WordPressTestCase {
 			$this->createMock( StoryContentTransformer::class ),
 			$file_system ?? $this->createMock( FileSystemService::class ),
 			new StoryTextExtractor(),
-			$this->createMock( StoryCover::class )
+			$this->createMock( StoryCover::class ),
+			new StoryPullSpeed()
 		);
 	}
 

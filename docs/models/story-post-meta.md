@@ -1,7 +1,7 @@
 ---
 title: Story post meta
 purpose: The post meta keys a Shorthand story post carries, and the shape of the structured ones.
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # Story post meta
@@ -192,7 +192,9 @@ watch stamps it. See `docs/flows/publishing.md` § Pull watch.
 
 The pull step waiting to run, written by `Shorthand\Services\Cron` before
 every `shorthand_pull_story_cron` schedule call, so it exists even when
-scheduling fails:
+scheduling fails. A download step also writes it after each good part, with
+`attempts` 0, so a step the host kills leaves the next part for the watch to
+resume:
 
 ```php
 array( 'json' => '{"post_id":12,…}', 'attempts' => 0 )
@@ -204,6 +206,21 @@ array( 'json' => '{"post_id":12,…}', 'attempts' => 0 )
   core unslashes meta values, and an unslashed copy no longer matches.
 - `attempts` is 1 after `Shorthand\Services\StoryPullWatch` resumed the step.
   The next step stores a new task with 0.
+
+The JSON holds the public fields of `Shorthand\Services\StoryUpdateTask`.
+The download fields:
+
+| Field | Meaning |
+| --- | --- |
+| `start`, `end` | Byte window of the next part; `end` is exclusive |
+| `files` | Parts downloaded so far |
+| `size` | Archive size from the `HEAD` request; 0 when unknown |
+| `speed` | Measured download speed in bytes per second; 0 when unknown |
+
+A step changes these fields only in memory. The next step's task is encoded
+once, then stored and scheduled with that same JSON. A resumed step runs the
+stored window, even when the step before it resized a part after a timeout.
+`from_json()` reads `speed` only as an int above 0; any other value reads as 0.
 
 Deleted by `pull_story_cleanup()`, unless it belongs to a newer pull.
 

@@ -313,6 +313,125 @@ final class CronTest extends WordPressTestCase {
 		}
 	}
 
+	/**
+	 * A step can run for a minute. Saving the cron array cached when the
+	 * request began would drop events saved since, and put back events
+	 * another run already ran.
+	 */
+	public function test_the_next_step_is_scheduled_from_a_fresh_cron_option(): void {
+		$post_api = $this->retrying_post_api();
+		$post_api->method( 'set_story_update_task' )->willReturnCallback(
+			function (): void {
+				$this->assertNotContains( $this->alloptions(), tests_wp_cache_deletes(), 'Not yet cleared when the step is stored' );
+			}
+		);
+
+		$this->make_cron( $post_api )->pull_story_cron( wp_json_encode( $this->task() ) );
+
+		$this->assertContains( $this->alloptions(), tests_wp_cache_deletes() );
+		$this->assertCount( 1, tests_wp_scheduled_events() );
+	}
+
+	public function test_the_first_step_is_scheduled_from_a_fresh_cron_option(): void {
+		$post_api = $this->createMock( PostAPI::class );
+		$post_api->method( 'pull_story_begin' )->willReturn( $this->task() );
+
+		$this->make_cron( $post_api )->schedule_pull_story( 7 );
+
+		$this->assertContains( $this->alloptions(), tests_wp_cache_deletes() );
+	}
+
+	/**
+	 * Core refuses an identical event, and the refusal says nothing of the
+	 * event already queued.
+	 */
+	public function test_a_step_that_is_already_queued_counts_as_scheduled(): void {
+		$json = wp_json_encode( $this->task() );
+		wp_schedule_single_event( time() - 600, Cron::PULL_HOOK, array( $json ) );
+		tests_wp_fail_next_schedule();
+
+		$this->assertTrue( Cron::queue_step( $json, time() ) );
+		$this->assertCount( 1, tests_wp_scheduled_events() );
+	}
+
+	/**
+	 * A paused step whose lock a resumed step took over must not fail the
+	 * pull or schedule a second chain.
+	 */
+	public function test_a_step_that_lost_its_lock_neither_schedules_nor_fails(): void {
+		$taken    = (string) ( time() + 500 );
+		$post_api = $this->createMock( PostAPI::class );
+		$post_api->method( 'get_step_limit' )->willReturn( 200 );
+		$post_api->method( 'is_current_step' )->willReturn( true );
+		$post_api->method( 'pull_story_cron' )->willReturnCallback(
+			static function () use ( $taken ): WP_Error {
+				update_option( self::LOCK, $taken );
+				return new WP_Error( 'chunk', 'Short range.' );
+			}
+		);
+		$post_api->expects( $this->never() )->method( 'pull_story_failed' );
+		$post_api->expects( $this->never() )->method( 'set_story_update_task' );
+
+		$this->make_cron( $post_api )->pull_story_cron( wp_json_encode( $this->task() ) );
+
+		$this->assertSame( array(), tests_wp_scheduled_events() );
+		$this->assertSame( $taken, get_option( self::LOCK ), 'The other step keeps its lock' );
+	}
+
+	/**
+	 * A newer pull moved the nonce while the step ran.
+	 */
+	public function test_a_superseded_step_neither_schedules_nor_fails(): void {
+		$post_api = $this->createMock( PostAPI::class );
+		$post_api->method( 'get_step_limit' )->willReturn( 200 );
+		$post_api->method( 'is_current_step' )->willReturnOnConsecutiveCalls( true, false );
+		$post_api->method( 'pull_story_cron' )->willReturn( new WP_Error( 'retry', 'Request further file data', 0 ) );
+		$post_api->expects( $this->never() )->method( 'pull_story_failed' );
+		$post_api->expects( $this->never() )->method( 'set_story_update_task' );
+
+		$this->make_cron( $post_api )->pull_story_cron( wp_json_encode( $this->task() ) );
+
+		$this->assertSame( array(), tests_wp_scheduled_events() );
+		$this->assertFalse( get_option( self::LOCK ) );
+	}
+
+	/**
+	 * The guard renews the lock, and the step releases the expiry it renewed to.
+	 */
+	public function test_the_step_hands_its_guard_to_the_pull_and_releases_the_renewed_lock(): void {
+		$lock = $this->createMock( StoryPullLock::class );
+		$lock->method( 'acquire' )->willReturn( 100 );
+		$lock->expects( $this->atLeastOnce() )->method( 'renew' )->with( 7, $this->anything(), 200 )->willReturn( 300 );
+		$lock->expects( $this->once() )->method( 'release' )->with( 7, 300 );
+
+		$post_api = $this->createMock( PostAPI::class );
+		$post_api->method( 'get_step_limit' )->willReturn( 200 );
+		$post_api->method( 'is_current_step' )->willReturn( true );
+		$post_api->method( 'pull_story_cron' )->willReturnCallback(
+			function ( StoryUpdateTask $args, callable $guard ): ?WP_Error {
+				$this->assertTrue( $guard() );
+				return null;
+			}
+		);
+
+		$this->make_cron( $post_api, null, $lock )->pull_story_cron( wp_json_encode( $this->task() ) );
+	}
+
+	public function test_the_watch_interval_is_not_translated_before_after_setup_theme(): void {
+		$schedules = $this->make_cron( $this->createMock( PostAPI::class ) )->add_cron_schedules( array() );
+
+		$this->assertSame( 'Every five minutes', $schedules[ Cron::WATCH_INTERVAL ]['display'] );
+		$this->assertSame( array(), tests_wp_translations(), 'WordPress 6.7+ warns about a text domain loaded this early' );
+	}
+
+	public function test_the_watch_interval_is_translated_after_after_setup_theme(): void {
+		do_action( 'after_setup_theme' );
+
+		$this->make_cron( $this->createMock( PostAPI::class ) )->add_cron_schedules( array() );
+
+		$this->assertSame( 'the-shorthand-editor', tests_wp_translations()[0]['domain'] );
+	}
+
 	public function test_the_watch_interval_is_five_minutes(): void {
 		$schedules = $this->make_cron( $this->createMock( PostAPI::class ) )->add_cron_schedules( array() );
 
@@ -351,11 +470,23 @@ final class CronTest extends WordPressTestCase {
 		return new StoryUpdateTask( 7, 'aBc123', '12345', 'draft', 'https://api.example.test/download/1', 'vip://wp-content/uploads/shorthand/7/aBc123_12345' );
 	}
 
-	private function make_cron( PostAPI $post_api, ?StoryPullWatch $watch = null ): Cron {
+	/**
+	 * The options cache entry that holds the `cron` option.
+	 *
+	 * @return array{key: string, group: string}
+	 */
+	private function alloptions(): array {
+		return array(
+			'key'   => 'alloptions',
+			'group' => 'options',
+		);
+	}
+
+	private function make_cron( PostAPI $post_api, ?StoryPullWatch $watch = null, ?StoryPullLock $lock = null ): Cron {
 		$dependencies = $this->createMock( Dependencies::class );
 		$dependencies->method( 'get_post_api' )->willReturn( $post_api );
 		$dependencies->method( 'get_pull_watch' )->willReturn( $watch ?? $this->createMock( StoryPullWatch::class ) );
-		$dependencies->method( 'get_pull_lock' )->willReturn( new StoryPullLock() );
+		$dependencies->method( 'get_pull_lock' )->willReturn( $lock ?? new StoryPullLock() );
 
 		return new Cron( $dependencies );
 	}

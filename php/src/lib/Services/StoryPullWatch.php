@@ -34,10 +34,20 @@ class StoryPullWatch {
 	 */
 	const SWEEP_LIMIT = 20;
 
+	/**
+	 * Seconds the step lock holds while a check resumes or fails a pull.
+	 */
+	const LOCK_LIMIT = 60;
+
 	const IDLE    = 'idle';
 	const RUNNING = 'running';
 	const RESUMED = 'resumed';
 	const DEAD    = 'dead';
+
+	/**
+	 * Internal result of the read-only part of a check: the pull needs a resume or a failure.
+	 */
+	private const STALLED = 'stalled';
 
 	/**
 	 * Reads and writes the pull's post meta.
@@ -53,21 +63,71 @@ class StoryPullWatch {
 	 */
 	private $post_type;
 
-	public function __construct( PostAPI $post_api, string $post_type ) {
+	/**
+	 * Per-post step lock. A check that acts on a pull holds it.
+	 *
+	 * @var \Shorthand\Services\StoryPullLock
+	 */
+	private $lock;
+
+	public function __construct( PostAPI $post_api, string $post_type, StoryPullLock $lock ) {
 		$this->post_api  = $post_api;
 		$this->post_type = $post_type;
+		$this->lock      = $lock;
 	}
 
 	/**
 	 * Checks the pull of one post, resuming or failing it when it stalled.
+	 *
+	 * A stalled pull is resumed or failed only under the post's step lock.
+	 * A running step holds that lock, and so does another check, so a
+	 * check that cannot take it reports `running`. Under the lock the meta
+	 * and the event list are read again, past any cached copy, and the
+	 * check acts only when the pull is still stalled.
 	 *
 	 * @param int  $post_id Post being published.
 	 * @param bool $saving  True when called from inside a save of the post, which sets the status itself.
 	 * @return string One of `idle`, `running`, `resumed` or `dead`.
 	 */
 	public function check( int $post_id, bool $saving = false ): string {
+		$status = $this->inspect( $post_id );
+		if ( self::STALLED !== $status ) {
+			return $status;
+		}
+
+		$expiry = $this->lock->acquire( $post_id, self::LOCK_LIMIT );
+		if ( null === $expiry ) {
+			return self::RUNNING;
+		}
+
+		try {
+			wp_cache_delete( $post_id, 'post_meta' );
+			Cron::clear_cron_cache();
+
+			$status = $this->inspect( $post_id );
+			if ( self::STALLED !== $status ) {
+				return $status;
+			}
+
+			return $this->recover( $post_id, $saving );
+		} finally {
+			$this->lock->release( $post_id, $expiry );
+		}
+	}
+
+	/**
+	 * Reads the pull's state, with the small writes that need no lock.
+	 *
+	 * @param int $post_id Post being published.
+	 * @return string `idle` or `running`, or `stalled` when the pull needs a resume or a failure.
+	 */
+	private function inspect( int $post_id ): string {
 		$progress = $this->post_api->get_story_update_progress( $post_id );
 		if ( null === $progress ) {
+			/* Progress that cannot be read would keep the sweep finding the post for ever. */
+			if ( '' !== get_post_meta( $post_id, 'story_update_state', true ) ) {
+				$this->post_api->set_story_update_progress( $post_id );
+			}
 			return self::IDLE;
 		}
 
@@ -95,11 +155,27 @@ class StoryPullWatch {
 			return self::RUNNING;
 		}
 
-		if ( null !== $task && 0 === $task['attempts'] && $this->resume( $post_id, $task['json'], $progress ) ) {
+		return self::STALLED;
+	}
+
+	/**
+	 * Resumes a stalled pull once, or fails it. Runs under the step lock.
+	 *
+	 * @param int  $post_id Post being published.
+	 * @param bool $saving  True when called from inside a save of the post.
+	 * @return string `resumed` or `dead`.
+	 */
+	private function recover( int $post_id, bool $saving ): string {
+		$progress = $this->post_api->get_story_update_progress( $post_id );
+		$task     = $this->post_api->get_story_update_task( $post_id );
+
+		if ( null !== $progress && null !== $task && 0 === $task['attempts'] && $this->resume( $post_id, $task['json'], $progress ) ) {
 			return self::RESUMED;
 		}
 
-		$this->post_api->abandon_pull( $post_id, $this->get_stalled_error( $age ), ! $saving );
+		$age = null === $progress ? 0 : time() - (int) $progress->get_updated_at();
+
+		$this->post_api->abandon_pull( $post_id, $this->get_stalled_error( $post_id, $age, $task ), ! $saving );
 		return self::DEAD;
 	}
 
@@ -136,6 +212,10 @@ class StoryPullWatch {
 	 * The next step stores a new task with no attempts, so each step of a
 	 * pull that advances can be resumed once.
 	 *
+	 * A step that is still queued, past `GIVE_UP_AFTER`, counts as resumed:
+	 * its event already exists. It then has one more `GIVE_UP_AFTER` to run
+	 * before the pull fails, so a site whose cron never runs still fails it.
+	 *
 	 * @param int               $post_id  Post being published.
 	 * @param string            $json     Exact argument of the lost event.
 	 * @param StorySyncProgress $progress Last heartbeat.
@@ -145,17 +225,30 @@ class StoryPullWatch {
 		$this->post_api->set_story_update_task( $post_id, $json, 1 );
 		$this->post_api->set_story_update_progress( $post_id, $progress->touch() );
 
-		return true === wp_schedule_single_event( time(), Cron::PULL_HOOK, array( $json ), true );
+		return true === Cron::queue_step( $json, time() );
 	}
 
 	/**
 	 * The error a stalled pull is failed with. The editor shows its `pretty` message.
 	 *
-	 * @param int $age Seconds since the last heartbeat.
+	 * The message names the button the editor shows once the pull fails:
+	 * Publish when the post goes back to a status that is not published,
+	 * Update otherwise. A pull with no stored step keeps the post's status.
+	 *
+	 * @param int                                     $post_id Post being published.
+	 * @param int                                     $age     Seconds since the last heartbeat.
+	 * @param array{json: string, attempts: int}|null $task    Stored step, if any.
 	 */
-	private function get_stalled_error( int $age ): WP_Error {
+	private function get_stalled_error( int $post_id, int $age, ?array $task ): WP_Error {
+		$args   = null === $task ? null : StoryUpdateTask::from_json( $task['json'] );
+		$status = null === $args ? get_post_status( $post_id ) : PostAPI::get_restore_status( $args->prior_status );
+
+		$message = PostAPI::is_publishing_status( $status )
+			? __( 'The story download stopped before it finished. Click Update to try again.', 'the-shorthand-editor' )
+			: __( 'The story download stopped before it finished. Click Publish to try again.', 'the-shorthand-editor' );
+
 		$error = new WP_Error( 'stalled', "The story download made no progress for {$age} seconds.", $age );
-		$error->add( 'pretty', __( 'The story download stopped before it finished. Click Update to try again.', 'the-shorthand-editor' ) );
+		$error->add( 'pretty', $message );
 		return $error;
 	}
 }

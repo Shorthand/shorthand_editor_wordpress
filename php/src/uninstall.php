@@ -41,6 +41,9 @@ wp_clear_scheduled_hook( 'shorthand_pull_story_cron' );
 /* The recurring watch over story pulls. */
 wp_clear_scheduled_hook( 'shorthand_pull_watch' );
 
+/* Download speed kept between story pulls. */
+delete_option( 'shorthand_pull_speed' );
+
 /* Step locks left by pull steps that were killed. */
 global $wpdb;
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The lock rows are written with direct SQL too.

@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # Publishing a story
@@ -136,10 +136,10 @@ different meaning.
 1. `pull_story_begin()` requests a download URL and creates the pull directory.
    A `429` from Shorthand means the workspace is at its concurrent build cap;
    the publish fails at once, and the author chooses when to retry.
-2. Successive WP-Cron events download 25 MiB ranges into the pull directory,
-   several per event. See § Download steps.
-3. The event after the last range concatenates the chunks into the staging
-   directory.
+2. Successive WP-Cron events download parts of up to 25 MiB into the pull
+   directory, several per event. See § Download steps.
+3. The event after the last part concatenates the chunks into the staging
+   directory, streaming each chunk so memory use does not grow with part size.
 4. The archive is unpacked into the staging directory.
 5. The unpacked tree is copied into the bundle directory, skipping files whose
    name, size, and CRC32 match the stored manifest. `article.html` and
@@ -162,35 +162,93 @@ a direct `ZipArchive::extractTo()` into uploads. See
 ## Download steps
 
 One WP-Cron event, `shorthand_pull_story_cron`, is one step. A step downloads
-ranges until the archive is complete or its time budget is spent, then
-schedules the next step. The step after the last range assembles and unpacks
-the archive, with a fresh budget. A 394 MB archive takes 16 ranges, about 3 to
+parts until the archive is complete or its time budget is spent, then
+schedules the next step. The step after the last part assembles and unpacks
+the archive, with a fresh budget. A 394 MB archive takes 16 parts, about 3 to
 4 download steps and one assembly step on a fast link.
 
 | Setting | Default | Filter |
 | --- | --- | --- |
-| Range size | 25 MiB, `StoryUpdateTask::CHUNK_SIZE_MB` | `shorthand_pull_chunk_size`, in bytes; a value below 1 uses the default |
-| Step budget | 20 s, `PostAPI::STEP_BUDGET` | `shorthand_pull_step_budget`, in seconds; capped at half of `max_execution_time` when PHP sets one |
-| Range timeout | 30 s, `PostAPI::CHUNK_TIMEOUT` | None |
+| Largest part | 25 MiB, `StoryUpdateTask::CHUNK_SIZE_MB` | `shorthand_pull_chunk_size`, in bytes; a value below 1 uses the default |
+| First part, speed unknown | 5 MiB, `StoryUpdateTask::PROBE_SIZE` | None |
+| Smallest part | 1 MiB, `StoryUpdateTask::MIN_SIZE` | None |
+| Target time per part | 10 s, `StoryUpdateTask::TARGET_SECONDS` | None |
+| Step budget | 15 s, `PostAPI::STEP_BUDGET` | `shorthand_pull_step_budget`, in seconds; capped at half of `max_execution_time` when PHP sets one |
+| Part timeout | 30 s, `PostAPI::CHUNK_TIMEOUT` | None |
 
-- A step always downloads at least one range. A budget of 0 gives one range
+- A step always downloads at least one part. A budget of 0 gives one part
   per step, as in 1.0.11.
-- The budget is checked after each range's file is closed. On a remote
-  uploads directory, closing the file uploads it, so the upload counts too.
-- A step can overrun its budget by one range request, or by two when that
-  range is fetched again.
-- A pull keeps the range size it started with. A changed filter applies to
-  the next pull.
+- The budget is a ceiling. After each part's file is closed, the step starts
+  the next part only if it expects that part to end inside the budget, at the
+  measured speed. With the speed unknown, it starts the next part while it is
+  under the budget. On a remote uploads directory, closing the file uploads
+  it, so the upload counts too.
+- A part that is slower than expected, or that times out and is fetched again,
+  can still take a step past its budget.
+- With the 15 s budget, a step stays under a host that ends `wp-cron.php` at
+  20 s of wall time.
+- After each good part, the step stores the advanced task in
+  `story_update_task`, with `attempts` 0. A step the host kills loses at most
+  one part, and the watch resumes from the last part.
 
-Each range is checked before it counts:
+### Part size
+
+Each part is sized to take `TARGET_SECONDS` at the measured download speed.
+`StoryUpdateTask::size_next_window()` applies the rules, in order:
+
+1. Speed unknown: `PROBE_SIZE`.
+2. Otherwise speed × `TARGET_SECONDS`, at least `MIN_SIZE`.
+3. At most the `shorthand_pull_chunk_size` cap. The cap wins over the probe
+   and the floor.
+4. Never past the end of the archive.
+
+The speed is bytes of good parts divided by seconds spent in their requests,
+over the step so far. It reads low, which is the safe direction: it includes
+connection setup, and on a remote uploads directory it includes the upload
+when the part's file closes.
+
+The speed lives in two places:
+
+- `speed` in the stored step, `story_update_task`, for the rest of the
+  download. See `docs/models/story-post-meta.md`.
+- The `shorthand_pull_speed` option, written once per step that measured a
+  part. The first step of the next download starts from it when it is under
+  7 days old. Otherwise the download probes. See `docs/models/options.md`.
+
+| Site speed | Parts for 394 MB | First part | Settled part |
+| --- | --- | --- | --- |
+| 58 Mbit/s | 16 | 5 MiB | 25 MiB, the cap |
+| 7 Mbit/s | about 48 | 5 MiB | about 8 MiB |
+| 2 Mbit/s | about 160 | 5 MiB | about 2.4 MiB |
+
+### Part checks and retries
+
+Each part is checked before it counts:
 
 - The `Content-Range` start must equal the requested start.
 - The chunk file's size, read through
   `Shorthand\Services\FileSystemService::get_file_size()`, must equal the
   requested length, or what is left of the archive for the last range.
 
-A range that fails either check is fetched once more in the same step. A
-second failure deletes the chunk file and fails the pull with a `chunk` error.
+A part that fails either check is fetched once more in the same step.
+
+A part whose request times out is also fetched once more, smaller. A timeout
+is a `cURL error 28`, or an `http_request_failed` error whose message holds
+"timed out".
+
+1. The speed it reached is the partial file's size divided by
+   `CHUNK_TIMEOUT`. A missing, empty or unreadable partial file halves the
+   old speed instead.
+2. The part is resized from that speed, and to at most half the part that
+   timed out. `MIN_SIZE` and the cap still apply.
+3. The step's speed totals restart, so earlier fast parts do not grow the
+   next part straight back.
+
+Other transport errors, such as a refused connection, are not retried.
+
+A part makes at most two requests: a bad check and a timeout share the one
+second try. A second failure of any kind deletes the chunk file and fails the
+pull. The error is `chunk` for a bad check, or the transport error.
 
 ## Decision: unpack into a local staging directory, then copy
 
@@ -383,7 +441,7 @@ Two records make it possible:
   0% on each `202` while Shorthand builds the archive, after each chunk, before
   the join, before the unpack, and before the copy into uploads.
 - `Shorthand\Services\Cron` stores each step in `story_update_task` before
-  scheduling it.
+  scheduling it, and each step stores it again after each part.
 
 The rules, in order:
 
@@ -392,22 +450,40 @@ The rules, in order:
 3. Heartbeat younger than `STALE_AFTER` (300 s): `running`.
 4. The stored step is still queued and the heartbeat is younger than
    `GIVE_UP_AFTER` (1800 s): `running`.
-5. A stored step with `attempts` 0: schedule it again, `resumed`.
+5. A stored step with `attempts` 0: schedule it again, `resumed`. A step that
+   is still queued, past `GIVE_UP_AFTER`, counts as resumed too: its event
+   exists. It then has one more `GIVE_UP_AFTER` to run.
 6. Otherwise `Shorthand\Services\PostAPI::abandon_pull()` stores a `stalled`
    error, restores the prior status when a step was stored, deletes the chunks
-   and rotates the nonce: `dead`.
+   and rotates the nonce: `dead`. The `pretty` message says "Click Publish to
+   try again." when the post goes back to a status other than `publish` or
+   `future`, and "Click Update to try again." otherwise.
+
+Rules 5 and 6 run only under the post's step lock (`StoryPullWatch::LOCK_LIMIT`,
+60 s). A running step holds the lock, and so does another check that is acting
+on the pull, so a check that cannot take it returns `running`. Under the lock
+the check clears the post's meta cache and the `cron` option cache, reads the
+pull again, and acts only if rules 1 to 4 still do not apply. Progress that
+cannot be read is deleted, so the sweep stops finding the post.
 
 Three readers run the check:
 
 - The editor's state poll, `wp_ajax_shorthand_get_story_state`, and the
-  initial editor page load, for users who pass `can_pull_story`.
+  editor page load, for users who pass `can_pull_story`. The page load check
+  runs on `load-post.php`, before `post.php` reads the post, so the publish
+  box shows the status a failed pull put back.
 - `Shorthand\Admin\Editor::needs_pull()`, on every save with intent of a published post.
 - The recurring `shorthand_pull_watch` event, every 5 minutes, which checks up
   to 20 posts with `story_update_state` and unschedules itself when none is
   left. `Cron::schedule_pull_story()` schedules it when it is missing.
 
-`Cron::pull_story_cron()` also reads a failed reschedule back once, after
-clearing the `alloptions` cache, and retries once before it fails the pull.
+`Cron::queue_step()` schedules every step and every resume. It clears the
+`alloptions` and `cron` cache entries first, because core saves the whole event
+list from the request's cached copy: a step that ran for a minute would drop
+events other requests saved since, and put back events another `wp-cron.php`
+run already ran. A failed schedule is read back once and retried once. An
+event that is already queued counts as scheduled. The first step of a pull and
+the watch event also read the event list fresh before they are scheduled.
 
 ## Step lock
 
@@ -418,7 +494,7 @@ same event, and the watch can resume a step that was only slow.
 1. Take the lock, `Shorthand\Services\StoryPullLock::acquire()`. The lock is
    the option row `shorthand_pull_lock_{post_id}`, inserted with
    `INSERT IGNORE`. Its value is its expiry time:
-   `PostAPI::get_step_limit()` seconds from now, 200 s by default. That is the
+   `PostAPI::get_step_limit()` seconds from now, 195 s by default. That is the
    step budget plus one range fetched twice, each try waiting up to the 30 s
    request timeout and 60 s to close the chunk file.
 2. Clear the post's meta cache, then ask `PostAPI::is_current_step()`. A step
@@ -427,6 +503,21 @@ same event, and the watch can resume a step that was only slow.
 4. Release the lock in a `finally` block. The release deletes the row only if
    it still holds this step's expiry.
 
+The step hands `PostAPI::pull_story_cron()` a guard. The guard clears the
+post's meta cache, asks `is_current_step()`, then renews the lock with
+`StoryPullLock::renew()`, a compare-and-set on the expiry. It runs:
+
+- after each part request returns, before a retry, a file delete or any write;
+- in the assembly step after each heartbeat, before each file the copy into
+  uploads writes, before stale files are deleted and before the content and
+  version are stored;
+- in `Cron` before the next step is scheduled or the pull is failed.
+
+A step whose guard fails stops at once and writes nothing more: a newer pull
+started, or another run of the step took the lock over after this one was
+paused past its expiry. A slow assembly step keeps its lock, because every
+file it copies renews it.
+
 A step that cannot take the lock does not run. If it is still current, it
 schedules its own event again 30 s later. It does not store the task: that
 would overwrite a newer step the holder stored and reset the watch's
@@ -434,7 +525,7 @@ would overwrite a newer step the holder stored and reset the watch's
 
 An expired lock is taken over with an `UPDATE` that matches the expired value,
 so only one of two waiting steps gets it. A lock left by a killed step
-therefore holds for at most 200 s. Every lock query is direct SQL, because the
+therefore holds for at most 195 s. Every lock query is direct SQL, because the
 options cache would not see another request's insert or delete.
 
 `is_current_step()` is false when:

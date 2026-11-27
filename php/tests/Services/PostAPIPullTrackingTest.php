@@ -11,6 +11,7 @@ use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullSpeed;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\StoryUpdateTask;
 use Shorthand\Tests\Support\FakeRemoteFileSystem;
@@ -191,6 +192,42 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		);
 		$this->assertNotSame( '12345', get_post_meta( 7, 'story_update_nonce', true ) );
 		$this->assertNull( $post_api->get_story_update_task( 7 ) );
+	}
+
+	/**
+	 * A post trashed during its pull stays in the trash when the pull fails.
+	 */
+	public function test_a_failed_pull_leaves_a_trashed_post_in_the_trash(): void {
+		tests_wp_set_post(
+			7,
+			(object) array(
+				'ID'          => 7,
+				'post_status' => 'trash',
+			)
+		);
+		tests_wp_set_post_meta( 7, 'story_update_nonce', '12345' );
+
+		$this->make_post_api()->pull_story_failed( $this->task(), new WP_Error( 'status', 'Failed.' ) );
+
+		$this->assertSame( array(), tests_wp_updated_posts() );
+		$this->assertSame( 'status', $this->make_post_api()->get_story_update_error( 7 )[0]['code'] );
+	}
+
+	public function test_abandoning_a_pull_of_a_trashed_post_leaves_it_in_the_trash(): void {
+		tests_wp_set_post(
+			7,
+			(object) array(
+				'ID'          => 7,
+				'post_status' => 'trash',
+			)
+		);
+		tests_wp_set_post_meta( 7, 'story_update_nonce', '12345' );
+		$post_api = $this->make_post_api();
+		$post_api->set_story_update_task( 7, wp_json_encode( $this->task() ) );
+
+		$post_api->abandon_pull( 7, new WP_Error( 'stalled', 'No progress.' ) );
+
+		$this->assertSame( array(), tests_wp_updated_posts() );
 	}
 
 	public function test_abandoning_a_pull_during_a_save_leaves_the_status_to_the_save(): void {
@@ -383,7 +420,7 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	 * request timeout and the file close.
 	 */
 	public function test_the_step_limit_covers_a_range_fetched_twice_past_the_budget(): void {
-		$this->assertSame( 20 + 2 * ( 30 + 60 ), $this->make_post_api()->get_step_limit() );
+		$this->assertSame( 15 + 2 * ( 30 + 60 ), $this->make_post_api()->get_step_limit() );
 
 		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 0.5 );
 		$this->assertSame( 181, $this->make_post_api()->get_step_limit() );
@@ -415,7 +452,8 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 			$this->createMock( StoryContentTransformer::class ),
 			$this->file_system,
 			new StoryTextExtractor(),
-			$this->createMock( StoryCover::class )
+			$this->createMock( StoryCover::class ),
+			new StoryPullSpeed()
 		);
 	}
 }

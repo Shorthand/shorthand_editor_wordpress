@@ -24,6 +24,7 @@ use Shorthand\Services\ShorthandHttpTransport;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryPullLock;
+use Shorthand\Services\StoryPullSpeed;
 use Shorthand\Services\StoryPullWatch;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\StoryTitleSync;
@@ -107,6 +108,12 @@ class Dependencies {
 	 * @var \Shorthand\Services\StoryPullLock
 	 */
 	protected $pull_lock;
+	/**
+	 * Download speed kept between pulls.
+	 *
+	 * @var \Shorthand\Services\StoryPullSpeed
+	 */
+	protected $pull_speed;
 
 	/**
 	 * @var bool
@@ -153,6 +160,8 @@ class Dependencies {
 		$this->title_sync = new StoryTitleSync( $this->shorthand, $this->auth_state_manager, $this->post_type->post_type );
 		$loader           = new Loader();
 		$this->title_sync->init( $loader );
+		$this->pull_speed = new StoryPullSpeed();
+		$this->pull_speed->init( $loader );
 		$loader->register();
 
 		$this->booted = true;
@@ -224,7 +233,7 @@ class Dependencies {
 	public function get_post_api(): PostAPI {
 		$this->boot();
 		if ( ! isset( $this->post_api ) ) {
-			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), FileSystem::create(), new StoryTextExtractor(), $this->get_story_cover() );
+			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), FileSystem::create(), new StoryTextExtractor(), $this->get_story_cover(), $this->get_pull_speed() );
 		}
 		return $this->post_api;
 	}
@@ -232,9 +241,14 @@ class Dependencies {
 	public function get_pull_watch(): StoryPullWatch {
 		$this->boot();
 		if ( ! isset( $this->pull_watch ) ) {
-			$this->pull_watch = new StoryPullWatch( $this->get_post_api(), $this->get_post_type()->post_type );
+			$this->pull_watch = new StoryPullWatch( $this->get_post_api(), $this->get_post_type()->post_type, $this->get_pull_lock() );
 		}
 		return $this->pull_watch;
+	}
+
+	public function get_pull_speed(): StoryPullSpeed {
+		$this->boot();
+		return $this->pull_speed;
 	}
 
 	public function get_pull_lock(): StoryPullLock {

@@ -65,13 +65,17 @@ interface FileSystemService {
 	 * Neither directory is enumerated. The files to copy come from
 	 * `$source_manifest`, which the caller reads out of the archive index.
 	 *
-	 * @param string     $source_dir      Absolute path of a local directory.
-	 * @param string     $dest_dir        Absolute path in uploads.
-	 * @param array      $source_manifest Manifest describing the contents of `$source_dir`.
-	 * @param array|null $dest_manifest   Manifest describing the current contents of `$dest_dir`.
+	 * A guard, when given, is asked before each file is written. When it
+	 * answers false, the copy stops with error `superseded`.
+	 *
+	 * @param string        $source_dir      Absolute path of a local directory.
+	 * @param string        $dest_dir        Absolute path in uploads.
+	 * @param array         $source_manifest Manifest describing the contents of `$source_dir`.
+	 * @param array|null    $dest_manifest   Manifest describing the current contents of `$dest_dir`.
+	 * @param callable|null $guard           Returns whether the copy may go on.
 	 * @return array|\WP_Error Manifest describing the new contents of `$dest_dir`.
 	 */
-	public function copy_tree( string $source_dir, string $dest_dir, array $source_manifest, ?array $dest_manifest );
+	public function copy_tree( string $source_dir, string $dest_dir, array $source_manifest, ?array $dest_manifest, ?callable $guard = null );
 
 	/**
 	 * Size of one file in uploads, in bytes.

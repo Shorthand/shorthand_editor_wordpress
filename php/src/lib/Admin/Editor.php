@@ -136,6 +136,8 @@ class Editor {
 
 		$loader->add_filter( 'admin_enqueue_scripts', $this, 'admin_enqueue_scripts', 10, 1 );
 
+		$loader->add_action( 'load-post.php', $this, 'load_edit_screen', 10, 0 );
+
 		$loader->add_action( 'wp_ajax_shorthand_get_story_state', $this, 'ajax_get_story_state', 10, 1 );
 
 		$loader->add_filter( 'admin_post_thumbnail_html', $this, 'admin_post_thumbnail_html', 10, 3 );
@@ -499,10 +501,7 @@ class Editor {
 		$auth_state   = $this->auth_state_manager->get_state();
 
 		// Only provide an edit URL when the plugin is in a connected state.
-		$edit_url = $is_connected ? $this->edit_with_shorthand->get_url( $post, $story_id ) : null;
-		if ( $this->permissions->can_pull_story( $post->ID ) ) {
-			$this->pull_watch->check( $post->ID );
-		}
+		$edit_url    = $is_connected ? $this->edit_with_shorthand->get_url( $post, $story_id ) : null;
 		$story_state = $this->get_post_story_state( $post->ID );
 
 		wp_enqueue_style( 'theshed-post-components-style', $this->version->get_plugin_url( 'public/scripts/post.min.css' ), array(), $this->version->get_plugin_version() );
@@ -553,6 +552,28 @@ class Editor {
 		$create_toolbar_src = ob_get_clean();
 
 		wp_add_inline_script( 'theshed-create-post-toolbar-script', $create_toolbar_src, 'after' );
+	}
+
+	/**
+	 * Checks the story's pull when its edit screen opens.
+	 *
+	 * Runs on `load-post.php`, before `post.php` reads the post. A pull the
+	 * watch fails puts the post back to its prior status, and the publish
+	 * box must show that status, not the one read before the check.
+	 */
+	public function load_edit_screen(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Reads which post the edit screen opens; core checks access.
+		$action  = isset( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
+		$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		if ( 'edit' !== $action || ! $post_id || get_post_type( $post_id ) !== $this->post_type ) {
+			return;
+		}
+
+		if ( $this->permissions->can_pull_story( $post_id ) ) {
+			$this->pull_watch->check( $post_id );
+		}
 	}
 
 	public function ajax_get_story_state() {

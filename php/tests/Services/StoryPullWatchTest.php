@@ -12,6 +12,8 @@ use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullSpeed;
+use Shorthand\Services\StoryPullLock;
 use Shorthand\Services\StoryPullWatch;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\StoryUpdateTask;
@@ -24,6 +26,11 @@ use Shorthand\Tests\WordPressTestCase;
 final class StoryPullWatchTest extends WordPressTestCase {
 
 	const PULL_PATH = 'vip://wp-content/uploads/shorthand/7/aBc123_12345';
+
+	/**
+	 * Step lock option of post 7.
+	 */
+	const LOCK = 'shorthand_pull_lock_7';
 
 	/**
 	 * Uploads directory as an object store.
@@ -62,7 +69,7 @@ final class StoryPullWatchTest extends WordPressTestCase {
 
 		$this->file_system = new FakeRemoteFileSystem();
 		$this->post_api    = $this->make_post_api();
-		$this->watch       = new StoryPullWatch( $this->post_api, 'tse_story' );
+		$this->watch       = new StoryPullWatch( $this->post_api, 'tse_story', new StoryPullLock() );
 	}
 
 	public function test_a_post_without_a_pull_is_idle(): void {
@@ -144,6 +151,127 @@ final class StoryPullWatchTest extends WordPressTestCase {
 		$this->assertSame( StoryPullWatch::DEAD, $this->watch->check( 7 ) );
 	}
 
+	/**
+	 * A running step holds the lock, and so does another check that is
+	 * resuming or failing the pull right now.
+	 */
+	public function test_a_stale_pull_whose_lock_is_held_is_running_and_left_alone(): void {
+		$this->set_heartbeat( time() - 600 );
+		$this->store_task( 0 );
+		update_option( self::LOCK, (string) ( time() + 100 ) );
+
+		$this->assertSame( StoryPullWatch::RUNNING, $this->watch->check( 7 ) );
+
+		$this->assertSame( array(), tests_wp_scheduled_events() );
+		$this->assertSame( 0, $this->post_api->get_story_update_task( 7 )['attempts'] );
+		$this->assertSame( '', get_post_meta( 7, 'story_update_error', true ) );
+		$this->assertSame( '12345', get_post_meta( 7, 'story_update_nonce', true ) );
+	}
+
+	/**
+	 * The resume is decided on fresh meta and a fresh event list, under the
+	 * lock, which is free again for the resumed step.
+	 */
+	public function test_a_resume_reads_fresh_state_under_the_lock_and_releases_it(): void {
+		$this->set_heartbeat( time() - 600 );
+		$this->store_task( 0 );
+
+		$this->assertSame( StoryPullWatch::RESUMED, $this->watch->check( 7 ) );
+
+		$this->assertContains(
+			array(
+				'key'   => '7',
+				'group' => 'post_meta',
+			),
+			tests_wp_cache_deletes()
+		);
+		$this->assertContains(
+			array(
+				'key'   => 'alloptions',
+				'group' => 'options',
+			),
+			tests_wp_cache_deletes()
+		);
+		$this->assertFalse( get_option( self::LOCK ) );
+	}
+
+	/**
+	 * Two checks in the same second build the same cron array. The second
+	 * save changes no row and reports `could_not_set`, though the event is
+	 * there.
+	 */
+	public function test_a_resume_whose_event_was_saved_by_another_check_is_resumed(): void {
+		$this->set_heartbeat( time() - 600 );
+		$this->store_task( 0 );
+		tests_wp_fail_next_schedule( true );
+
+		$this->assertSame( StoryPullWatch::RESUMED, $this->watch->check( 7 ) );
+		$this->assertSame( '', get_post_meta( 7, 'story_update_error', true ) );
+	}
+
+	/**
+	 * A slow system cron or a quiet site leaves a healthy step queued past
+	 * `GIVE_UP_AFTER`. It is resumed once, which gives it one more
+	 * `GIVE_UP_AFTER` to run; a site whose cron never runs still fails.
+	 */
+	public function test_a_step_queued_past_give_up_is_resumed_once_then_dead(): void {
+		$this->set_heartbeat( time() - StoryPullWatch::GIVE_UP_AFTER - 300 );
+		$json = $this->store_task( 0 );
+		wp_schedule_single_event( time() - StoryPullWatch::GIVE_UP_AFTER, Cron::PULL_HOOK, array( $json ) );
+		tests_wp_fail_next_schedule();
+
+		$this->assertSame( StoryPullWatch::RESUMED, $this->watch->check( 7 ) );
+		$this->assertSame( 1, $this->post_api->get_story_update_task( 7 )['attempts'] );
+		$this->assertCount( 1, tests_wp_scheduled_events() );
+		$this->assertSame( StoryPullWatch::RUNNING, $this->watch->check( 7 ), 'The heartbeat was stamped' );
+
+		$this->set_heartbeat( time() - StoryPullWatch::GIVE_UP_AFTER - 300 );
+
+		$this->assertSame( StoryPullWatch::DEAD, $this->watch->check( 7 ) );
+	}
+
+	/**
+	 * Unreadable progress would keep the sweep finding the post for ever.
+	 */
+	public function test_unreadable_progress_is_dropped(): void {
+		tests_wp_set_post_meta( 7, 'story_update_state', 'garbage' );
+
+		$this->assertSame( StoryPullWatch::IDLE, $this->watch->check( 7 ) );
+		$this->assertSame( '', get_post_meta( 7, 'story_update_state', true ) );
+	}
+
+	/**
+	 * A first publish goes back to draft, where the editor's button reads Publish.
+	 */
+	public function test_the_stalled_message_of_a_first_publish_says_click_publish(): void {
+		$this->set_heartbeat( time() - 600 );
+		$this->store_task( 1 );
+
+		$this->watch->check( 7 );
+
+		$this->assertSame( 'The story download stopped before it finished. Click Publish to try again.', $this->pretty_error() );
+	}
+
+	public function test_the_stalled_message_of_an_update_says_click_update(): void {
+		$this->set_heartbeat( time() - 600 );
+		$this->store_task( 1, 'publish' );
+
+		$this->watch->check( 7 );
+
+		$this->assertSame( 'The story download stopped before it finished. Click Update to try again.', $this->pretty_error() );
+	}
+
+	/**
+	 * A pull started by 1.0.11 keeps the post's status, so the hint follows it.
+	 */
+	public function test_the_stalled_message_without_a_stored_step_follows_the_post_status(): void {
+		$this->set_heartbeat( time() - 600 );
+
+		$this->watch->check( 7 );
+
+		$this->assertSame( 'The story download stopped before it finished. Click Update to try again.', $this->pretty_error() );
+	}
+
 	public function test_a_lost_step_is_resumed_once(): void {
 		$this->set_heartbeat( time() - 600 );
 		$json = $this->store_task( 0 );
@@ -209,9 +337,13 @@ final class StoryPullWatchTest extends WordPressTestCase {
 		$this->assertSame( array(), tests_wp_updated_posts() );
 	}
 
+	/**
+	 * The schedule is read back and tried once more, as for a step's own.
+	 */
 	public function test_a_resume_that_cannot_be_scheduled_is_dead(): void {
 		$this->set_heartbeat( time() - 600 );
 		$this->store_task( 0 );
+		tests_wp_fail_next_schedule();
 		tests_wp_fail_next_schedule();
 
 		$this->assertSame( StoryPullWatch::DEAD, $this->watch->check( 7 ) );
@@ -269,6 +401,19 @@ final class StoryPullWatchTest extends WordPressTestCase {
 		$this->assertFalse( wp_next_scheduled( Cron::WATCH_HOOK ) );
 	}
 
+	/**
+	 * The `pretty` message of the stored error.
+	 */
+	private function pretty_error(): string {
+		foreach ( $this->post_api->get_story_update_error( 7 ) as $entry ) {
+			if ( 'pretty' === $entry['code'] ) {
+				return $entry['message'];
+			}
+		}
+
+		return '';
+	}
+
 	private function set_heartbeat( int $updated_at ): void {
 		tests_wp_set_post_meta(
 			7,
@@ -284,11 +429,12 @@ final class StoryPullWatchTest extends WordPressTestCase {
 	/**
 	 * Stores the step of the pull with nonce 12345, as Cron does.
 	 *
-	 * @param int $attempts How often the watch has resumed the step.
+	 * @param int    $attempts     How often the watch has resumed the step.
+	 * @param string $prior_status Status the post held before the pull.
 	 * @return string The stored JSON.
 	 */
-	private function store_task( int $attempts ): string {
-		$task           = new StoryUpdateTask( 7, 'aBc123', '12345', 'draft', 'https://api.example.test/download/1', self::PULL_PATH );
+	private function store_task( int $attempts, string $prior_status = 'draft' ): string {
+		$task           = new StoryUpdateTask( 7, 'aBc123', '12345', $prior_status, 'https://api.example.test/download/1', self::PULL_PATH );
 		$task->file_url = 'https://cdn.example.test/bundle.zip';
 		$task->size     = 3 * 1024 * 1024;
 		$task->start    = 1024 * 1024;
@@ -314,7 +460,8 @@ final class StoryPullWatchTest extends WordPressTestCase {
 			$this->createMock( StoryContentTransformer::class ),
 			$this->file_system,
 			new StoryTextExtractor(),
-			$this->createMock( StoryCover::class )
+			$this->createMock( StoryCover::class ),
+			new StoryPullSpeed()
 		);
 	}
 }

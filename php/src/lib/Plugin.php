@@ -111,8 +111,30 @@ class Plugin {
 		flush_rewrite_rules();
 	}
 
-	public function deactivate() {
-		wp_clear_scheduled_hook( Cron::WATCH_HOOK );
+	/**
+	 * Clears the recurring pull watch and the rewrite rules.
+	 *
+	 * Each site of a network keeps its own events, so a network-wide
+	 * deactivate clears the watch on every site.
+	 *
+	 * @param bool $network_wide Whether the plugin is deactivated for the whole network.
+	 */
+	public function deactivate( bool $network_wide = false ) {
+		if ( $network_wide && is_multisite() ) {
+			foreach ( get_sites(
+				array(
+					'fields' => 'ids',
+					'number' => 0,
+				)
+			) as $site_id ) {
+				switch_to_blog( (int) $site_id );
+				wp_clear_scheduled_hook( Cron::WATCH_HOOK );
+				restore_current_blog();
+			}
+		} else {
+			wp_clear_scheduled_hook( Cron::WATCH_HOOK );
+		}
+
 		flush_rewrite_rules();
 	}
 

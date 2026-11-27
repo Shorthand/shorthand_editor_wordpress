@@ -72,9 +72,11 @@ function theshed_activate() {
 
 /**
  * Creates the plugin and runs its deactivation routine.
+ *
+ * @param bool $network_wide Whether the plugin is deactivated for the whole network.
  */
-function theshed_deactivate() {
-	theshed_create_plugin()->deactivate();
+function theshed_deactivate( $network_wide = false ) {
+	theshed_create_plugin()->deactivate( (bool) $network_wide );
 }
 
 /**

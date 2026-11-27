@@ -491,6 +491,11 @@ function tests_wp_reset_state(): void {
 		'cron_events'          => array(),
 		'schedule_failures'    => array(),
 		'cache_deletes'        => array(),
+		'sites'                => array(),
+		'translations'         => array(),
+		'site_id'              => 1,
+		'site_stack'           => array(),
+		'site_events'          => array(),
 		'db_connection_checks' => 0,
 		'db_queries'           => array(),
 	);
@@ -868,7 +873,20 @@ function wp_get_current_user(): object {
 }
 
 function __( string $text, string $domain = '' ): string {
+	$GLOBALS['tests_wp_state']['translations'][] = array(
+		'text'   => $text,
+		'domain' => $domain,
+	);
 	return $text;
+}
+
+/**
+ * Every string passed to `__()`, with its text domain.
+ *
+ * @return array<int, array{text: string, domain: string}>
+ */
+function tests_wp_translations(): array {
+	return $GLOBALS['tests_wp_state']['translations'];
 }
 
 /**
@@ -930,11 +948,39 @@ function get_option( string $option, $default = false ) {
 }
 
 /**
- * @param mixed $value
+ * Stores an option in the test state.
+ *
+ * @param string    $option   Option name.
+ * @param mixed     $value    Option value.
+ * @param bool|null $autoload Ignored; the test state has no autoload.
+ * @return bool
  */
-function update_option( string $option, $value ): bool {
+function update_option( string $option, $value, $autoload = null ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Matches core's signature.
 	$GLOBALS['tests_wp_state']['options'][ $option ] = $value;
 	return true;
+}
+
+/**
+ * Formats a byte count without unit conversion, so tests can assert it.
+ *
+ * @param int|string $bytes    Number of bytes.
+ * @param int        $decimals Ignored.
+ * @return string|false
+ */
+function size_format( $bytes, int $decimals = 0 ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Matches core's signature.
+	return (int) $bytes . ' B';
+}
+
+/**
+ * Formats a time in UTC.
+ *
+ * @param string   $format    PHP date format.
+ * @param int|null $timestamp Unix time; now when null.
+ * @param mixed    $timezone  Ignored; always UTC.
+ * @return string|false
+ */
+function wp_date( string $format, ?int $timestamp = null, $timezone = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Matches core's signature.
+	return gmdate( $format, $timestamp ?? time() );
 }
 
 /**
@@ -1582,6 +1628,91 @@ function tests_wp_set_have_posts( int $count ): void {
 
 function the_post(): void {
 	$GLOBALS['tests_wp_state']['template_calls'][] = 'the_post';
+}
+
+/**
+ * How often an action ran, through `do_action()`.
+ *
+ * @param string $hook_name Hook name.
+ */
+function did_action( string $hook_name ): int {
+	return count( $GLOBALS['tests_wp_state']['actions_done'][ $hook_name ] ?? array() );
+}
+
+/**
+ * Makes the site a network of sites with these IDs.
+ *
+ * @param int[] $site_ids Site IDs, the main site first.
+ */
+function tests_wp_set_sites( array $site_ids ): void {
+	$GLOBALS['tests_wp_state']['sites'] = $site_ids;
+}
+
+function is_multisite(): bool {
+	return array() !== $GLOBALS['tests_wp_state']['sites'];
+}
+
+/**
+ * The network's sites; only the `ids` field is supported.
+ *
+ * @param array<string, mixed> $args Query arguments.
+ * @return int[]
+ */
+function get_sites( array $args = array() ): array { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Matches core's signature.
+	return $GLOBALS['tests_wp_state']['sites'];
+}
+
+/**
+ * Switches the current site. Each site keeps its own cron events.
+ *
+ * @param int $site_id Site to switch to.
+ */
+function switch_to_blog( int $site_id ): bool {
+	$state = &$GLOBALS['tests_wp_state'];
+
+	$state['site_events'][ $state['site_id'] ] = $state['cron_events'];
+	$state['site_stack'][]                     = $state['site_id'];
+	$state['site_id']                          = $site_id;
+	$state['cron_events']                      = $state['site_events'][ $site_id ] ?? array();
+
+	return true;
+}
+
+function restore_current_blog(): bool {
+	$state = &$GLOBALS['tests_wp_state'];
+
+	$state['site_events'][ $state['site_id'] ] = $state['cron_events'];
+	$state['site_id']                          = (int) array_pop( $state['site_stack'] );
+	$state['cron_events']                      = $state['site_events'][ $state['site_id'] ] ?? array();
+
+	return true;
+}
+
+/**
+ * Cron events of one site of the network.
+ *
+ * @param int $site_id Site ID.
+ * @return array<int, array<string, mixed>>
+ */
+function tests_wp_site_events( int $site_id ): array {
+	$state = $GLOBALS['tests_wp_state'];
+
+	return $site_id === $state['site_id'] ? $state['cron_events'] : ( $state['site_events'][ $site_id ] ?? array() );
+}
+
+/**
+ * Sets the cron events of one site of the network.
+ *
+ * @param int   $site_id Site ID.
+ * @param array $events  Events, as `tests_wp_scheduled_events()` lists them.
+ */
+function tests_wp_set_site_events( int $site_id, array $events ): void {
+	if ( $site_id === $GLOBALS['tests_wp_state']['site_id'] ) {
+		$GLOBALS['tests_wp_state']['cron_events'] = $events;
+		return;
+	}
+
+	$GLOBALS['tests_wp_state']['site_events'][ $site_id ] = $events;
 }
 
 /**

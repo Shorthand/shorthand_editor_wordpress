@@ -18,6 +18,7 @@ use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryAttachmentResolver;
 use Shorthand\Services\StoryCover;
 use Shorthand\Services\StoryLocalLookup;
+use Shorthand\Services\StoryPullLock;
 use Shorthand\Services\StoryPullWatch;
 
 use Shorthand\Admin\Actions\ReturnToConnect;
@@ -235,7 +236,7 @@ class AdminController {
 		$redirect_to_shorthand_story->define_redirect_and_return_pages( $loader );
 		$post_preview->define_preview_page( $loader );
 
-		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager, $this->permissions, $this->story_cover, $this->title_sync, new StoryPullWatch( $this->post_api, $this->post_type ), new StorySaveIntent() );
+		$post = new Editor( $this->options, $this->shorthand, $this->cron, $this->version, $this->post_api, $post_preview, $redirect_to_shorthand_story, $this->post_type, $this->auth_state_manager, $this->permissions, $this->story_cover, $this->title_sync, new StoryPullWatch( $this->post_api, $this->post_type, new StoryPullLock() ), new StorySaveIntent() );
 		$post->init( $loader );
 
 		$story_list_column = new StoryListColumn( $this->post_api, $this->post_type );

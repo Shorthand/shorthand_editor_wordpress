@@ -17,6 +17,7 @@ use Shorthand\Services\Permissions;
 use Shorthand\Services\PostAPI;
 use Shorthand\Services\Shorthand;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullLock;
 use Shorthand\Services\StoryPullWatch;
 use Shorthand\Services\StorySyncProgress;
 use Shorthand\Services\StoryTitleSync;
@@ -381,7 +382,7 @@ final class EditorTest extends WordPressTestCase {
 	}
 
 	protected function tearDown(): void {
-		unset( $_GET['post'], $_GET['thumbnail'], $_POST['post'], $_POST['action'], $_POST['data'], $_POST['post_ID'], $_POST[ StorySaveIntent::FIELD ], $_REQUEST['bulk_edit'], $_REQUEST['post'], $_REQUEST[ StorySaveIntent::FIELD ] );
+		unset( $_GET['post'], $_GET['action'], $_GET['thumbnail'], $_POST['post'], $_POST['action'], $_POST['data'], $_POST['post_ID'], $_POST[ StorySaveIntent::FIELD ], $_REQUEST['bulk_edit'], $_REQUEST['post'], $_REQUEST[ StorySaveIntent::FIELD ] );
 		parent::tearDown();
 	}
 
@@ -643,6 +644,65 @@ final class EditorTest extends WordPressTestCase {
 		$editor->wp_insert_post_data( $this->post_data( 'publish' ), array( 'ID' => 7 ), array(), true );
 	}
 
+	/**
+	 * The check runs before `post.php` reads the post, so the publish box
+	 * shows the status a failed pull put back.
+	 */
+	public function test_opening_the_edit_screen_checks_the_pull_before_the_post_loads(): void {
+		$_GET['post']   = '7';
+		$_GET['action'] = 'edit';
+		tests_wp_set_post_type( 7, 'tse_story' );
+
+		$permissions = $this->createMock( Permissions::class );
+		$permissions->method( 'can_pull_story' )->with( 7 )->willReturn( true );
+
+		$pull_watch = $this->createMock( StoryPullWatch::class );
+		$pull_watch->expects( $this->once() )->method( 'check' )->with( 7 );
+
+		$editor = $this->make_editor( $this->createMock( PostAPI::class ), $permissions, null, null, null, null, null, $pull_watch );
+		$loader = new Loader();
+		$editor->init( $loader );
+		$loader->register();
+
+		do_action( 'load-post.php' );
+	}
+
+	public function test_opening_the_edit_screen_of_another_post_type_checks_nothing(): void {
+		$_GET['post']   = '7';
+		$_GET['action'] = 'edit';
+		tests_wp_set_post_type( 7, 'post' );
+
+		$pull_watch = $this->createMock( StoryPullWatch::class );
+		$pull_watch->expects( $this->never() )->method( 'check' );
+
+		$this->make_editor( $this->createMock( PostAPI::class ), null, null, null, null, null, null, $pull_watch )->load_edit_screen();
+	}
+
+	public function test_a_post_php_action_other_than_edit_checks_nothing(): void {
+		$_GET['post']   = '7';
+		$_GET['action'] = 'trash';
+		tests_wp_set_post_type( 7, 'tse_story' );
+
+		$pull_watch = $this->createMock( StoryPullWatch::class );
+		$pull_watch->expects( $this->never() )->method( 'check' );
+
+		$this->make_editor( $this->createMock( PostAPI::class ), null, null, null, null, null, null, $pull_watch )->load_edit_screen();
+	}
+
+	public function test_opening_the_edit_screen_without_the_pull_capability_checks_nothing(): void {
+		$_GET['post']   = '7';
+		$_GET['action'] = 'edit';
+		tests_wp_set_post_type( 7, 'tse_story' );
+
+		$permissions = $this->createMock( Permissions::class );
+		$permissions->method( 'can_pull_story' )->willReturn( false );
+
+		$pull_watch = $this->createMock( StoryPullWatch::class );
+		$pull_watch->expects( $this->never() )->method( 'check' );
+
+		$this->make_editor( $this->createMock( PostAPI::class ), $permissions, null, null, null, null, null, $pull_watch )->load_edit_screen();
+	}
+
 	public function test_the_story_state_poll_refuses_a_user_who_cannot_pull_the_story(): void {
 		$_GET['post'] = '7';
 
@@ -682,7 +742,8 @@ final class EditorTest extends WordPressTestCase {
 
 		$post_api = $this->createMock( PostAPI::class );
 		$post_api->method( 'get_story_update_progress' )->willReturn( $this->stale_progress() );
-		$post_api->method( 'get_story_update_error' )->willReturnOnConsecutiveCalls( null, $error );
+		/* Read once by the check, once more under the lock, then by the state. */
+		$post_api->method( 'get_story_update_error' )->willReturnOnConsecutiveCalls( null, null, $error );
 		$post_api->expects( $this->once() )->method( 'abandon_pull' )->with( 7, $this->isInstanceOf( WP_Error::class ), true );
 
 		try {
@@ -1265,7 +1326,7 @@ final class EditorTest extends WordPressTestCase {
 			$permissions ?? $this->createMock( Permissions::class ),
 			$story_cover ?? new StoryCover( $this->createMock( Shorthand::class ) ),
 			$title_sync ?? $this->createMock( StoryTitleSync::class ),
-			$pull_watch ?? new StoryPullWatch( $post_api, 'tse_story' ),
+			$pull_watch ?? new StoryPullWatch( $post_api, 'tse_story', new StoryPullLock() ),
 			$save_intent ?? new StorySaveIntent()
 		);
 	}

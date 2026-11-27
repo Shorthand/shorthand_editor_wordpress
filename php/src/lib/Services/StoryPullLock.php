@@ -62,6 +62,38 @@ class StoryPullLock {
 	}
 
 	/**
+	 * Moves the expiry of a held lock on, and reports whether it is still held.
+	 *
+	 * A step renews its lock as it works, so a slow step keeps it. A step
+	 * that was paused past its expiry finds the lock taken over, and stops.
+	 *
+	 * @param int $post_id Post being published.
+	 * @param int $expiry  Value `acquire()` or the last `renew()` returned.
+	 * @param int $seconds How long the lock holds from now.
+	 * @return int|null The new expiry, which `release()` needs; null when another request took the lock over.
+	 */
+	public function renew( int $post_id, int $expiry, int $seconds ): ?int {
+		global $wpdb;
+
+		$name = self::OPTION_PREFIX . $post_id;
+		$next = time() + $seconds;
+
+		if ( $next > $expiry ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Compare-and-set on the lock row.
+			$taken = $wpdb->query( $wpdb->prepare( "UPDATE `{$wpdb->options}` SET `option_value` = %s WHERE `option_name` = %s AND `option_value` = %s", (string) $next, $name, (string) $expiry ) );
+			if ( 1 === $taken ) {
+				return $next;
+			}
+		}
+
+		// An update that changes nothing reports no row, so the row is read to tell a held lock from a lost one.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Must read the row, not a cached copy.
+		$held = $wpdb->get_var( $wpdb->prepare( "SELECT `option_value` FROM `{$wpdb->options}` WHERE `option_name` = %s", $name ) );
+
+		return (string) $expiry === $held ? $expiry : null;
+	}
+
+	/**
 	 * Releases the lock, unless another step took it over after it expired.
 	 *
 	 * @param int $post_id Post being published.

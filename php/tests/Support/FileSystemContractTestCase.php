@@ -225,6 +225,49 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 	}
 
 	/**
+	 * The join is streamed, so a part larger than the memory left still joins.
+	 */
+	public function test_join_pieces_streams_parts_larger_than_the_memory_limit(): void {
+		$part = $this->staging_dir . '/file-0.part';
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Writes the part in blocks, so the test itself stays under the limit.
+		$handle = fopen( $part, 'wb' );
+		$block  = str_repeat( 'x', 1024 * 1024 );
+		for ( $idx = 0; $idx < 16; $idx++ ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- See above.
+			fwrite( $handle, $block );
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- See above.
+		fclose( $handle );
+		unset( $block );
+
+		$dest  = $this->temp_root . '/archive.zip';
+		$limit = ini_get( 'memory_limit' );
+		// phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed -- The test lowers the limit on purpose, then restores it.
+		$this->assertNotFalse( ini_set( 'memory_limit', (string) ( memory_get_usage( true ) + 8 * 1024 * 1024 ) ) );
+
+		try {
+			$joined = $this->file_system()->join_pieces( array( $part ), $dest );
+		} finally {
+			// phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed -- Restores the limit lowered above.
+			ini_set( 'memory_limit', $limit );
+		}
+
+		$this->assertTrue( $joined );
+		$this->assertSame( 16 * 1024 * 1024, filesize( $dest ) );
+	}
+
+	public function test_join_pieces_fails_on_a_missing_part(): void {
+		$this->stage( 'file-0.part', 'head' );
+
+		$this->assertFalse(
+			$this->file_system()->join_pieces(
+				array( $this->staging_dir . '/file-0.part', $this->staging_dir . '/file-1.part' ),
+				$this->temp_root . '/archive.zip'
+			)
+		);
+	}
+
+	/**
 	 * Copies the staged files, as the publish pipeline would.
 	 *
 	 * @param array|null $dest_manifest Manifest of the last publish, if any.
