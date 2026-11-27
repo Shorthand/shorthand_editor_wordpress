@@ -37,3 +37,11 @@ delete_transient( 'theshed_update_info' );
 
 /* Any in-flight story pulls scheduled via WP-Cron. */
 wp_clear_scheduled_hook( 'shorthand_pull_story_cron' );
+
+/* The recurring watch over story pulls. */
+wp_clear_scheduled_hook( 'shorthand_pull_watch' );
+
+/* Step locks left by pull steps that were killed. */
+global $wpdb;
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The lock rows are written with direct SQL too.
+$wpdb->query( $wpdb->prepare( "DELETE FROM `{$wpdb->options}` WHERE `option_name` LIKE %s", $wpdb->esc_like( 'shorthand_pull_lock_' ) . '%' ) );

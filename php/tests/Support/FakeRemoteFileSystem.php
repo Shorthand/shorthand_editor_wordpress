@@ -26,6 +26,13 @@ final class FakeRemoteFileSystem extends RemoteFileSystem {
 	 */
 	private $objects = array();
 
+	/**
+	 * False stands in for a stream wrapper that cannot report file sizes.
+	 *
+	 * @var bool
+	 */
+	public $reports_sizes = true;
+
 	/** @var int */
 	private $writes = 0;
 
@@ -54,6 +61,14 @@ final class FakeRemoteFileSystem extends RemoteFileSystem {
 		unset( $this->objects[ $path ] );
 
 		return true;
+	}
+
+	public function get_file_size( string $path ): ?int {
+		if ( ! $this->reports_sizes ) {
+			return null;
+		}
+
+		return isset( $this->objects[ $path ] ) ? strlen( $this->objects[ $path ] ) : null;
 	}
 
 	/**

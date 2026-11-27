@@ -74,6 +74,14 @@ interface FileSystemService {
 	public function copy_tree( string $source_dir, string $dest_dir, array $source_manifest, ?array $dest_manifest );
 
 	/**
+	 * Size of one file in uploads, in bytes.
+	 *
+	 * @param string $path Absolute path.
+	 * @return int|null Null when the file does not exist.
+	 */
+	public function get_file_size( string $path ): ?int;
+
+	/**
 	 * Deletes one file from uploads.
 	 *
 	 * @param string $path Absolute path.

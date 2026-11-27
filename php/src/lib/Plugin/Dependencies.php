@@ -23,6 +23,8 @@ use Shorthand\Services\ShorthandApiClient;
 use Shorthand\Services\ShorthandHttpTransport;
 use Shorthand\Services\StoryContentTransformer;
 use Shorthand\Services\StoryCover;
+use Shorthand\Services\StoryPullLock;
+use Shorthand\Services\StoryPullWatch;
 use Shorthand\Services\StoryTextExtractor;
 use Shorthand\Services\StoryTitleSync;
 use Shorthand\Services\TokenManager;
@@ -93,6 +95,18 @@ class Dependencies {
 	 * @var \Shorthand\Services\StoryTitleSync
 	 */
 	protected $title_sync;
+	/**
+	 * Watch over story pulls, for the recurring cron event.
+	 *
+	 * @var \Shorthand\Services\StoryPullWatch
+	 */
+	protected $pull_watch;
+	/**
+	 * Lock that keeps two steps of one pull from overlapping.
+	 *
+	 * @var \Shorthand\Services\StoryPullLock
+	 */
+	protected $pull_lock;
 
 	/**
 	 * @var bool
@@ -213,6 +227,21 @@ class Dependencies {
 			$this->post_api = new PostAPI( $this->shorthand, $this->get_options(), $this->get_permissions(), $this->get_post_type()->post_type, $this->get_auth_state_manager(), new StoryContentTransformer(), FileSystem::create(), new StoryTextExtractor(), $this->get_story_cover() );
 		}
 		return $this->post_api;
+	}
+
+	public function get_pull_watch(): StoryPullWatch {
+		$this->boot();
+		if ( ! isset( $this->pull_watch ) ) {
+			$this->pull_watch = new StoryPullWatch( $this->get_post_api(), $this->get_post_type()->post_type );
+		}
+		return $this->pull_watch;
+	}
+
+	public function get_pull_lock(): StoryPullLock {
+		if ( ! isset( $this->pull_lock ) ) {
+			$this->pull_lock = new StoryPullLock();
+		}
+		return $this->pull_lock;
 	}
 
 	public function get_story_cover(): StoryCover {

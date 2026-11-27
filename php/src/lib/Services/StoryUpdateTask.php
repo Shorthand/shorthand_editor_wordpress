@@ -8,7 +8,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class StoryUpdateTask {
 
-	const CHUNK_SIZE_MB = 5;
+	/**
+	 * Default size of one downloaded range, in MiB.
+	 *
+	 * Sites can change it, in bytes, through the `shorthand_pull_chunk_size` filter.
+	 */
+	const CHUNK_SIZE_MB = 25;
 
 	/**
 	 * @var int
@@ -79,8 +84,46 @@ class StoryUpdateTask {
 
 	public function ensure_chunk_window(): void {
 		if ( 0 === $this->end ) {
-			$this->end = 1024 * 1024 * self::CHUNK_SIZE_MB;
+			$this->end = self::get_chunk_size();
 		}
+	}
+
+	/**
+	 * Size of one downloaded range, in bytes.
+	 *
+	 * A pull keeps the window it started with, so a change applies to the
+	 * next pull.
+	 *
+	 * @return int At least 1 byte; a filtered value below that falls back to the default.
+	 */
+	public static function get_chunk_size(): int {
+		$default = 1024 * 1024 * self::CHUNK_SIZE_MB;
+
+		/**
+		 * Filters the size of one range of the story download, in bytes.
+		 *
+		 * Each range is one HTTP request with a 30 second timeout, so a
+		 * smaller value suits a slow link.
+		 *
+		 * @param int $size Bytes per range. Default 25 MiB.
+		 */
+		$size = (int) apply_filters( 'shorthand_pull_chunk_size', $default );
+
+		return $size > 0 ? $size : $default;
+	}
+
+	/**
+	 * Number of bytes the current window should deliver.
+	 *
+	 * The last window may reach past the end of the archive, and the server
+	 * then sends only what is left.
+	 *
+	 * @return int
+	 */
+	public function get_expected_chunk_length(): int {
+		$end = $this->size > 0 ? min( $this->end, $this->size ) : $this->end;
+
+		return max( $end - $this->start, 0 );
 	}
 
 	public function is_download_complete(): bool {

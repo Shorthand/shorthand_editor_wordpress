@@ -132,6 +132,7 @@ export function PostEditorToolBar({
           live={liveVersion}
           progress={progress}
           error={errors.publishing}
+          notice={errors.notice}
         />
         {!progress && <StoryUpdateTime latestVersion={latestVersion} />}
       </div>

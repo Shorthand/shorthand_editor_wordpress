@@ -8,6 +8,7 @@ use Shorthand\Core\Version;
 use Shorthand\Plugin;
 use Shorthand\Plugin\Dependencies;
 use Shorthand\Plugin\PostType;
+use Shorthand\Services\Cron;
 use Shorthand\Services\Options;
 use Shorthand\Services\StoryKses;
 
@@ -40,6 +41,15 @@ final class PluginTest extends WordPressTestCase {
 		$plugin->activate();
 
 		$this->assertSame( 1, \tests_wp_rewrite_flushes() );
+	}
+
+	public function test_deactivation_clears_the_pull_watch(): void {
+		\wp_schedule_event( time(), Cron::WATCH_INTERVAL, Cron::WATCH_HOOK );
+
+		$plugin = new Plugin( $this->createMock( Dependencies::class ), $this->createMock( StoryKses::class ) );
+		$plugin->deactivate();
+
+		$this->assertFalse( \wp_next_scheduled( Cron::WATCH_HOOK ) );
 	}
 
 	public function test_check_for_updates_returns_original_value_when_transient_is_not_an_object(): void {

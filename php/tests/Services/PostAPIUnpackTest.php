@@ -55,6 +55,48 @@ final class PostAPIUnpackTest extends WordPressTestCase {
 		parent::tearDown();
 	}
 
+	/**
+	 * Copying a large bundle into uploads is a long phase. A heartbeat
+	 * before it keeps the pull watch from failing a healthy pull.
+	 */
+	public function test_a_pull_in_flight_saves_a_heartbeat_before_the_copy(): void {
+		tests_wp_set_post_meta(
+			7,
+			'story_update_state',
+			array(
+				'percent'    => 90.0,
+				'status'     => 'Saving story to WordPress',
+				'updated_at' => time() - 600,
+			)
+		);
+
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => '',
+				'article.html' => '<h1>Story</h1>',
+			)
+		);
+
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
+
+		$progress = get_post_meta( 7, 'story_update_state', true );
+		$this->assertSame( 'Copying the story files', $progress['status'] );
+		$this->assertGreaterThanOrEqual( time() - 1, $progress['updated_at'] );
+	}
+
+	public function test_unpacking_outside_a_pull_saves_no_heartbeat(): void {
+		$archive = $this->make_archive(
+			array(
+				'head.html'    => '',
+				'article.html' => '<h1>Story</h1>',
+			)
+		);
+
+		$this->make_post_api()->extract_story_content( $archive, 7, 'aBc123', $this->staging_path, 'pull1' );
+
+		$this->assertSame( '', get_post_meta( 7, 'story_update_state', true ) );
+	}
+
 	public function test_the_archive_is_unpacked_under_staging_and_copied_into_the_bundle(): void {
 		$archive = $this->make_archive(
 			array(

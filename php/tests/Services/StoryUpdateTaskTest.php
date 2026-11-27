@@ -14,7 +14,46 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 
 		$task->ensure_chunk_window();
 
-		$this->assertSame( 5 * 1024 * 1024, $task->end );
+		$this->assertSame( 25 * 1024 * 1024, $task->end );
+	}
+
+	public function test_a_site_can_change_the_chunk_size(): void {
+		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 8 * 1024 * 1024 );
+		$task = $this->make_task();
+
+		$task->ensure_chunk_window();
+
+		$this->assertSame( 8 * 1024 * 1024, $task->end );
+	}
+
+	public function test_a_chunk_size_below_one_byte_falls_back_to_the_default(): void {
+		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+
+		$this->assertSame( 25 * 1024 * 1024, StoryUpdateTask::get_chunk_size() );
+	}
+
+	public function test_a_pull_in_flight_keeps_the_window_it_started_with(): void {
+		$task        = $this->make_task();
+		$task->start = 5 * 1024 * 1024;
+		$task->end   = 10 * 1024 * 1024;
+
+		$task->ensure_chunk_window();
+
+		$this->assertSame( 10 * 1024 * 1024, $task->end );
+	}
+
+	public function test_the_last_window_expects_only_what_is_left_of_the_archive(): void {
+		$task        = $this->make_task();
+		$task->size  = 25;
+		$task->start = 20;
+		$task->end   = 30;
+
+		$this->assertSame( 5, $task->get_expected_chunk_length() );
+
+		$task->start = 10;
+		$task->end   = 20;
+
+		$this->assertSame( 10, $task->get_expected_chunk_length() );
 	}
 
 	public function test_mark_chunk_downloaded_advances_the_window_and_file_count(): void {

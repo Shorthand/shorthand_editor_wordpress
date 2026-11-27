@@ -187,6 +187,29 @@ abstract class BaseFileSystem implements FileSystemService {
 	}
 
 	/**
+	 * Size of one file, read fresh.
+	 *
+	 * Works through any stream wrapper that answers `stat`, so a remote
+	 * uploads directory needs no override. The stat cache is cleared first:
+	 * a chunk downloaded again in the same request must not report the size
+	 * of the first attempt.
+	 *
+	 * @param string $path File to measure.
+	 * @return int|null Null when the file does not exist.
+	 */
+	public function get_file_size( string $path ): ?int {
+		clearstatcache( true, $path );
+
+		if ( ! file_exists( $path ) ) {
+			return null;
+		}
+
+		$size = filesize( $path );
+
+		return false === $size ? null : $size;
+	}
+
+	/**
 	 * Deletes one file.
 	 *
 	 * @param string $path File to delete.

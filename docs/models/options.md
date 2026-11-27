@@ -1,7 +1,7 @@
 ---
 title: Plugin options
 purpose: Every WordPress option the plugin registers, what sets it, and what removes it.
-updated: 2026-08-25
+updated: 2026-11-25
 ---
 
 # Plugin options
@@ -51,6 +51,15 @@ says. The settings screen renders the checkbox disabled, with a sentence from
 See `docs/services/file-system.md` for how a remote uploads directory is
 detected, and `docs/flows/publishing.md` for what staging does.
 
+## Step lock rows
+
+`Shorthand\Services\StoryPullLock` writes one row per post while a pull step
+runs: `shorthand_pull_lock_{post_id}`, autoload `no`, value the Unix time it
+expires. It is not registered and is never read through the options API; all
+access is direct SQL. A step deletes its row when it ends. A killed step
+leaves its row until the next step of that post takes it over. See
+`docs/flows/publishing.md` § Step lock.
+
 ## Removed options
 
 `Options::remove_legacy_options()` runs on upgrade and deletes options the
@@ -69,4 +78,4 @@ that row behind.
 `php/src/uninstall.php` deletes every option in this document, plus options no
 longer registered but possibly still present: `shorthand_flush_rewrite_rules`,
 `shorthand_app_url`, and `shorthand_api_url`. It also deletes the
-`theshed_update_info` transient.
+`theshed_update_info` transient, and every `shorthand_pull_lock_` row.

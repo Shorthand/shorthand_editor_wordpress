@@ -17,7 +17,7 @@ argument and calls no file system function directly.
 
 | Class | Role |
 | --- | --- |
-| `Shorthand\Services\FileSystemService` | The interface: staging directories, directory creation, chunk joining, tree copy, file and manifest deletion |
+| `Shorthand\Services\FileSystemService` | The interface: staging directories, directory creation, chunk joining, tree copy, file size, file and manifest deletion |
 | `Shorthand\Services\BaseFileSystem` | Everything independent of the uploads host, including the copy diff |
 | `Shorthand\Services\LocalFileSystem` | Uploads are a plain path; trees can be enumerated and removed |
 | `Shorthand\Services\RemoteFileSystem` | Uploads are an object store; `delete_dir()` succeeds without acting, `delete_tree()` is refused |

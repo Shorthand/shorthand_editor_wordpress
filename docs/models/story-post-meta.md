@@ -1,7 +1,7 @@
 ---
 title: Story post meta
 purpose: The post meta keys a Shorthand story post carries, and the shape of the structured ones.
-updated: 2026-09-17
+updated: 2026-11-25
 ---
 
 # Story post meta
@@ -21,17 +21,20 @@ rendered page is built from `story_body`.
 | `story_body` | string | Rendered article markup, asset URLs rewritten |
 | `story_manifest` | object | Name, size, and CRC32 per bundle file |
 | `story_update_nonce` | string | Nonce of the in-flight pull |
-| `story_update_state` | object | Progress of the in-flight pull |
+| `story_update_state` | object | Progress and heartbeat of the in-flight pull |
+| `story_update_task` | object | The pull step waiting to run, and how often it was resumed |
 | `story_pulls` | object | Pull directories awaiting cleanup |
 | `story_excerpt` | string | The excerpt last generated from the story body |
 | `story_cover` | object | The Shorthand cover image the last publish evaluated |
 | `story_cover_attachment` | number | Attachment the plugin set as the featured image |
 | `story_title_pending` | string | A title saved in WordPress that Shorthand has not yet received |
 | `story_update_error` | array | Last publish failure, as a flattened `WP_Error` |
+| `story_update_notice` | array | Why the last save from the editor fetched nothing, as a flattened `WP_Error` |
 
 `Shorthand\Plugin\PostType::register_post_type()` registers every key except
-`story_update_error`, which is written directly by
-`Shorthand\Services\PostAPI::set_story_update_error()`.
+`story_update_error`, `story_update_notice`, `story_pulls` and
+`story_update_task`. Those four are written directly by
+`Shorthand\Services\PostAPI`.
 
 Only `story_id` and `story_version` are exposed over REST.
 
@@ -174,7 +177,48 @@ does not offer them.
 
 Progress of the in-flight pull, as produced by
 `Shorthand\Services\StorySyncProgress::to_array()` and read back by
-`from_meta_value()`. Removed when the pull finishes.
+`from_meta_value()`. Removed when the pull finishes, and by
+`Shorthand\Services\StoryPullWatch::check()` once the pull has failed.
+
+```php
+array( 'percent' => 40.0, 'status' => 'Saving story to WordPress', 'updated_at' => 1795608650 )
+```
+
+`updated_at` is the pull's heartbeat: the Unix time of the write. Plugin
+1.0.11 wrote no `updated_at`; `from_meta_value()` then reports `null`, and the
+watch stamps it. See `docs/flows/publishing.md` § Pull watch.
+
+## story_update_task
+
+The pull step waiting to run, written by `Shorthand\Services\Cron` before
+every `shorthand_pull_story_cron` schedule call, so it exists even when
+scheduling fails:
+
+```php
+array( 'json' => '{"post_id":12,…}', 'attempts' => 0 )
+```
+
+- `json` is the exact event argument. `wp_next_scheduled( 'shorthand_pull_story_cron', array( $json ) )`
+  answers whether the step is still queued. Write it only through
+  `Shorthand\Services\PostAPI::set_story_update_task()`, which slashes it;
+  core unslashes meta values, and an unslashed copy no longer matches.
+- `attempts` is 1 after `Shorthand\Services\StoryPullWatch` resumed the step.
+  The next step stores a new task with 0.
+
+Deleted by `pull_story_cleanup()`, unless it belongs to a newer pull.
+
+## story_update_notice
+
+Written through `Shorthand\Services\PostAPI::set_story_update_notice()` by
+`Shorthand\Admin\Editor::wp_insert_post_data()`:
+
+- when a save with intent of a published post cannot check Shorthand for a new version. No pull starts.
+- when an edit screen save into `publish` or `future` carries a missing or expired intent nonce.
+
+Every save with intent deletes it first. It is not a pull failure: the
+editor shows it in the status line, not as an error. The editor state sends
+it as `errors.notice`, `null` when absent. See `docs/flows/publishing.md`
+§ Save intent.
 
 ## story_title_pending
 

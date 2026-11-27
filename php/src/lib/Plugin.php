@@ -112,6 +112,7 @@ class Plugin {
 	}
 
 	public function deactivate() {
+		wp_clear_scheduled_hook( Cron::WATCH_HOOK );
 		flush_rewrite_rules();
 	}
 

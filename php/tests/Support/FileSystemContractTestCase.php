@@ -179,6 +179,14 @@ abstract class FileSystemContractTestCase extends WordPressTestCase {
 		$this->assertSame( 2, $this->deletes() );
 	}
 
+	public function test_get_file_size_reads_a_file_in_uploads_and_reports_a_missing_one(): void {
+		$this->stage( 'file-0.part', 'twelve bytes' );
+		$this->copy_tree( null );
+
+		$this->assertSame( 12, $this->file_system()->get_file_size( $this->bundle_dir . '/file-0.part' ) );
+		$this->assertNull( $this->file_system()->get_file_size( $this->bundle_dir . '/file-1.part' ) );
+	}
+
 	public function test_make_temp_dir_creates_a_new_local_directory_under_the_temp_dir(): void {
 		$first  = $this->file_system()->make_temp_dir( 'sh_pull_' );
 		$second = $this->file_system()->make_temp_dir( 'sh_pull_' );

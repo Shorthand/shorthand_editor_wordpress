@@ -9,10 +9,12 @@ interface IStoryStatusProps {
   live: number | null;
   progress: IStoryProgress | null;
   error?: IStoryError;
+  notice?: IStoryError;
 }
 
-export function StoryStatus({ latest, live, progress, error, ...props }: IStoryStatusProps): React.JSX.Element | null {
-  if (!progress && latest === null) {
+export function StoryStatus({ latest, live, progress, error, notice, ...props }: IStoryStatusProps): React.JSX.Element | null {
+  /* A notice comes from the server, so it shows before the preview reports its version. */
+  if (!progress && latest === null && !notice?.message) {
     return null;
   }
 
@@ -34,6 +36,15 @@ export function StoryStatus({ latest, live, progress, error, ...props }: IStoryS
           <MessageCircleWarning size="1rem" color="hsla(4, 86%, 58%, 1)" />
           The story cannot be {action} until this issue is resolved.
         </>
+      );
+    }
+
+    if (notice?.message) {
+      return (
+        <span title={notice.tooltip || undefined}>
+          <MessageCircleWarning size="1rem" color="hsla(28,97%, 44%, 1)" />
+          {notice.message}
+        </span>
       );
     }
 
