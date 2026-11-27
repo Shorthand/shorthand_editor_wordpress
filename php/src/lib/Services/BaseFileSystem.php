@@ -170,7 +170,7 @@ abstract class BaseFileSystem implements FileSystemService {
 			}
 
 			if ( null !== $guard && ! call_user_func( $guard ) ) {
-				return new WP_Error( 'superseded', 'The copy stopped: a newer pull or another run of this step took over.' );
+				return new WP_Error( self::SUPERSEDED, 'The copy stopped: a newer pull or another run of this step took over.' );
 			}
 
 			$dest_path   = $dest_dir . '/' . $relative_path;

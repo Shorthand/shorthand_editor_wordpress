@@ -27,7 +27,7 @@ class PostAPI {
 	 *
 	 * A step starts no part it expects to end past it, so a step stays
 	 * under a host that ends requests at 20 s of wall time. Sites can
-	 * change it through the `shorthand_pull_step_budget` filter.
+	 * change it through the `theshed_pull_step_budget` filter.
 	 */
 	const STEP_BUDGET = 15;
 
@@ -528,6 +528,11 @@ class PostAPI {
 		$payload = json_decode( $body );
 
 		if ( 202 === $status_code ) {
+			/* A step that lost the pull must not write its 0% over the newer pull's progress. */
+			if ( ! $this->owns_pull() ) {
+				return $this->get_superseded_error();
+			}
+
 			$this->set_story_update_progress( $args->post_id, new StorySyncProgress( 0, __( 'Waiting for Shorthand to prepare the story', 'the-shorthand-editor' ) ) );
 			return new WP_Error( 'retry', 'File download not ready.', 5 ); /* 5 second retry */
 		}
@@ -622,7 +627,7 @@ class PostAPI {
 			$this->guard = null;
 		}
 
-		return null !== $result && 'superseded' === $result->get_error_code() ? null : $result;
+		return null !== $result && FileSystemService::SUPERSEDED === $result->get_error_code() ? null : $result;
 	}
 
 	/**
@@ -659,15 +664,25 @@ class PostAPI {
 		} while ( null === $result && ! $args->is_download_complete() && $this->now() - $started + $this->get_part_seconds( $args ) < $budget );
 
 		/* A step that lost the pull writes nothing more, not even the speed. */
-		if ( null !== $result && 'superseded' === $result->get_error_code() ) {
+		if ( null !== $result && FileSystemService::SUPERSEDED === $result->get_error_code() ) {
 			return $result;
 		}
 
-		if ( $this->step_bytes > 0 && $this->step_seconds > 0 ) {
-			$this->pull_speed->record( (int) floor( $this->step_bytes / $this->step_seconds ) );
+		$speed = $this->get_step_speed();
+		if ( $speed > 0 ) {
+			$this->pull_speed->record( $speed );
 		}
 
 		return $result ?? new WP_Error( 'retry', 'Request further file data', 0 );
+	}
+
+	/**
+	 * Speed of the step's good parts so far, in bytes per second.
+	 *
+	 * @return int 0 when nothing was timed yet.
+	 */
+	private function get_step_speed(): int {
+		return $this->step_seconds > 0 ? (int) floor( $this->step_bytes / $this->step_seconds ) : 0;
 	}
 
 	/**
@@ -698,7 +713,7 @@ class PostAPI {
 		 *
 		 * @param int|float $budget Seconds. Default 15.
 		 */
-		$budget = max( (float) apply_filters( 'shorthand_pull_step_budget', self::STEP_BUDGET ), 0.0 );
+		$budget = max( (float) apply_filters( 'theshed_pull_step_budget', self::STEP_BUDGET ), 0.0 );
 
 		$limit = (int) ini_get( 'max_execution_time' );
 		if ( $limit > 0 ) {
@@ -820,7 +835,7 @@ class PostAPI {
 
 		$args->mark_chunk_downloaded();
 
-		$speed = $this->step_seconds > 0 ? (int) floor( $this->step_bytes / $this->step_seconds ) : 0;
+		$speed = $this->get_step_speed();
 		if ( $speed > 0 ) {
 			$args->speed = $speed;
 		}
@@ -951,9 +966,11 @@ class PostAPI {
 	 * @return WP_Error
 	 */
 	private function get_bad_chunk_error( StoryUpdateTask $args, string $detail ): WP_Error {
-		$message = self::is_publishing_status( self::get_restore_status( $args->prior_status ) )
-			? __( 'The story download was incomplete. Click Update to try again.', 'the-shorthand-editor' )
-			: __( 'The story download was incomplete. Click Publish to try again.', 'the-shorthand-editor' );
+		$message = sprintf(
+			/* translators: %s: "Click Update to try again." or "Click Publish to try again." */
+			__( 'The story download was incomplete. %s', 'the-shorthand-editor' ),
+			self::get_retry_hint( self::get_restore_status( $args->prior_status ) )
+		);
 
 		$error = new WP_Error( 'chunk', $detail );
 		$error->add( 'pretty', $message );
@@ -968,6 +985,18 @@ class PostAPI {
 	 */
 	public static function is_publishing_status( $status ): bool {
 		return in_array( $status, array( 'publish', 'future' ), true );
+	}
+
+	/**
+	 * The last sentence of a failed pull's message, naming the button to click again.
+	 *
+	 * @param string|false $status Status the post returns to once the pull fails.
+	 * @return string "Click Update to try again." for a published status, "Click Publish to try again." otherwise.
+	 */
+	public static function get_retry_hint( $status ): string {
+		return self::is_publishing_status( $status )
+			? __( 'Click Update to try again.', 'the-shorthand-editor' )
+			: __( 'Click Publish to try again.', 'the-shorthand-editor' );
 	}
 
 	/**
@@ -988,7 +1017,7 @@ class PostAPI {
 	 * @return WP_Error
 	 */
 	private function get_superseded_error(): WP_Error {
-		return new WP_Error( 'superseded', 'A newer pull or another run of this step took over.' );
+		return new WP_Error( FileSystemService::SUPERSEDED, 'A newer pull or another run of this step took over.' );
 	}
 
 	/**
@@ -1030,6 +1059,8 @@ class PostAPI {
 		$prior_status = self::get_restore_status( $args->prior_status );
 		$status       = get_post_status( $args->post_id );
 		if ( $restore_status && 'trash' !== $status && $status !== $prior_status ) {
+			/* Back to `future`, core's `_future_post_hook()` saves the whole event list; the step may be a minute old. */
+			Cron::clear_cron_cache();
 			wp_update_post(
 				array(
 					'ID'          => $args->post_id,
@@ -1243,7 +1274,7 @@ class PostAPI {
 
 		if ( is_wp_error( $story ) ) {
 			/* A step that lost the pull during the unpack reports that, not the unpack error it caused. */
-			return in_array( 'superseded', $story->get_error_codes(), true ) ? $this->get_superseded_error() : $story;
+			return in_array( FileSystemService::SUPERSEDED, $story->get_error_codes(), true ) ? $this->get_superseded_error() : $story;
 		}
 
 		if ( ! $this->owns_pull() ) {
@@ -1402,6 +1433,9 @@ class PostAPI {
 		if ( 1 === count( $update ) ) {
 			return;
 		}
+
+		/* For a scheduled post, the update runs core's `_future_post_hook()`, which saves the whole event list. */
+		Cron::clear_cron_cache();
 
 		$this->storing_text = true;
 		try {

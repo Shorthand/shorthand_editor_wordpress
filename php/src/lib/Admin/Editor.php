@@ -407,7 +407,7 @@ class Editor {
 		} else {
 			return false;
 		}
-		return in_array( $status, array( 'publish', 'future' ), true );
+		return PostAPI::is_publishing_status( $status );
 	}
 
 	public function edit_form_after_title( $post ) {

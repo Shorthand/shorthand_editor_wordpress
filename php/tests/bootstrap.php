@@ -294,6 +294,29 @@ function tests_wp_cache_deletes(): array {
 }
 
 /**
+ * Whether the request's cached copy of the `cron` option was dropped, as `Cron::clear_cron_cache()` does.
+ */
+function tests_wp_cron_cache_cleared(): bool {
+	$deletes = tests_wp_cache_deletes();
+
+	return in_array(
+		array(
+			'key'   => 'alloptions',
+			'group' => 'options',
+		),
+		$deletes,
+		true
+	) && in_array(
+		array(
+			'key'   => 'cron',
+			'group' => 'options',
+		),
+		$deletes,
+		true
+	);
+}
+
+/**
  * Removes every scheduled event, as when they all ran.
  */
 function tests_wp_reset_cron_events(): void {

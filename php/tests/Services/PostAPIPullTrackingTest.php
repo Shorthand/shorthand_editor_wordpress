@@ -213,6 +213,36 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		$this->assertSame( 'status', $this->make_post_api()->get_story_update_error( 7 )[0]['code'] );
 	}
 
+	/**
+	 * Putting a scheduled post back to `future` fires core's
+	 * `_future_post_hook()`, which saves the whole `cron` option from the
+	 * request's cached copy. A step can be a minute old by then.
+	 */
+	public function test_a_failed_pull_reads_the_cron_option_fresh_before_restoring_the_status(): void {
+		tests_wp_set_post(
+			7,
+			(object) array(
+				'ID'          => 7,
+				'post_status' => 'publish',
+			)
+		);
+		tests_wp_set_post_meta( 7, 'story_update_nonce', '12345' );
+		$task               = $this->task();
+		$task->prior_status = 'future';
+
+		$cleared = null;
+		tests_wp_set_update_post_observer(
+			static function () use ( &$cleared ): void {
+				$cleared = tests_wp_cron_cache_cleared();
+			}
+		);
+
+		$this->make_post_api()->pull_story_failed( $task, new WP_Error( 'status', 'Failed.' ) );
+
+		$this->assertSame( 'future', tests_wp_updated_posts()[0]['post_status'] );
+		$this->assertTrue( $cleared );
+	}
+
 	public function test_abandoning_a_pull_of_a_trashed_post_leaves_it_in_the_trash(): void {
 		tests_wp_set_post(
 			7,
@@ -308,6 +338,32 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 		$progress = get_post_meta( 7, 'story_update_state', true );
 		$this->assertSame( 'Waiting for Shorthand to prepare the story', $progress['status'] );
 		$this->assertGreaterThanOrEqual( time() - 1, $progress['updated_at'] );
+	}
+
+	/**
+	 * A step that a newer pull superseded while Shorthand built the bundle
+	 * must not write its 0% over the newer pull's progress.
+	 */
+	public function test_a_superseded_step_waiting_for_shorthand_writes_no_progress(): void {
+		tests_wp_set_post_meta( 7, 'story_update_nonce', '12345' );
+
+		$shorthand = $this->createMock( Shorthand::class );
+		$shorthand->method( 'shorthand_api_authed_request' )->willReturn(
+			array(
+				'response' => array( 'code' => 202 ),
+				'body'     => '',
+			)
+		);
+
+		$result = $this->make_post_api( $shorthand )->pull_story_cron(
+			$this->task(),
+			static function (): bool {
+				return false;
+			}
+		);
+
+		$this->assertNull( $result );
+		$this->assertSame( '', get_post_meta( 7, 'story_update_state', true ) );
 	}
 
 	/**
@@ -422,7 +478,7 @@ final class PostAPIPullTrackingTest extends WordPressTestCase {
 	public function test_the_step_limit_covers_a_range_fetched_twice_past_the_budget(): void {
 		$this->assertSame( 15 + 2 * ( 30 + 60 ), $this->make_post_api()->get_step_limit() );
 
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 0.5 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 0.5 );
 		$this->assertSame( 181, $this->make_post_api()->get_step_limit() );
 	}
 

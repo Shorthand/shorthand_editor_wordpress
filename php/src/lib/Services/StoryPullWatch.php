@@ -243,9 +243,11 @@ class StoryPullWatch {
 		$args   = null === $task ? null : StoryUpdateTask::from_json( $task['json'] );
 		$status = null === $args ? get_post_status( $post_id ) : PostAPI::get_restore_status( $args->prior_status );
 
-		$message = PostAPI::is_publishing_status( $status )
-			? __( 'The story download stopped before it finished. Click Update to try again.', 'the-shorthand-editor' )
-			: __( 'The story download stopped before it finished. Click Publish to try again.', 'the-shorthand-editor' );
+		$message = sprintf(
+			/* translators: %s: "Click Update to try again." or "Click Publish to try again." */
+			__( 'The story download stopped before it finished. %s', 'the-shorthand-editor' ),
+			PostAPI::get_retry_hint( $status )
+		);
 
 		$error = new WP_Error( 'stalled', "The story download made no progress for {$age} seconds.", $age );
 		$error->add( 'pretty', $message );

@@ -118,7 +118,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 
 		tests_wp_set_post( 7, (object) array( 'ID' => 7 ) );
 		tests_wp_set_post_meta( 7, 'story_update_nonce', '12345' );
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 10 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 10 );
 
 		$this->file_system = new FakeRemoteFileSystem();
 		$this->pull_speed  = new StoryPullSpeed();
@@ -241,7 +241,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	 * speed counts what arrived.
 	 */
 	public function test_with_no_archive_size_the_speed_counts_bytes_received(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
 		$this->archive          = str_repeat( 'x', 300000 );
 		$this->bytes_per_second = 100000;
 		$this->pull_speed       = $this->createMock( StoryPullSpeed::class );
@@ -280,7 +280,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	}
 
 	public function test_a_budget_of_zero_downloads_one_range_per_step(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 0 );
 		$this->archive = str_repeat( 'x', 100 );
 		$task          = $this->task();
 
@@ -304,7 +304,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	}
 
 	public function test_a_negative_budget_counts_as_zero(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', -5 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', -5 );
 
 		$this->assertSame( 0.0, $this->make_post_api()->get_step_budget() );
 	}
@@ -321,7 +321,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	public function test_a_range_with_the_wrong_start_is_fetched_again(): void {
 		$this->archive = str_repeat( 'x', 100 );
 		$this->faults  = array( 'wrong_start' );
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 0 );
 		$task = $this->task();
 
 		$result = $this->make_post_api()->pull_story_cron( $task );
@@ -361,7 +361,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	public function test_a_file_system_that_cannot_report_sizes_does_not_fail_the_pull(): void {
 		$this->archive                    = str_repeat( 'x', 100 );
 		$this->file_system->reports_sizes = false;
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 0 );
 		$task = $this->task();
 
 		$result = $this->make_post_api()->pull_story_cron( $task );
@@ -409,12 +409,12 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 		$post_api      = $this->make_post_api();
 		$post_api->set_story_update_task( 7, $stored );
 
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 4.5 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 4.5 );
 		$this->seconds_per_range = 1.0;
 		$post_api->pull_story_cron( $this->task() );
 		$this->assertCount( 4, $this->file_system->objects() );
 
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 0 );
 		$post_api->pull_story_cron( StoryUpdateTask::from_json( $stored ) );
 		$this->assertSame( 4, get_post_meta( 7, 'story_pulls', true )['12345']['files'] );
 
@@ -428,7 +428,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 		$stored        = wp_json_encode( $this->task() );
 		$post_api      = $this->make_post_api();
 
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 4.5 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 4.5 );
 		$this->seconds_per_range = 1.0;
 		$post_api->pull_story_cron( $this->task() );
 
@@ -447,7 +447,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	 * The first part is a 5 MiB probe; at 58 Mbit/s the next is the 25 MiB cap.
 	 */
 	public function test_a_step_probes_then_grows_the_part_to_the_cap(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
 		$this->archive_size     = 31 * MB_IN_BYTES;
 		$this->bytes_per_second = 7250000;
 		$task                   = $this->task();
@@ -465,8 +465,8 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	 * At 7 Mbit/s a part takes 10 s at about 8.3 MiB.
 	 */
 	public function test_parts_settle_near_8_mib_at_7_mbit(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 30 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 30 );
 		$this->archive_size     = 40000000;
 		$this->bytes_per_second = 875000;
 
@@ -484,8 +484,8 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	 * sizes the next step's parts through the stored task.
 	 */
 	public function test_the_speed_carries_over_to_the_next_step_through_the_task(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 30 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 30 );
 		$this->archive_size     = 20000000;
 		$this->bytes_per_second = 250000;
 		$task                   = $this->task();
@@ -509,8 +509,8 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	}
 
 	public function test_the_first_part_is_sized_from_the_stored_site_speed(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 0 );
 		$this->archive_size = 9000000;
 		$this->pull_speed   = $this->createMock( StoryPullSpeed::class );
 		$this->pull_speed->expects( $this->once() )->method( 'get' )->willReturn( 300000 );
@@ -521,7 +521,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	}
 
 	public function test_a_step_stores_the_speed_it_measured_once(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_step_budget', 4.5 );
+		tests_wp_set_filter_value( 'theshed_pull_step_budget', 4.5 );
 		$this->archive           = str_repeat( 'x', 100 );
 		$this->seconds_per_range = 1.0;
 		$this->pull_speed        = $this->createMock( StoryPullSpeed::class );
@@ -550,7 +550,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	 * asks for 10 s at that speed, in the same file.
 	 */
 	public function test_a_part_that_times_out_is_fetched_once_more_at_a_smaller_size(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
 		$this->archive_size  = 6 * MB_IN_BYTES;
 		$this->faults        = array( 'timeout' );
 		$this->partial_bytes = 4500000;
@@ -573,7 +573,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	 * is still 0. The retry must not ask for the probe again.
 	 */
 	public function test_a_probe_that_times_out_with_no_readable_partial_is_retried_at_half_the_size(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
 		$this->archive_size               = 6 * MB_IN_BYTES;
 		$this->faults                     = array( 'timeout' );
 		$this->file_system->reports_sizes = false;
@@ -587,7 +587,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	}
 
 	public function test_a_part_that_times_out_twice_fails_the_step_and_deletes_the_chunk(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
 		$this->archive_size  = 6 * MB_IN_BYTES;
 		$this->faults        = array( 'timeout', 'timeout' );
 		$this->partial_bytes = 1000;
@@ -636,7 +636,7 @@ final class PostAPIPullStepTest extends WordPressTestCase {
 	 * where the resized one left off.
 	 */
 	public function test_a_resume_after_a_resized_part_runs_the_stored_step(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
 		$this->archive       = substr( str_repeat( implode( '', range( 'a', 'z' ) ), 160000 ), 0, 4000000 );
 		$this->faults        = array( 'timeout' );
 		$this->partial_bytes = 3600000;

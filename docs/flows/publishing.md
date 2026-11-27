@@ -1,7 +1,7 @@
 ---
 title: Publishing a story
 purpose: The end-to-end path from a Shorthand story archive to a rendered WordPress post.
-updated: 2026-11-26
+updated: 2026-11-27
 ---
 
 # Publishing a story
@@ -74,6 +74,34 @@ A nonce lives 12 to 24 hours. `Shorthand\Admin\Editor::refresh_nonces()` adds th
 ### Autosave of a draft title
 
 The heartbeat autosave of the author's own draft saves the title through `edit_post()`. `StorySaveIntent::is_autosave()` recognises it by the `update-post_{id}` nonce in `data[wp_autosave]`, and it counts as intent for the title only: the title is pushed, and no pull starts.
+
+## Decision: only an editor action calls Shorthand
+
+A story post is saved by many callers: other plugins, core outside the edit
+screen, and `admin-ajax.php` or `admin-post.php` handlers. Before save intent,
+any admin save of a published story checked Shorthand for a new version, and
+any status move into `publish` started a pull. A third-party save could then
+wait on Shorthand, publish edits made in Shorthand that were not meant for the
+site yet, or start a 394 MB download. A third-party title change edited the
+story in Shorthand.
+
+So only a save that carries a valid `shorthand_story_intent` nonce from the
+edit screen, Quick Edit or bulk edit may start a pull, check the version or
+push the title (user decision of 2026-11-25 for Quick Edit and bulk edit). A
+save without intent never calls Shorthand, and never touches
+`story_update_state`, `story_update_nonce` or `story_update_task`, so a pull in
+flight stays safe and its own outcome stays visible. See § Save intent.
+
+## Decision: a failed version check stores a notice, not a pull
+
+When `Shorthand\Services\Shorthand::get_story_version()` fails during a save
+with intent of a published post, the save starts no pull. It stores the
+`story_update_notice` "Could not check Shorthand for updates", which the editor
+shows in the story status line. The next save with intent clears it.
+
+Before save intent, a failed check fell back to a full pull. A short Shorthand
+outage then turned every save of a published story into a full download of the
+archive. The author can still click Update again once Shorthand answers.
 
 ## Decision: a save without a connection blocks one thing only
 
@@ -169,11 +197,11 @@ the archive, with a fresh budget. A 394 MB archive takes 16 parts, about 3 to
 
 | Setting | Default | Filter |
 | --- | --- | --- |
-| Largest part | 25 MiB, `StoryUpdateTask::CHUNK_SIZE_MB` | `shorthand_pull_chunk_size`, in bytes; a value below 1 uses the default |
+| Largest part | 25 MiB, `StoryUpdateTask::CHUNK_SIZE_MB` | `theshed_pull_chunk_size`, in bytes; a value below 1 uses the default |
 | First part, speed unknown | 5 MiB, `StoryUpdateTask::PROBE_SIZE` | None |
 | Smallest part | 1 MiB, `StoryUpdateTask::MIN_SIZE` | None |
 | Target time per part | 10 s, `StoryUpdateTask::TARGET_SECONDS` | None |
-| Step budget | 15 s, `PostAPI::STEP_BUDGET` | `shorthand_pull_step_budget`, in seconds; capped at half of `max_execution_time` when PHP sets one |
+| Step budget | 15 s, `PostAPI::STEP_BUDGET` | `theshed_pull_step_budget`, in seconds; capped at half of `max_execution_time` when PHP sets one |
 | Part timeout | 30 s, `PostAPI::CHUNK_TIMEOUT` | None |
 
 - A step always downloads at least one part. A budget of 0 gives one part
@@ -198,7 +226,7 @@ Each part is sized to take `TARGET_SECONDS` at the measured download speed.
 
 1. Speed unknown: `PROBE_SIZE`.
 2. Otherwise speed × `TARGET_SECONDS`, at least `MIN_SIZE`.
-3. At most the `shorthand_pull_chunk_size` cap. The cap wins over the probe
+3. At most the `theshed_pull_chunk_size` cap. The cap wins over the probe
    and the floor.
 4. Never past the end of the archive.
 
@@ -435,7 +463,7 @@ the step tries to store. Only a later request can notice.
 `Shorthand\Services\StoryPullWatch::check( int $post_id )` is that check. It
 returns `idle`, `running`, `resumed` or `dead`.
 
-Two records make it possible:
+Two records make the check possible:
 
 - Every progress write carries `updated_at`, the heartbeat. Steps write one at
   0% on each `202` while Shorthand builds the archive, after each chunk, before
@@ -459,11 +487,17 @@ The rules, in order:
    try again." when the post goes back to a status other than `publish` or
    `future`, and "Click Update to try again." otherwise.
 
-Rules 5 and 6 run only under the post's step lock (`StoryPullWatch::LOCK_LIMIT`,
-60 s). A running step holds the lock, and so does another check that is acting
-on the pull, so a check that cannot take it returns `running`. Under the lock
-the check clears the post's meta cache and the `cron` option cache, reads the
-pull again, and acts only if rules 1 to 4 still do not apply. Progress that
+Rules 5 and 6 act only under the post's step lock; see § Pull watch lock and
+readers.
+
+## Pull watch lock and readers
+
+`StoryPullWatch::check()` resumes or fails a pull (rules 5 and 6 of § Pull
+watch) only under the post's step lock, held for `StoryPullWatch::LOCK_LIMIT`,
+60 s. A running step holds the lock, and so does another check that is acting
+on the pull, so a check that cannot take the lock returns `running`. Under the
+lock the check clears the post's meta cache and the `cron` option cache, reads
+the pull again, and acts only if rules 1 to 4 still do not apply. Progress that
 cannot be read is deleted, so the sweep stops finding the post.
 
 Three readers run the check:
@@ -477,13 +511,22 @@ Three readers run the check:
   to 20 posts with `story_update_state` and unschedules itself when none is
   left. `Cron::schedule_pull_story()` schedules it when it is missing.
 
-`Cron::queue_step()` schedules every step and every resume. It clears the
-`alloptions` and `cron` cache entries first, because core saves the whole event
-list from the request's cached copy: a step that ran for a minute would drop
-events other requests saved since, and put back events another `wp-cron.php`
-run already ran. A failed schedule is read back once and retried once. An
-event that is already queued counts as scheduled. The first step of a pull and
-the watch event also read the event list fresh before they are scheduled.
+## Event list read fresh
+
+Core saves the whole event list, the `cron` option, on every schedule, from
+the request's cached copy. A pull step can run for a minute. Saving that old
+copy would drop events other requests saved since, and put back events another
+`wp-cron.php` run already ran. So `Cron::clear_cron_cache()` deletes the
+`alloptions` and `cron` cache entries before each write of the event list in a
+pull:
+
+- `Cron::queue_step()`, which schedules every step and every resume. A failed
+  schedule is read back once and retried once. An event that is already
+  queued counts as scheduled.
+- The first step of a pull and the watch event, before they are scheduled.
+- `PostAPI::store_story_text()` and the status restore of a failed pull, before
+  `wp_update_post()`. On a `future` post, core's `_future_post_hook()` then
+  schedules `publish_future_post`, which saves the event list.
 
 ## Step lock
 
@@ -492,21 +535,35 @@ same event, and the watch can resume a step that was only slow.
 `Shorthand\Services\Cron::pull_story_cron()` runs each step in this order:
 
 1. Take the lock, `Shorthand\Services\StoryPullLock::acquire()`. The lock is
-   the option row `shorthand_pull_lock_{post_id}`, inserted with
-   `INSERT IGNORE`. Its value is its expiry time:
-   `PostAPI::get_step_limit()` seconds from now, 195 s by default. That is the
-   step budget plus one range fetched twice, each try waiting up to the 30 s
-   request timeout and 60 s to close the chunk file.
+   the option row `shorthand_pull_lock_{post_id}`. Its value is its expiry
+   time: `PostAPI::get_step_limit()` seconds from now, 195 s by default. That
+   is the step budget plus one range fetched twice, each try waiting up to the
+   30 s request timeout and 60 s to close the chunk file.
 2. Clear the post's meta cache, then ask `PostAPI::is_current_step()`. A step
-   that is not current exits.
+   that is not current exits. See § Current step.
 3. Run the step, then store and schedule the next one, or fail the pull.
 4. Release the lock in a `finally` block. The release deletes the row only if
    it still holds this step's expiry.
 
-The step hands `PostAPI::pull_story_cron()` a guard. The guard clears the
-post's meta cache, asks `is_current_step()`, then renews the lock with
-`StoryPullLock::renew()`, a compare-and-set on the expiry. It runs:
+A step that cannot take the lock does not run. If it is still current, it
+schedules its own event again 30 s later. It does not store the task: that
+would overwrite a newer step the holder stored and reset the watch's
+`attempts`.
 
+An expired lock is taken over with an `UPDATE` that matches the expired value,
+so only one of two waiting steps gets it. A lock left by a killed step
+therefore holds for at most 195 s. Why the lock is direct SQL is in
+§ Decision: take the step lock with direct SQL and `INSERT IGNORE`.
+
+## Step guard
+
+`Cron::pull_story_cron()` hands `PostAPI::pull_story_cron()` a guard. The
+guard clears the post's meta cache, asks `PostAPI::is_current_step()`, then
+renews the step lock with `StoryPullLock::renew()`, a compare-and-set on the
+expiry. The guard runs:
+
+- on each `202` from Shorthand while it builds the archive, before the 0%
+  heartbeat;
 - after each part request returns, before a retry, a file delete or any write;
 - in the assembly step after each heartbeat, before each file the copy into
   uploads writes, before stale files are deleted and before the content and
@@ -518,17 +575,10 @@ started, or another run of the step took the lock over after this one was
 paused past its expiry. A slow assembly step keeps its lock, because every
 file it copies renews it.
 
-A step that cannot take the lock does not run. If it is still current, it
-schedules its own event again 30 s later. It does not store the task: that
-would overwrite a newer step the holder stored and reset the watch's
-`attempts`.
+## Current step
 
-An expired lock is taken over with an `UPDATE` that matches the expired value,
-so only one of two waiting steps gets it. A lock left by a killed step
-therefore holds for at most 195 s. Every lock query is direct SQL, because the
-options cache would not see another request's insert or delete.
-
-`is_current_step()` is false when:
+`PostAPI::is_current_step()` tells a step whether it should still run. Both
+`Cron::pull_story_cron()` and the step guard ask it. It is false when:
 
 - the nonce moved on to a newer pull;
 - the stored task has the same nonce and a later `start`, so this event ran
@@ -539,6 +589,24 @@ options cache would not see another request's insert or delete.
 
 A pull started by 1.0.11 stored no task. Its steps still run while it has
 progress and no error.
+
+## Decision: take the step lock with direct SQL and `INSERT IGNORE`
+
+`Shorthand\Services\StoryPullLock` reads and writes the
+`shorthand_pull_lock_{post_id}` option row with direct SQL, not the options
+API. Each statement carries a `phpcs:ignore` for `DirectQuery` and
+`NoCaching`, with its reason.
+
+- Taking the lock is one `INSERT IGNORE`. The insert is atomic, so exactly one
+  of two steps that race gets the row. `add_option()` checks the options cache
+  first, then writes with `ON DUPLICATE KEY UPDATE`, so two racing steps can
+  both succeed. `WP_Upgrader::create_lock()` in core uses the same pattern.
+- Taking over an expired lock, renewing it and releasing it each match the
+  stored expiry in the `WHERE` clause, a compare-and-set. A step that lost the
+  lock changes nothing.
+- Reads of the row skip the cache. The options cache holds the value the
+  request saw first, and would not see another request take or release the
+  lock.
 
 ## Removing a bundle
 

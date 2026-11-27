@@ -44,7 +44,7 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 	}
 
 	public function test_a_window_is_at_most_the_filtered_cap(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 8 * MB_IN_BYTES );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 8 * MB_IN_BYTES );
 		$task = $this->make_task();
 
 		$task->size_next_window( 10 * MB_IN_BYTES );
@@ -53,7 +53,7 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 	}
 
 	public function test_a_cap_below_the_probe_and_the_floor_wins(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 512 * 1024 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 512 * 1024 );
 		$task = $this->make_task();
 
 		$task->size_next_window( 0 );
@@ -107,7 +107,7 @@ final class StoryUpdateTaskTest extends WordPressTestCase {
 	}
 
 	public function test_a_chunk_size_below_one_byte_falls_back_to_the_default(): void {
-		tests_wp_set_filter_value( 'shorthand_pull_chunk_size', 0 );
+		tests_wp_set_filter_value( 'theshed_pull_chunk_size', 0 );
 
 		$this->assertSame( 25 * 1024 * 1024, StoryUpdateTask::get_chunk_size() );
 	}

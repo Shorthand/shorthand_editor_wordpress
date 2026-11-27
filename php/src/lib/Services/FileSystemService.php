@@ -23,6 +23,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 interface FileSystemService {
 
 	/**
+	 * Error code of a copy, or a pull step, that stopped because its guard answered false.
+	 */
+	const SUPERSEDED = 'superseded';
+
+	/**
 	 * Creates an empty staging directory under the local temp directory.
 	 *
 	 * @param string $prefix Prefix for the directory name.
@@ -66,7 +71,7 @@ interface FileSystemService {
 	 * `$source_manifest`, which the caller reads out of the archive index.
 	 *
 	 * A guard, when given, is asked before each file is written. When it
-	 * answers false, the copy stops with error `superseded`.
+	 * answers false, the copy stops with error code `SUPERSEDED`.
 	 *
 	 * @param string        $source_dir      Absolute path of a local directory.
 	 * @param string        $dest_dir        Absolute path in uploads.

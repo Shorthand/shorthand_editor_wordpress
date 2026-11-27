@@ -11,7 +11,7 @@ class StoryUpdateTask {
 	/**
 	 * Default largest size of one downloaded part, in MiB.
 	 *
-	 * Sites can change it, in bytes, through the `shorthand_pull_chunk_size` filter.
+	 * Sites can change it, in bytes, through the `theshed_pull_chunk_size` filter.
 	 */
 	const CHUNK_SIZE_MB = 25;
 
@@ -128,7 +128,7 @@ class StoryUpdateTask {
 	 * @param int $speed Bytes per second; 0 when unknown.
 	 */
 	public function size_next_window( int $speed ): void {
-		$this->set_width( $speed > 0 ? $speed * self::TARGET_SECONDS : self::PROBE_SIZE );
+		$this->set_width( self::get_target_width( $speed ) );
 	}
 
 	/**
@@ -141,9 +141,17 @@ class StoryUpdateTask {
 	 * @param int $speed Bytes per second; 0 when unknown.
 	 */
 	public function shrink_window( int $speed ): void {
-		$width = $speed > 0 ? $speed * self::TARGET_SECONDS : self::PROBE_SIZE;
+		$this->set_width( min( self::get_target_width( $speed ), intdiv( $this->end - $this->start, 2 ) ) );
+	}
 
-		$this->set_width( min( $width, intdiv( $this->end - $this->start, 2 ) ) );
+	/**
+	 * Part width that takes `TARGET_SECONDS` at a speed, before the size limits.
+	 *
+	 * @param int $speed Bytes per second; 0 when unknown.
+	 * @return int `PROBE_SIZE` when the speed is unknown.
+	 */
+	private static function get_target_width( int $speed ): int {
+		return $speed > 0 ? $speed * self::TARGET_SECONDS : self::PROBE_SIZE;
 	}
 
 	/**
@@ -178,7 +186,7 @@ class StoryUpdateTask {
 		 *
 		 * @param int $size Largest bytes per part. Default 25 MiB.
 		 */
-		$size = (int) apply_filters( 'shorthand_pull_chunk_size', $default );
+		$size = (int) apply_filters( 'theshed_pull_chunk_size', $default );
 
 		return $size > 0 ? $size : $default;
 	}
